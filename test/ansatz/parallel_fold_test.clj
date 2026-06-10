@@ -10,6 +10,7 @@
             [ansatz.test-env :as test-env]
             [ansatz.kernel.env :as env]
             [ansatz.kernel.name :as name]
+            [ansatz.pipeline :as ap]   ;; *parallel-fold* codegen knob (carved from ansatz.core)
             [clojure.test :refer [deftest is]]))
 
 (defn- runtime-form
@@ -68,7 +69,7 @@
       ;; (4) parallel result EQUALS sequential on a large vector (the soundness payoff)
       (let [big (vec (range 200000))
             par ((resolve 'pf-sum) big)
-            seq (binding [a/*parallel-fold* false] (reduce + 0 big))]
+            seq (binding [ap/*parallel-fold* false] (reduce + 0 big))]
         (is (= par seq) "fork-join sum over 200k matches sequential"))
       ;; (5) UNBOXED-PARALLEL long[] path: a fused IFn$LLL step over a long[] above the
       ;; fork threshold (131072) runs zero-boxing AND parallel; result must be exact.
