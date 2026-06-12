@@ -103,7 +103,17 @@
     (api/elab est (list 'lam
                         (vec (mapcat (fn [p ty] [p ty]) (second f-form) param-types))
                         (nth f-form 2)))
-    :else (api/elab est f-form)))
+    :else
+    (try (api/elab est f-form)
+         (catch Exception ex
+           (if (and (symbol? f-form)
+                    (re-find #"Unknown constant" (str (ex-message ex))))
+             (throw (ex-info (str "`" f-form "` is not a registered surface verb and not a kernel "
+                                  "constant — it cannot be passed as a function value in a verified "
+                                  "body. See (wandler.core/vocabulary) / docs/SURFACE.md for the "
+                                  "verb vocabulary, or pass an inline (fn [x] …).")
+                             {:kind :unknown-fn-value :form f-form} ex))
+             (throw ex))))))
 
 (defn- count-elaborator [est args]
   (let [env (:env est)

@@ -36,7 +36,8 @@
 
    Lineage: `../rhine` (clock-safe FRP, separates clocking/scheduling/resampling) informed `../spindel`,
    the async substrate. See docs/MODE_LATTICE.md and [[modal-mode-lattice]]."
-  (:require [ansatz.core :as a]
+  (:require [wandler.runtime]   ; codegen lowering registry (auto-installs at load — leaf/batch codegen needs it)
+            [ansatz.core :as a]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.env :as kenv]
@@ -354,16 +355,28 @@
                     t ids)]
     (eval (a/ansatz->clj env lam []))))
 
-(defn route-surface
-  "WIRE mode into the surface front door. Given an elaborated `{:term :lctx}` (e.g. from
-   wandler.gradual/elaborate), derive the pipeline mode from the SOURCE TYPES, plan the term, and pick the
-   γ-lowering automatically. For a differential mode it produces the ∂ incremental certificate (and, when
-   the plan has a join base + codegenable leaf fns, a runnable query); otherwise it's batch/recompute.
+(defn execute
+  "THE dispatcher (cohesion audit item 1): the source TYPES pick the lowering — this is
+   the one entry point behind 'the type picks the mode'. Given an elaborated
+   `{:term :lctx}`, derive the pipeline mode from the source types, plan the term, and
+   APPLY the γ-lowering:
 
-   With `:sizes {:base-size … :delta-size … :fanout …}` the rebuilder choice is COST-GATED: a
-   differential source is DOWNGRADED to recompute when |Δ| isn't ≪ base (incremental wouldn't pay off).
-   Returns {:mode :route :plan :certificate (:diff) (:run) (:cost) (:cost-downgraded?)}."
-  [env {:keys [term lctx]} & {:keys [sizes]}]
+     batch              → certified optimize + codegen          {:run (fn …)}
+     :incremental       → pull DBSP view over Z-set deltas      {:run (Δs → results)}
+     :async-incremental → PUSH-driven live graph (the default   {:push! :out :report}
+                          for an async delta source; this is
+                          how wandler.exec.live is reached —
+                          you never wire it by hand)
+
+   Options:
+     :sizes  {:base-size :delta-size :fanout} — cost-gates the ∂ choice: a differential
+             source is DOWNGRADED to recompute when |Δ| isn't ≪ base.
+     :live?  force (true) or suppress (false) the push graph; default = async route.
+
+   Every branch carries its :certificate; the differential stages and the batch rewrite
+   are kernel-certified the same way (the route never changes the trust story).
+   Returns {:mode :route :plan :certificate (:diff) (:run | :push! :out :report) …}."
+  [env {:keys [term lctx]} & {:keys [sizes live?]}]
   (let [pm0 (pipeline-mode (lctx-types lctx))
         downgrade? (boolean (and (:diff pm0) sizes (= :batch-fuse (choose-rebuilder sizes))))
         pm (cond-> pm0 downgrade? (assoc :diff false))
@@ -371,10 +384,21 @@
         cost (when sizes (rebuilder-cost sizes))]
     (if (:diff pm)
       (let [dr (differentiate pl pm)
-            base-join? (= :join (:op (:base dr)))]
-        (cond-> {:mode pm :route (:route dr) :plan pl :certificate (certificate dr) :diff dr}
-          cost       (assoc :cost cost)
-          base-join? (assoc :run (to-zset-query dr (auto-impls env dr)))))
+            base-join? (= :join (:op (:base dr)))
+            push? (if (some? live?) live? (= :async (:sched pm)))
+            impls (when base-join? (auto-impls env dr))
+            base {:mode pm :route (:route dr) :plan pl :certificate (certificate dr) :diff dr}]
+        (cond-> base
+          cost (assoc :cost cost)
+          (and base-join? (not push?))
+          (assoc :run (to-zset-query dr impls))
+          (and base-join? push?)
+          (merge (let [report (mapv (fn [{:keys [stage cert] :as st}]
+                                      {:op stage :certificate (first cert)
+                                       :payload (stage-trust env st)})
+                                    (:stages dr))]
+                   ((requiring-resolve 'wandler.exec.live/from-stages)
+                    (:stages dr) impls report)))))
       (let [brun (try (batch-run env term lctx) (catch Throwable _ nil))]   ; batch runnable — one front door
         (cond-> {:mode pm :route (route pm) :plan pl
                  :certificate (format "mode %s  ⟶  %s  (%s)"
@@ -383,6 +407,9 @@
           cost       (assoc :cost cost)
           brun       (assoc :run brun)
           downgrade? (assoc :cost-downgraded? true))))))
+
+(def ^{:doc "Deprecated name for `execute` (the pre-audit spelling)."}
+  route-surface execute)
 
 ;; ── kernel install: the batch modality (Box), the zero Z-set (Zzero), and the ONE admitted law ───
 (defn- nm [s] (name/from-string s))

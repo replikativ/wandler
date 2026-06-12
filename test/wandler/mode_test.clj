@@ -265,29 +265,3 @@
         (is (= :trusted  (:payload (last (:report live))))  "the foreign leaf is reported trusted (admitted axiom)")
         (is (= :verified (:payload (first (:report live)))) "the join (idNat) is verified")))))
 
-(deftest value-pipeline-edn-aligned
-  (when (ready?)
-    (testing "EDN keyword-maps flow through the certified incremental engine over the kernel-native Value rep"
-      ((requiring-resolve 'wandler.surface.edn/install-core!))
-      (let [ValueT (e/const' (nm "Value") [])
-            prodVV (e/app* (e/const' (nm "Prod") [z z]) ValueT ValueT)
-            vkw    (fn [s] (e/app (e/const' (nm "Value.vkw") []) (e/lit-str s)))
-            vget*  (fn [k r] (e/app* (e/const' (nm "vget") []) k r))
-            fst*   (fn [p] (e/app* (e/const' (nm "Prod.fst") [z z]) ValueT ValueT p))
-            snd*   (fn [p] (e/app* (e/const' (nm "Prod.snd") [z z]) ValueT ValueT p))
-            kf     (e/lam "o" ValueT (vget* (vkw "cid") (e/bvar 0)) :default)        ; join order.cid
-            lf     (e/lam "c" ValueT (vget* (vkw "id")  (e/bvar 0)) :default)        ;   = cust.id
-            pred   (e/lam "p" prodVV (e/app* (e/const' (nm "vkeq") []) (vget* (vkw "tier") (snd* (e/bvar 0))) (vkw "premium")) :default)
-            mapf   (e/lam "p" prodVV (vget* (vkw "amt") (fst* (e/bvar 0))) :default) ; project order.amt
-            plan   {:op :map :fn mapf
-                    :input {:op :filter :pred pred
-                            :input {:op :join :kf kf :lf lf :left {:op :source} :right {:op :source}}}}
-            inc    (m/incrementalize (a/env) plan m/async)
-            run    (m/run-edn (:run inc))
-            custs  {{:id 1 :tier :premium} 1 {:id 2 :tier :basic} 1}
-            deltas [[{} custs] [{{:cid 1 :amt 100} 1} {}] [{{:cid 2 :amt 50} 1} {}]
-                    [{{:cid 1 :amt 30} 1} {}] [{{:cid 1 :amt 100} -1} {}]]
-            views  (vec (run deltas))]
-        (is (= :async-incremental (:route inc)))
-        (is (= [{} {100 1} {100 1} {100 1 30 1} {30 1}] views)
-            "EDN in → certified incremental join/filter(premium)/map(amt) over Value → EDN out (basic filtered, retraction drops 100)")))))

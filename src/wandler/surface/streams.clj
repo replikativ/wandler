@@ -336,17 +336,30 @@
 (defn- strm-elem [env strm-expr]
   (let [[_ targs] (e/get-app-fn-args (a/get-arg-type env nil strm-expr))] (first targs)))
 
+(defonce ^{:doc "The pre-routing verb elaborators, captured ONCE (first install). Re-installs
+                 (any order vs wandler.surface.collections) reuse these — never wrap a wrapper."}
+  originals (atom nil))
+
+(defn- router!
+  "Register a stream-routing wrapper for `verb` (tagged so re-installs never wrap a wrapper)."
+  [verb f]
+  (a/register-term-elaborator! verb (with-meta f {:stream-router true})))
+
 (defn- install-routing! []
   (let [reg @@(requiring-resolve 'ansatz.surface.ingest/term-elaborator-registry)
-        orig (select-keys reg '[range map mapv take reduce filter filterv])]
+        captured (select-keys reg '[range map mapv take reduce reductions filter filterv])
+        ;; idempotency + order-robustness: capture only entries that are NOT already our
+        ;; routers, and merge UNDER previously captured originals — never wrap a wrapper
+        fresh (into {} (remove (fn [[_ f]] (:stream-router (meta f))) captured))
+        orig (swap! originals (fn [o] (merge fresh o)))]
     ;; (range) with NO args → Strm.range (an infinite source); (range n) stays List.range.
-    (a/register-term-elaborator! 'range
+    (router! 'range
       (fn [est args]
         (if (empty? args) (e/const' (nm "Strm.range") [])
             ((orig 'range) est args))))
     ;; map over a Strm/LSeq → smap (productive); else delegate to List.map.
     (doseq [v '[map mapv]]
-      (a/register-term-elaborator! v
+      (router! v
         (fn [est args]
           (let [[f-form coll-form] args
                 coll (api/elab est coll-form)
@@ -360,7 +373,7 @@
                 (e/app* (e/const' (nm (str kind ".smap")) []) A B f coll))
               ((orig v) est args))))))
     ;; take over a Strm/LSeq → take (the WINDOW, stream → List); else List.take.
-    (a/register-term-elaborator! 'take
+    (router! 'take
       (fn [est args]
         (let [[n-form coll-form] args
               coll (api/elab est coll-form)
@@ -370,7 +383,7 @@
                     (api/elab est n-form) coll)
             ((orig 'take) est args)))))
     ;; reductions over a Strm → Strm.scan (the INCREMENTAL running aggregate — productive); else scanl.
-    (a/register-term-elaborator! 'reductions
+    (router! 'reductions
       (fn [est args]
         (let [[f-form init-form coll-form] args
               coll (api/elab est coll-form)]
@@ -383,7 +396,7 @@
             ((orig 'reductions) est args)))))
     ;; the PRODUCTIVITY GATE: reduce/filter over a raw Strm/LSeq is rejected — window it first.
     (doseq [v '[reduce filter filterv]]
-      (a/register-term-elaborator! v
+      (router! v
         (fn [est args]
           (let [coll (api/elab est (last args))
                 kind (#{"Strm" "LSeq"} (type-head (:env est) coll))]

@@ -14,6 +14,7 @@
   (:require [ansatz.core :as a]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]
+            [wandler.surface.vocabulary]
             [wandler.surface.collections :as coll]
             [wandler.surface.records :as rec]
             [wandler.surface.relational :as rel]
@@ -68,6 +69,22 @@
   (rt/install!)
   (reset! a/optimize-hook optimize-hook)
   :installed)
+
+(defn vocabulary
+  "The surface verb vocabulary, as data: verb → {:sig :dispatch :denotation :lowering
+   :ns :tier}. The wandler surface is a type-directed staged elaborator over THIS
+   closed vocabulary — compositional inside it, explicit about its edge.
+   docs/SURFACE.md is generated from it (dev/gen_surface_md.clj)."
+  []
+  ((requiring-resolve 'wandler.surface.vocabulary/vocabulary-table)))
+
+(defn execute
+  "THE mode dispatcher (thin wrapper over wandler.exec.mode/execute, loaded on demand):
+   given an elaborated {:term :lctx}, the source TYPES pick the lowering — batch fuse,
+   pull-incremental (Z-sets), or the push-driven live graph for async delta sources.
+   Options: :sizes (cost-gates the ∂ choice), :live? (force/suppress push)."
+  [env elaborated & opts]
+  (apply (requiring-resolve 'wandler.exec.mode/execute) env elaborated opts))
 
 (defn install!
   "Install the wandler runtime into ansatz's three seams (idempotent). Call after the
