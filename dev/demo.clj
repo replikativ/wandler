@@ -25,7 +25,7 @@
            (map (fn [x] (* x x)) (filter (fn [x] (< 2 x)) xs)))))
 
 (big-squares '(1 2 3 4 5))      ;; => (9 16 25) — an ordinary Clojure fn
-(w/explain "big-squares")
+(w/explain 'big-squares)
 ;; => {:verified? true, :changed? true,
 ;;     :rewrites ["List.map_filter_filterMap"],
 ;;     :stages-before ["map" "filter"], :stages-after ["filterMap"],
@@ -46,7 +46,7 @@
            (transduce (comp (filter (fn [x] (< 2 x))) (map (fn [x] (* x x)))) + 0 xs))))
 
 (sum-big-squares '(1 2 3 4 5))  ;; => 50
-(w/explain "sum-big-squares")   ;; the whole stack fused into a single fold
+(w/explain 'sum-big-squares)   ;; the whole stack fused into a single fold
 ;; A fold over a PROVEN associative monoid (+,0) may additionally lower to the
 ;; parallel fork-join apfoldl — the associativity proof is the licence to
 ;; re-associate. Verification licenses the fast representation.
@@ -62,7 +62,7 @@
            (reduce + 0 (map (fn [p] (second (second p)))
                             (join first first users orders))))))
 (rev-by-user '([1 10] [2 20]) '([1 5] [1 7] [2 9]))  ;; => 21
-(w/explain "rev-by-user")   ;; map fused into the fold over the join
+(w/explain 'rev-by-user)   ;; map fused into the fold over the join
 
 ;; install the PROVEN relational law library (each law is a kernel theorem,
 ;; proved once here, ~5s) — this is the optimizer's rule set, with receipts
@@ -73,7 +73,7 @@
   (eval '(ansatz.core/defn only-known [xs :- (List Nat), ys :- (List Nat)] (List Nat)
            (filter (fn [x] (member x ys)) xs))))
 (only-known '(1 2 3 4) '(2 4))  ;; => [2 4]
-(w/explain "only-known")
+(w/explain 'only-known)
 ;; => {:verified? true, :changed? true,
 ;;     :rewrites ["List.elem_filter_eq_index_probe"], …}
 ;;

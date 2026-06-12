@@ -43,7 +43,11 @@
 (defn explain
   "The optimizer report for a verified fn: was a rewrite adopted, which laws fired,
    and the pipeline shape before/after. `:verified?` means the kernel CERTIFIED the
-   adopted term equal to the original definition."
+   adopted term equal to the original definition.
+
+   `fn-name` is a symbol or string (coerced) — reports are keyed by the KERNEL
+   constant's name, recorded when the optimizer hook fires inside define-verified
+   (before the Clojure var exists), so the fn VALUE has nothing to look up by."
   [fn-name]
   (when-let [r (get @reports (str fn-name))]
     {:verified? (:verified? r)

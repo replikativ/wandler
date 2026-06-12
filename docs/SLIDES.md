@@ -32,7 +32,7 @@ statement *about* the pipeline live in the same language.
 
 ### 4. Optimization = certified rewriting
 ```clojure
-(w/explain "big-squares")
+(w/explain 'big-squares)
 ;; {:verified? true, :rewrites ["List.map_filter_filterMap"],
 ;;  :stages ["map" "filter"] → ["filterMap"], :passes 2 → 1}
 ```

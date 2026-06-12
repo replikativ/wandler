@@ -24,7 +24,7 @@ transforms and optimizes.**
   (map (fn [x] (* x x)) (filter (fn [x] (< 2 x)) xs)))
 
 (big-squares '(1 2 3 4 5))   ;; => (9 16 25)
-(w/explain "big-squares")
+(w/explain 'big-squares)
 ;; => {:verified? true, :changed? true,
 ;;     :rewrites ["List.map_filter_filterMap"],
 ;;     :stages-before ["map" "filter"], :stages-after ["filterMap"],
@@ -40,7 +40,7 @@ transforms and optimizes.**
 (laws/install!)
 (a/defn only-known [xs :- (List Nat), ys :- (List Nat)] (List Nat)
   (filter (fn [x] (member x ys)) xs))
-(w/explain "only-known")
+(w/explain 'only-known)
 ;; => {:verified? true, :rewrites ["List.elem_filter_eq_index_probe"], …}
 
 ;; the measure→replan loop (the verified JIT): selectivities measured on real
