@@ -1,14 +1,14 @@
 (ns wandler.rel-laws-test
-  "The packaged relational-law installer (wandler.rel-laws): one `install!` admits the proven laws
+  "The packaged relational-law installer (wandler.laws.relational): one `install!` admits the proven laws
    into the env, after which optimize-cost AUTO-ADOPTS them — the Layer-2 jump that makes
    relational optimizations (filter→join pushdown) available like the filterMap law, not just in
    bespoke per-test setups."
   (:require [wandler.core]
             [ansatz.core :as a]
-            [wandler.rel-laws :as rl]
+            [wandler.laws.relational :as rl]
             [wandler.kmap :as kmap]
-            [wandler.collections :as coll]
-            [wandler.relational :as rel]
+            [wandler.surface.collections :as coll]
+            [wandler.surface.relational :as rel]
             [wandler.optimize :as opt]
             [wandler.test-env :as test-env]
             [ansatz.kernel.env :as kenv]

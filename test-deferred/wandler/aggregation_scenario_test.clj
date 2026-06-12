@@ -6,10 +6,10 @@
    concat codegen, group-by over a record field. Each pipeline compiles, runs, and KERNEL-
    CERTIFIES. See [[pipelines-system-design]]."
   (:require [ansatz.core :as a]
-            [wandler.collections :as coll]
-            [wandler.relational :as rel]
+            [wandler.surface.collections :as coll]
+            [wandler.surface.relational :as rel]
             [wandler.kmap :as kmap]
-            [wandler.records :as rec]
+            [wandler.surface.records :as rec]
             [wandler.test-env :as test-env]
             [ansatz.kernel.env :as env]
             [ansatz.kernel.name :as name]
@@ -39,8 +39,8 @@
       (reset! a/ansatz-env @test-env/init-full-env)
       (kmap/install!) (coll/install!) (rel/install!) (rec/install!)
       (binding [a/*verbose* false]
-        (eval '(wandler.records/def-record Customer [:map [:id [:int {:min 0}]] [:name :string] [:region :string]]))
-        (eval '(wandler.records/def-record Sale [:map [:cust-id [:int {:min 0}]] [:amount :double] [:qty [:int {:min 0}]]]))
+        (eval '(wandler.surface.records/def-record Customer [:map [:id [:int {:min 0}]] [:name :string] [:region :string]]))
+        (eval '(wandler.surface.records/def-record Sale [:map [:cust-id [:int {:min 0}]] [:amount :double] [:qty [:int {:min 0}]]]))
         ;; FLOAT: total sales amount over the join
         (eval '(ansatz.core/defn total-amount [cs :- (List Customer), ss :- (List Sale)] Float
                  (reduce (fn [acc p] (add Float acc (:amount (Prod.snd p)))) 0.0

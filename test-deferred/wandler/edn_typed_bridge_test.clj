@@ -8,9 +8,9 @@
    See [[native-clojure-over-value]] (gradual path) and [[malli-value-refinement]] (conforms)."
   (:require [wandler.core]
             [ansatz.core :as a]
-            [wandler.edn :as edn]
-            [wandler.records :as rec]
-            [wandler.collections :as coll]
+            [wandler.surface.edn :as edn]
+            [wandler.surface.records :as rec]
+            [wandler.surface.collections :as coll]
             [wandler.test-env :as test-env]
             [ansatz.kernel.env :as kenv]
             [ansatz.kernel.name :as name]
@@ -32,7 +32,7 @@
       (edn/install-core!)        ; conforms + value->edn; NO install-surface! (typed path)
       (binding [a/*verbose* false]
         ;; ONE malli schema → a typed record AND a conforms predicate
-        (eval '(wandler.records/def-record Person [:map [:name :string] [:age :int] [:city :string]]))
+        (eval '(wandler.surface.records/def-record Person [:map [:name :string] [:age :int] [:city :string]]))
         (eval (edn/schema->conforms-form 'conforms-person [:map [:name :string] [:age :int]]))
         ;; a TYPED pipeline over records — O(1) field projection, and it fuses like any pipeline
         (eval '(ansatz.core/defn tb-adult-names [ps :- (List Person)] (List String)

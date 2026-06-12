@@ -10,9 +10,9 @@
        naïve product (paths as independent) = 1−(1−.125)(1−.125)                     = 0.234375   ← WRONG
    The naïve number is too big precisely because it counts e12's failure twice. This is the read-once vs
    shared distinction: the product is exact ONLY when paths are disjoint (the 0.776 demo); here it is not.
-   Motivates the pluggable WMC backend (wandler.wmc): for large correlated formulas we need a real counter."
+   Motivates the pluggable WMC backend (wandler.inference.wmc): for large correlated formulas we need a real counter."
   (:require [clojure.test :refer [deftest is testing]]
-            [wandler.semiring :as sr]))
+            [wandler.inference.semiring :as sr]))
 
 (defn- close? [a b] (< (Math/abs (- (double a) (double b))) 1e-9))
 

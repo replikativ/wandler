@@ -7,7 +7,7 @@
    doseq) — which the TYPED core can't model — fail TRANSPARENTLY with a message naming
    the macro. See [[pipelines-system-design]]."
   (:require [ansatz.core :as a]
-            [wandler.collections :as coll]
+            [wandler.surface.collections :as coll]
             [wandler.test-env :as test-env]
             [clojure.test :refer [deftest is]]))
 

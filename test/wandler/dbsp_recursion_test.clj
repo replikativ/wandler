@@ -5,7 +5,7 @@
    ansatz.dbsp-recursion."
   (:require [clojure.test :refer [deftest is testing]]
             [ansatz.core :as a]
-            [wandler.dbsp-recursion :as dr]
+            [wandler.exec.dbsp-recursion :as dr]
             [wandler.test-env :as test-env]
             [ansatz.kernel.env :as kenv]
             [ansatz.kernel.name :as name]))

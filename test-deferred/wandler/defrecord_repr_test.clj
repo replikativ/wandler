@@ -5,8 +5,8 @@
    boundary coerces input maps to defrecords ONCE (a per-list instance? guard passes
    already-converted records through untouched). See [[pipelines-system-design]]."
   (:require [ansatz.core :as a]
-            [wandler.collections :as coll]
-            [wandler.records :as rec]
+            [wandler.surface.collections :as coll]
+            [wandler.surface.records :as rec]
             [wandler.test-env :as test-env]
             [ansatz.kernel.env :as env]
             [ansatz.kernel.name :as name]
@@ -29,7 +29,7 @@
       (reset! a/ansatz-env @test-env/init-full-env)
       (coll/install!) (rec/install!)
       (binding [a/*verbose* false]
-        (eval '(wandler.records/def-record Sale [:map [:cust-id [:int {:min 0}]] [:amount :double] [:qty [:int {:min 0}]]]))
+        (eval '(wandler.surface.records/def-record Sale [:map [:cust-id [:int {:min 0}]] [:amount :double] [:qty [:int {:min 0}]]]))
         (eval '(ansatz.core/defn amt-total [ss :- (List Sale)] Float
                  (reduce (fn [acc s] (add Float acc (:amount s))) 0.0 ss)))
         (eval '(ansatz.core/defn qty-total [ss :- (List Sale)] Int

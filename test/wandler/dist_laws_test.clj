@@ -1,10 +1,10 @@
 (ns wandler.dist-laws-test
-  "The FinSet/FinDist monad keystone (wandler.dist-laws): `WList.left_unit` — the monad left-unit law for the
+  "The FinSet/FinDist monad keystone (wandler.laws.dist): `WList.left_unit` — the monad left-unit law for the
    weighted-list `List(A×S)`, proven generic over `(S, mul, one)` with `one_mul` as a hypothesis. Anchors the
-   runtime monad of wandler.dist in the kernel; instantiates at any ⊗-unital semiring (Bool = FinSet, Nat = counting)."
+   runtime monad of wandler.inference.dist in the kernel; instantiates at any ⊗-unital semiring (Bool = FinSet, Nat = counting)."
   (:require [clojure.test :refer [deftest is testing]]
             [ansatz.core :as a]
-            [wandler.dist-laws :as dl]
+            [wandler.laws.dist :as dl]
             [wandler.test-env :as test-env]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.env :as kenv]

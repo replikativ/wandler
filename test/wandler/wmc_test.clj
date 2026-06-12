@@ -1,9 +1,9 @@
 (ns wandler.wmc-test
-  "The pluggable WMC seam (wandler.wmc): the :enumeration reference is always present; the :logicng backend
+  "The pluggable WMC seam (wandler.inference.wmc): the :enumeration reference is always present; the :logicng backend
    (knowledge compilation) is available under the :logicng alias and is cross-checked against enumeration.
    Run the LogicNG path with:  clj -M:test:logicng -n wandler.wmc-test"
   (:require [clojure.test :refer [deftest is testing]]
-            [wandler.wmc :as wmc]
+            [wandler.inference.wmc :as wmc]
             [clojure.string :as str]))
 
 (defn- close? [a b] (< (Math/abs (- (double a) (double b))) 1e-9))

@@ -1,10 +1,10 @@
 (ns wandler.semiring-test
-  "The SEMIRING core (wandler.semiring): `Rel A S` over a semiring `S` — one algebra, many domains — plus
+  "The SEMIRING core (wandler.inference.semiring): `Rel A S` over a semiring `S` — one algebra, many domains — plus
    the CERTIFIED POPS recursion-safety gate (`Bool.absorptive`, a kernel theorem where the datahike/
    Scallop design has only a documentation matrix)."
   (:require [clojure.test :refer [deftest is testing]]
             [ansatz.core :as a]
-            [wandler.semiring :as sr]
+            [wandler.inference.semiring :as sr]
             [wandler.test-env :as test-env]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.env :as kenv]))
@@ -44,7 +44,7 @@
           "the FAQ factorization for existence is certified by a kernel theorem")
       (is (= :algebra (:level (sr/faq-certificate sr/existence))) "existence FAQ is certified at the ALGEBRA level")
       (is (= :execution (:level (sr/faq-certificate sr/counting)))
-          "counting FAQ is certified at the EXECUTION level by the optimizer's proven Nat factorization laws (wandler.faq-plan)"))))
+          "counting FAQ is certified at the EXECUTION level by the optimizer's proven Nat factorization laws (wandler.optimize.faq)"))))
 
 (deftest recursion-gate
   (testing "the CERTIFIED POPS gate — which semirings may recurse (datahike's matrix, as a kernel theorem)"

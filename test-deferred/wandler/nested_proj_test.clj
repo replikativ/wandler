@@ -28,7 +28,7 @@
       (reset! a/ansatz-env @test-env/init-full-env)
       (std/install!)
       (binding [a/*verbose* false]
-        (eval '(wandler.records/def-record Order [:map [:id [:int {:min 0}]] [:amount :double]]))
+        (eval '(wandler.surface.records/def-record Order [:map [:id [:int {:min 0}]] [:amount :double]]))
         ;; proj in the if-CONDITION (the exact failing case)
         (eval '(ansatz.core/defn np-cond [os :- (List Order)] (List Bool)
                  (mapv (fn [o] (if (< (:amount o) 80.0) true false)) os)))

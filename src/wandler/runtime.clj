@@ -9,6 +9,7 @@
 ;; identity theorems being present in the env.
 (ns wandler.runtime
   (:require [clojure.core.reducers :as ccr]
+            [wandler.algebra :as algebra]
             [ansatz.core :as a]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.env :as env]
@@ -212,16 +213,6 @@
    sequential `afoldl`. The long[] unboxed path is unaffected either way."
   true)
 
-(def ^:private monoid-fold-ops
-  "Kernel op const-name → {:clj <2-arg Clojure op>, :id <identity literal>,
-   :laws [associativity + identity theorem names]}. Parallel emission is GATED on
-   the laws being present in the env: fork-join re-associates the fold, which is
-   sound iff the op is an associative monoid with `init` its identity — these Init
-   lemmas certify exactly that, so the proof is the licence to parallelize."
-  {"Nat.add" {:clj '+ :id 0 :laws ["Nat.add_assoc" "Nat.zero_add" "Nat.add_zero"]}
-   "Nat.mul" {:clj '* :id 1 :laws ["Nat.mul_assoc" "Nat.one_mul" "Nat.mul_one"]}
-   "Int.add" {:clj '+ :id 0 :laws ["Int.add_assoc" "Int.zero_add" "Int.add_zero"]}
-   "Int.mul" {:clj '* :id 1 :laws ["Int.mul_assoc" "Int.one_mul" "Int.mul_one"]}})
 
 (clojure.core/defn- monoid-fold-op
   "If foldl step `f-expr` is `acc ⊕ h(x)` (a fused λacc.λx. ⊕ acc rhs with acc NOT
@@ -242,11 +233,10 @@
                     (when (and (e/bvar? a) (= 1 (e/bvar-idx a))   ; left operand IS acc
                                (<= (e/bvar-range rhs) 1))          ; acc (bvar 1) unused in rhs
                       (name/->string (e/const-name h)))))))
-        spec (get monoid-fold-ops opn)]
-    (when (and spec
-               (= init-clj (:id spec))
-               (every? #(some? (env/lookup env (name/from-string %))) (:laws spec)))
-      (:clj spec))))
+        ]
+    ;; the licence lives in the ONE registry (wandler.algebra): registered op + init is
+    ;; its identity + the associativity/identity theorems present in the env
+    (when opn (algebra/monoid-licence env opn init-clj))))
 
 (clojure.core/defn- emit-hinted-fn
   "Codegen a kernel lambda `f-expr` as a Clojure fn with up to `arity` params, each

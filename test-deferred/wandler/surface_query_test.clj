@@ -2,19 +2,19 @@
   "STEP 1 of the optimizer-term integration, completed: a NORMAL Clojure relational query — written with
    `for` / `=` / `count` / `reduce` over typed record lists — elaborates through `a/defn` to a KERNEL-VERIFIED
    term (a/defn kernel-checks every definition), is optimized (`optimize-body`), codegens to a Clojure fn,
-   and EXECUTES — agreeing with the runtime `wandler.semiring` FAQ engine. So the general surface→kernel→
+   and EXECUTES — agreeing with the runtime `wandler.inference.semiring` FAQ engine. So the general surface→kernel→
    optimize→run path is the EXISTING `a/defn` elaborator (its `for`/`join` desugaring); the manual
-   `wandler.faq-plan` is the cost-directed factorization slice on top. The aggregation (`count` = ⊕1,
+   `wandler.optimize.faq` is the cost-directed factorization slice on top. The aggregation (`count` = ⊕1,
    `reduce +` = weighted ⊕) IS the semiring sum. See [[programming-model-4-structures]], PROGRAMMING_MODEL.md §13.
 
    A relation is a `(List (Prod Nat Nat))` = rows `[key value]`; the join is on `first` (the key)."
   (:require [clojure.test :refer [deftest is testing]]
             [ansatz.core :as a]
             [wandler.kmap :as km]
-            [wandler.rel-laws :as rl]
-            [wandler.collections :as coll]
-            [wandler.relational]                         ; registers the `join` surface elaborator (load side-effect)
-            [wandler.semiring :as sr]
+            [wandler.laws.relational :as rl]
+            [wandler.surface.collections :as coll]
+            [wandler.surface.relational]                         ; registers the `join` surface elaborator (load side-effect)
+            [wandler.inference.semiring :as sr]
             [wandler.test-env :as test-env]))
 
 (defn- setup [f]

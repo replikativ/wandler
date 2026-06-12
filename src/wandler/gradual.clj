@@ -19,7 +19,7 @@
      • `:selectivity` (or a sample, via optimize-measured)       ⇒ measured replanning (JIT)"
   (:require [ansatz.core :as a]
             [wandler.optimize :as opt]
-            [wandler.plan :as plan]
+            [wandler.optimize.plan :as plan]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]
             [clojure.set :as set]

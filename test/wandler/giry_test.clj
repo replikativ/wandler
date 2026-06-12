@@ -1,11 +1,11 @@
 (ns wandler.giry-test
-  "(b) The Giry L2 boundary (wandler.giry): continuous probability as a sampler-based monad whose `expectation`
+  "(b) The Giry L2 boundary (wandler.inference.giry): continuous probability as a sampler-based monad whose `expectation`
    is the single TRUSTED seam (Monte Carlo here). Shows: continuous-prior expectations; a two-step Giry
    program; the L0/L2 consistency (a discrete FinDist lifts to Giry and the expectations agree); and that the
    DECISION that consumes the expectation (argmin E[cost]) is exact L0/L1 over the trusted numbers."
   (:require [clojure.test :refer [deftest is testing]]
-            [wandler.giry :as g]
-            [wandler.dist :as d]))
+            [wandler.inference.giry :as g]
+            [wandler.inference.dist :as d]))
 
 (defn- close? [a b tol] (< (Math/abs (- (double a) (double b))) tol))
 

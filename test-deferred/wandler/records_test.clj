@@ -2,7 +2,7 @@
   "Standard Clojure record ops (assoc / keyword access) compile and kernel-verify
    inside verified functions. Gated on an Init env (structures need Prod/Eq)."
   (:require [ansatz.core :as a]
-            [wandler.records :as rec]
+            [wandler.surface.records :as rec]
             [wandler.test-env :as test-env]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.env :as env]
@@ -21,7 +21,7 @@
       (reset! a/ansatz-env kenv)
       (rec/install!)
       (binding [a/*verbose* false]
-        (eval '(wandler.records/def-record RecTestAcct
+        (eval '(wandler.surface.records/def-record RecTestAcct
                  [:map [:owner :string]
                   [:balance [:and :int [:>= 0]]]
                   [:bonus [:and :int [:>= 0]]]])))
@@ -36,7 +36,7 @@
       (reset! a/ansatz-env kenv)
       (rec/install!)
       (binding [a/*verbose* false]
-        (eval '(wandler.records/def-record RecTestAcct2
+        (eval '(wandler.surface.records/def-record RecTestAcct2
                  [:map [:owner :string]
                   [:balance [:and :int [:>= 0]]]
                   [:bonus [:and :int [:>= 0]]]]))
@@ -60,7 +60,7 @@
       (reset! a/ansatz-env kenv)
       (rec/install!)
       (binding [a/*verbose* false]
-        (eval '(wandler.records/def-record RecTestAcctU
+        (eval '(wandler.surface.records/def-record RecTestAcctU
                  [:map [:owner :string] [:balance [:and :int [:>= 0]]]]))
         ;; idiomatic (update r :k f): rebuild with the field mapped through f
         (eval '(ansatz.core/defn rec-bump [a :- RecTestAcctU] RecTestAcctU
@@ -81,7 +81,7 @@
       (reset! a/ansatz-env kenv)
       (rec/install!)
       (binding [a/*verbose* false]
-        (eval '(wandler.records/def-record RecTestRow
+        (eval '(wandler.surface.records/def-record RecTestRow
                  [:map [:a [:and :int [:>= 0]]] [:b [:and :int [:>= 0]]] [:c [:and :int [:>= 0]]]]))
         (eval '(ansatz.core/defn rec-pipe [r :- RecTestRow] RecTestRow
                  (-> r (assoc :a 1) (assoc :b 2) (update :c Nat.succ) (assoc :a 9)))))
@@ -128,7 +128,7 @@
       (reset! a/ansatz-env kenv)
       (rec/install!)
       (binding [a/*verbose* false]
-        (eval '(wandler.records/def-record RecTestWide
+        (eval '(wandler.surface.records/def-record RecTestWide
                  [:map [:a [:and :int [:>= 0]]] [:b [:and :int [:>= 0]]] [:c [:and :int [:>= 0]]]]))
         (eval '(ansatz.core/defn rec-pick [r :- RecTestWide] _ (select-keys r [:a :c]))))
       (is (true? (verified? "rec-pick")))
@@ -149,9 +149,9 @@
       (reset! a/ansatz-env kenv)
       (rec/install!)
       (binding [a/*verbose* false]
-        (eval '(wandler.records/def-record RecTestFuse
+        (eval '(wandler.surface.records/def-record RecTestFuse
                  [:map [:a [:and :int [:>= 0]]] [:b [:and :int [:>= 0]]] [:c [:and :int [:>= 0]]]]))
-        (eval '(wandler.records/defn rec-fuse-pipe [r :- RecTestFuse] RecTestFuse
+        (eval '(wandler.surface.records/defn rec-fuse-pipe [r :- RecTestFuse] RecTestFuse
                  (-> r (assoc :a 1) (assoc :b 2) (assoc :a 9)))))
       ;; the fused body is verified, and the dead :a 1 write is gone
       (is (true? (verified? "rec-fuse-pipe")))
@@ -170,7 +170,7 @@
       (reset! a/ansatz-env kenv)
       (rec/install!)
       (binding [a/*verbose* false]
-        (eval '(wandler.records/def-record RecTestCustomer
+        (eval '(wandler.surface.records/def-record RecTestCustomer
                  [:map [:id [:and :int [:>= 0]]]
                   [:addr [:map [:zip [:and :int [:>= 0]]] [:num [:and :int [:>= 0]]]]]]))
         (eval '(ansatz.core/defn cust-zip [c :- RecTestCustomer] Nat (get-in c [:addr :zip])))
@@ -190,7 +190,7 @@
       (reset! a/ansatz-env kenv)
       (rec/install!)
       (binding [a/*verbose* false]
-        (eval '(wandler.records/def-record RecTestAcct3
+        (eval '(wandler.surface.records/def-record RecTestAcct3
                  [:map [:balance [:and :int [:>= 0]]]])))
       (is (re-find #"unknown field"
                    (try (binding [a/*verbose* false]
@@ -208,7 +208,7 @@
     (reset! a/ansatz-env @test-env/init-full-env)
     (rec/install!)
     (binding [a/*verbose* false]
-      (eval '(wandler.records/def-record KwTestRow [:map [:owner :string] [:balance :int]]))
+      (eval '(wandler.surface.records/def-record KwTestRow [:map [:owner :string] [:balance :int]]))
       (eval '(ansatz.core/defn kw-explicit [rs :- (List KwTestRow)] (List Int) (map (fn [x] (:balance x)) rs)))
       (eval '(ansatz.core/defn kw-sugar    [rs :- (List KwTestRow)] (List Int) (map :balance rs))))
     (let [val (fn [n] (.value (env/lookup (a/env) (name/from-string n))))

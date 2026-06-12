@@ -10,7 +10,7 @@
    is erased by design), and collections thereof. Doubles/uuids/etc. are not modeled and are
    filtered out of the differential comparison. Requires malli (the :malli alias) + Init env."
   (:require [ansatz.core :as a]
-            [wandler.edn :as edn]
+            [wandler.surface.edn :as edn]
             [wandler.test-env :as test-env]
             [ansatz.kernel.env :as kenv]
             [ansatz.kernel.name :as name]

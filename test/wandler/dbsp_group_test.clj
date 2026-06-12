@@ -1,11 +1,11 @@
 (ns wandler.dbsp-group-test
-  "The DBSP differential calculus generalized OFF `Int` to an abstract ABELIAN GROUP (`wandler.dbsp-group`):
+  "The DBSP differential calculus generalized OFF `Int` to an abstract ABELIAN GROUP (`wandler.exec.dbsp-group`):
    `D∘I = id` / `I∘D = id` proven over any `(G, zero, add, sub)` satisfying the abelian-group axioms (taken
    as hypotheses), with `Int` recovered as a CERTIFIED instance. Closes the ∂-generalization part of the
    comonad/∂ debt (the deeper guarded/comonadic `Strm` remains open). See [[programming-model-4-structures]]."
   (:require [clojure.test :refer [deftest is testing]]
             [ansatz.core :as a]
-            [wandler.dbsp-group :as dg]
+            [wandler.exec.dbsp-group :as dg]
             [wandler.test-env :as test-env]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.env :as kenv]))

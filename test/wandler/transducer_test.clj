@@ -6,7 +6,7 @@
    the nested SOAC IR we already fuse; it desugars to it and rides the existing
    optimizer + certification. See [[pipelines-system-design]]."
   (:require [ansatz.core :as a]
-            [wandler.collections :as coll]
+            [wandler.surface.collections :as coll]
             [wandler.test-env :as test-env]
             [ansatz.kernel.env :as env]
             [ansatz.kernel.name :as name]

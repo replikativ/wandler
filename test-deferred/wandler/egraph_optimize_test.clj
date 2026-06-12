@@ -17,7 +17,7 @@
    unifies the theorem's level params with the term's concrete `0` levels."
   (:require [wandler.core]
             [ansatz.core :as a]
-            [wandler.collections :as coll]
+            [wandler.surface.collections :as coll]
             [wandler.test-env :as test-env]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]

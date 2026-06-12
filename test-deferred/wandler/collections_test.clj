@@ -2,7 +2,7 @@
   "Everyday collection ops (count/reduce/mapv/filterv) over List compile, verify,
    and run. Gated on an Init env."
   (:require [ansatz.core :as a]
-            [wandler.collections :as coll]
+            [wandler.surface.collections :as coll]
             [wandler.test-env :as test-env]
             [ansatz.kernel.env :as env]
             [ansatz.kernel.name :as name]

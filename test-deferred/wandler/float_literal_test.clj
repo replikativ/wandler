@@ -7,7 +7,7 @@
    (Float comparison PREDICATES for filter remain open — Float.lt is Prop, not Bool.)
    See [[pipelines-system-design]]."
   (:require [ansatz.core :as a]
-            [wandler.collections :as coll]
+            [wandler.surface.collections :as coll]
             [wandler.test-env :as test-env]
             [ansatz.kernel.env :as env]
             [ansatz.kernel.name :as name]

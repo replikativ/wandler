@@ -8,7 +8,7 @@
    B: verified transducers over validated dynamic data. See [[native-clojure-over-value]]."
   (:require [wandler.core]
             [ansatz.core :as a]
-            [wandler.edn :as edn]
+            [wandler.surface.edn :as edn]
             [wandler.stdlib :as std]
             [wandler.test-env :as test-env]
             [clojure.test :refer [deftest is]]))

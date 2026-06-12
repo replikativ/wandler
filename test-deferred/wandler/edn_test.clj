@@ -1,5 +1,5 @@
 (ns wandler.edn-test
-  (:require [wandler.edn :as edn]
+  (:require [wandler.surface.edn :as edn]
             [ansatz.core :as a]
             [wandler.test-env :as test-env]
             [ansatz.kernel.env :as env]

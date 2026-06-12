@@ -1,10 +1,10 @@
 (ns wandler.zset-test
-  "The DBSP-faithful Z-set VIEW (wandler.zset): a Z-set `A → Int` (order-free, weighted), so the
+  "The DBSP-faithful Z-set VIEW (wandler.exec.zset): a Z-set `A → Int` (order-free, weighted), so the
    differential join is an EXACT equality (funext + Int distributivity) — no permutation — and handles
    deletions as negative weights. Port of equi_join/product_bilinear from tchajed/dbsp-theory."
   (:require [clojure.test :refer [deftest is testing]]
             [ansatz.core :as a]
-            [wandler.zset :as zs]
+            [wandler.exec.zset :as zs]
             [wandler.test-env :as test-env]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.env :as kenv]))

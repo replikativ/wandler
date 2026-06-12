@@ -7,8 +7,8 @@
    established only at a boundary that consumes it as a verified Map. See
    [[pipelines-system-design]]."
   (:require [ansatz.core :as a]
-            [wandler.collections :as coll]
-            [wandler.relational :as rel]
+            [wandler.surface.collections :as coll]
+            [wandler.surface.relational :as rel]
             [wandler.kmap :as kmap]
             [wandler.test-env :as test-env]
             [ansatz.kernel.env :as kenv]

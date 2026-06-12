@@ -3,7 +3,7 @@
    the head / 2nd element / tail, a Prod (a pair, sequential in Clojure) gives fst / snd. Lets the
    join/semijoin examples read as ordinary Clojure (e.g. `(first pr)` instead of `Prod.fst α β pr`)."
   (:require [ansatz.core :as a]
-            [wandler.collections :as coll]
+            [wandler.surface.collections :as coll]
             [wandler.test-env :as test-env]
             [clojure.test :refer [deftest is]]))
 
@@ -45,8 +45,8 @@
     (do
       (reset! a/ansatz-env @test-env/init-full-env)
       (coll/install!)
-      (require 'wandler.kmap 'wandler.relational)
-      ((resolve 'wandler.kmap/install!)) ((resolve 'wandler.relational/install!))
+      (require 'wandler.kmap 'wandler.surface.relational)
+      ((resolve 'wandler.kmap/install!)) ((resolve 'wandler.surface.relational/install!))
       (binding [a/*verbose* false]
         (eval '(ansatz.core/defn gbk [xs :- (List Nat)] (List Nat) (keys (group-by (fn [x] x) xs))))
         (eval '(ansatz.core/defn gbv [xs :- (List Nat)] (List (List Nat)) (vals (group-by (fn [x] x) xs)))))

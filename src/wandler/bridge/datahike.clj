@@ -28,7 +28,7 @@
    See `decorrelate` + the worked example in the test / [[architecture-and-lift-plan]]."
   (:require [ansatz.core :as a]
             [wandler.bridge :as bridge]
-            [wandler.plan :as plan]
+            [wandler.optimize.plan :as plan]
             [ansatz.kernel.env :as kenv]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]

@@ -4,8 +4,8 @@
    Nat.add (users write `+`, never Int.add). mapcat → List.flatMap. See
    [[pipelines-system-design]]."
   (:require [ansatz.core :as a]
-            [wandler.collections :as coll]
-            [wandler.relational :as rel]
+            [wandler.surface.collections :as coll]
+            [wandler.surface.relational :as rel]
             [wandler.test-env :as test-env]
             [clojure.test :refer [deftest is]]))
 

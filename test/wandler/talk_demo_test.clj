@@ -8,10 +8,10 @@
    Every assertion here is a talk punchline backed by a passing test. The kernel-certified facts (the
    filter→datahike pushdown, incremental ≡ batch) ride the already-proven laws; this just stages them."
   (:require [clojure.test :refer [deftest is testing]]
-            [wandler.live :as live]
+            [wandler.exec.live :as live]
             [wandler.bridge :as bridge]
             [wandler.bridge.datahike :as dh]
-            [wandler.rel-laws :as rl]
+            [wandler.laws.relational :as rl]
             [wandler.kmap :as kmap]
             [ansatz.core :as a]
             [wandler.test-env :as test-env]
@@ -84,5 +84,5 @@
   ;; to push constraints in. `live/flow` recognizes the relational operators and REFUSES to fake-incrementalize
   ;; an unknown one: it names it a BARRIER (runs as batch), rather than silently producing a wrong delta.
   (let [expand-err (fn [form] (try (macroexpand form) nil (catch Throwable e (str (.getMessage e) (some-> (.getCause e) .getMessage)))))]
-    (is (re-find #"(?i)barrier" (or (expand-err '(wandler.live/flow (join :cid :id) (call-external-service x))) ""))
+    (is (re-find #"(?i)barrier" (or (expand-err '(wandler.exec.live/flow (join :cid :id) (call-external-service x))) ""))
         "an opaque external call is a BARRIER — honestly flagged, not silently lifted (contrast datahike)")))

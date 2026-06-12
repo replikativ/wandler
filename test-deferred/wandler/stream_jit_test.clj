@@ -1,16 +1,16 @@
 (ns wandler.stream-jit-test
   "Rung 2 of the streaming ladder: the SAMPLE-BASED verified JIT over a live stream + the fork
-   substrate. `wandler.stream/jit-window` pulls a window from a live coalgebra (sampled on a FORK so
+   substrate. `wandler.exec.stream/jit-window` pulls a window from a live coalgebra (sampled on a FORK so
    the live system is untouched), MEASURES the pipeline's filter selectivities on it, and
    certified-REPLANS (optimize-measured). As the stream's distribution DRIFTS, the measured profile
    changes and the plan re-adapts — every window's plan kernel-certified ≡ the naive query, so results
-   never change. Also covers the `wandler.fork/Forkable` substrate (trivial atom-cell) and that the
-   optional `wandler.bridge.spindel` adapter loads with or without spindel. See wandler.stream,
-   wandler.fork, [[windowed-stream-coalgebra]]."
+   never change. Also covers the `wandler.exec.fork/Forkable` substrate (trivial atom-cell) and that the
+   optional `wandler.bridge.spindel` adapter loads with or without spindel. See wandler.exec.stream,
+   wandler.exec.fork, [[windowed-stream-coalgebra]]."
   (:require [clojure.test :refer [deftest is testing]]
             [ansatz.core :as a]
-            [wandler.stream :as stream]
-            [wandler.fork :as fork]
+            [wandler.exec.stream :as stream]
+            [wandler.exec.fork :as fork]
             [wandler.test-env :as test-env]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.expr :as e]

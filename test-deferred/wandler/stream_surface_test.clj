@@ -1,15 +1,15 @@
 (ns wandler.stream-surface-test
-  "Systematic tracing of infinite (coinductive) sources through the TYPE (wandler.stream-surface):
+  "Systematic tracing of infinite (coinductive) sources through the TYPE (wandler.surface.streams):
    `Strm A` is distinct from `List A`, so `(range)` / a passed-in `Strm` is detected by its type, and
    the verbs route — map stays a stream, take WINDOWS it to a List, reduce/filter over a raw stream are
    rejected (the productivity gate). `Strm.take_smap` certifies the window commutes; it runs over the
    infinite source forcing only the window."
   (:require [clojure.test :refer [deftest is testing]]
             [ansatz.core :as a]
-            [wandler.collections :as coll]
-            [wandler.edn :as edn]
+            [wandler.surface.collections :as coll]
+            [wandler.surface.edn :as edn]
             [wandler.gradual :as g]
-            [wandler.stream-surface :as ss]
+            [wandler.surface.streams :as ss]
             [wandler.test-env :as test-env]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.expr :as e]

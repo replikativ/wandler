@@ -3,10 +3,10 @@
    `Stream.take_smap` (mapping a stream then windowing = windowing then List.map), and an end-to-end
    demo where the windowed pipeline `sum (window n (smap double source))` is certified equal to
    `sum (map double (window n source))` AND executes over an INFINITE Clojure lazy seq `(range)` —
-   forcing only the window. See wandler.stream + [[architecture-and-lift-plan]]."
+   forcing only the window. See wandler.exec.stream + [[architecture-and-lift-plan]]."
   (:require [clojure.test :refer [deftest is testing]]
             [ansatz.core :as a]
-            [wandler.stream :as stream]
+            [wandler.exec.stream :as stream]
             [wandler.test-env :as test-env]
             [ansatz.kernel.env :as kenv]
             [ansatz.kernel.name :as name]

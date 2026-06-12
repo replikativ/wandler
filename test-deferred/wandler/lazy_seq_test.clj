@@ -7,7 +7,7 @@
    runtime sequence representation (lazy seq / vector / array) is a codegen backend. See
    [[pipelines-system-design]]."
   (:require [ansatz.core :as a]
-            [wandler.collections :as coll]
+            [wandler.surface.collections :as coll]
             [wandler.test-env :as test-env]
             [clojure.test :refer [deftest is]]))
 

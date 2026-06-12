@@ -5,7 +5,7 @@
    (take n …) makes an INFINITE lazy pipeline fully CONSUMABLE: fold over (take 5 …) of an
    infinite seq terminates. Closes the streaming story. See [[pipelines-system-design]]."
   (:require [ansatz.core :as a]
-            [wandler.collections :as coll]
+            [wandler.surface.collections :as coll]
             [wandler.test-env :as test-env]
             [clojure.test :refer [deftest is]]))
 

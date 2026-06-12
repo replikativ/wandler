@@ -6,7 +6,7 @@
    `conforms` half, verified. (Per-type key checkers sidestep the Value-returning-recursion
    gap; the runtime EDN↔Value boundary is the next layer.) See [[edn-core-formalization]]."
   (:require [ansatz.core :as a]
-            [wandler.edn :as edn]
+            [wandler.surface.edn :as edn]
             [wandler.test-env :as test-env]
             [ansatz.kernel.env :as kenv]
             [ansatz.kernel.name :as name]

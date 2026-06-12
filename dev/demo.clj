@@ -13,7 +13,7 @@
 (binding [a/*verbose* false]
   (a/init! "test-data/init-store" "init"))   ;; the full Lean Init env (~40ms, lazy store)
 (require '[wandler.core :as w]
-         '[wandler.rel-laws :as laws])
+         '[wandler.laws.relational :as laws])
 (w/install!)        ;; fills ansatz's three seams: surface verbs · optimizer hook · runtime lowering
 
 ;; ═══════════════════════════════════════════════════════════════════════════
@@ -87,5 +87,5 @@
 ;; ═══════════════════════════════════════════════════════════════════════════
 ;; The same logical pipeline reads as a batch job over List, an incremental
 ;; view over Z-sets (deltas with deletions, DBSP), or a windowed computation
-;; over an infinite stream — see wandler.zset / wandler.dbsp / wandler.stream
+;; over an infinite stream — see wandler.exec.zset / wandler.exec.dbsp / wandler.exec.stream
 ;; (each law in those algebras is kernel-proven the same way).

@@ -2,13 +2,13 @@
   "Dependent-type filter elimination: a filter whose predicate is provably constant
    over the element type is removed (always-true) or empties the pipeline
    (always-false), kernel-proven. Gated on an Init env."
-  (:require [wandler.refine :as refine]
+  (:require [wandler.surface.refine :as refine]
             [wandler.reducers.plan :as pl]
             [wandler.reducers :as r]
             [wandler.test-env :as test-env]
-            [wandler.malli :as malli]
+            [wandler.surface.malli :as malli]
             [ansatz.core :as a]
-            [wandler.records :as rec]
+            [wandler.surface.records :as rec]
             [ansatz.kernel.env :as env]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]
@@ -165,7 +165,7 @@
       (reset! a/ansatz-env kenv)
       (rec/install!)
       (binding [a/*verbose* false]
-        (eval '(wandler.records/def-record URPerson
+        (eval '(wandler.surface.records/def-record URPerson
                  [:map [:age [:and :int [:>= 18]]] [:score [:and :int [:>= 0]]]]))
         (eval '(ansatz.core/defn ur-bump [p :- URPerson] URPerson (update p :age Nat.succ))))
       (let [ci (env/lookup (a/env) (name/from-string "ur-bump"))
@@ -220,7 +220,7 @@
       (reset! a/ansatz-env kenv)
       (rec/install!)
       (binding [a/*verbose* false]
-        (eval '(wandler.records/def-record RPerson
+        (eval '(wandler.surface.records/def-record RPerson
                  [:map [:age [:and :int [:>= 18]]] [:score [:and :int [:>= 0]]]]))
         (eval '(ansatz.core/defn r-adult? [p :- RPerson] Bool (>= (:age p) 18))))
       (let [ci (env/lookup (a/env) (name/from-string "r-adult?"))
@@ -243,7 +243,7 @@
       (reset! a/ansatz-env kenv)
       (rec/install!)
       (binding [a/*verbose* false]
-        (eval '(wandler.records/def-record WPerson
+        (eval '(wandler.surface.records/def-record WPerson
                  [:map [:age [:and :int [:>= 18]]] [:score [:and :int [:>= 0]]]])))
       (is (true? (defok? '(ansatz.core/defn w-ok [p :- WPerson] WPerson (assoc p :age 30)))))
       (is (false? (defok? '(ansatz.core/defn w-bad [p :- WPerson] WPerson (assoc p :age 5)))))
@@ -261,7 +261,7 @@
       (reset! a/ansatz-env kenv)
       (rec/install!)
       (binding [a/*verbose* false]
-        (eval '(wandler.records/def-record CPerson
+        (eval '(wandler.surface.records/def-record CPerson
                  [:map [:age [:and :int [:>= 18]]] [:score [:and :int [:>= 0]]]])))
       (is (true? (rec/validate 'CPerson {:age 30 :score 5})))
       (is (false? (rec/validate 'CPerson {:age 5 :score 5})))         ; age < 18 fails

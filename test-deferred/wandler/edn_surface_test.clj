@@ -4,7 +4,7 @@
    primitives when the operand is a Value. Pipelines over `List Value` read like ordinary
    Clojure yet kernel-verify and run. See [[malli-value-refinement]] [[edn-core-formalization]]."
   (:require [ansatz.core :as a]
-            [wandler.edn :as edn]
+            [wandler.surface.edn :as edn]
             [wandler.stdlib :as std]
             [wandler.test-env :as test-env]
             [ansatz.kernel.env :as kenv]

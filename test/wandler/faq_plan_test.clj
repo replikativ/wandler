@@ -1,15 +1,15 @@
 (ns wandler.faq-plan-test
-  "The bridge from a SEMIRING query to the CERTIFIED kernel optimizer (`wandler.faq-plan`): a counting/sum
+  "The bridge from a SEMIRING query to the CERTIFIED kernel optimizer (`wandler.optimize.faq`): a counting/sum
    aggregating-join lowers to a kernel term, the optimizer applies its PROVEN Nat factorization laws (the
    pre-aggregated FAQ index `Map.foldl_join_sum_factor`) to a verified physical plan that EXECUTES — and
-   agrees with the runtime `wandler.semiring` FAQ engine. ONE query, TWO engines, ONE answer.
+   agrees with the runtime `wandler.inference.semiring` FAQ engine. ONE query, TWO engines, ONE answer.
    See [[programming-model-4-structures]], docs/PROGRAMMING_MODEL.md §13 step 1."
   (:require [clojure.test :refer [deftest is testing]]
             [ansatz.core :as a]
             [wandler.kmap :as km]
-            [wandler.rel-laws :as rl]
-            [wandler.semiring :as sr]
-            [wandler.faq-plan :as fp]
+            [wandler.laws.relational :as rl]
+            [wandler.inference.semiring :as sr]
+            [wandler.optimize.faq :as fp]
             [wandler.test-env :as test-env]))
 
 (defn- setup [f]

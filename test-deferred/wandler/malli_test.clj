@@ -1,5 +1,5 @@
 (ns wandler.malli-test
-  (:require [wandler.malli :as am]
+  (:require [wandler.surface.malli :as am]
             [ansatz.core :as a]
             [wandler.test-env :as test-env]
             [ansatz.kernel.expr :as e]

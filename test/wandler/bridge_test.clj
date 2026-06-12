@@ -5,9 +5,9 @@
    is needed here, proving Ansatz stays standalone."
   (:require [ansatz.core :as a]
             [wandler.bridge :as bridge]
-            [wandler.rel-laws :as rl]
+            [wandler.laws.relational :as rl]
             [wandler.kmap :as kmap]
-            [wandler.plan :as plan]
+            [wandler.optimize.plan :as plan]
             [wandler.test-env :as test-env]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]

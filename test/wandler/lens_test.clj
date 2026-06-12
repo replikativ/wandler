@@ -1,9 +1,9 @@
 (ns wandler.lens-test
-  "The backward/lens brick (wandler.lens): the certified product-lens round-trip laws + runtime lenses
+  "The backward/lens brick (wandler.inference.lens): the certified product-lens round-trip laws + runtime lenses
    that compose hierarchically — the well-behaved corner of inversion (PROGRAMMING_MODEL.md §12)."
   (:require [clojure.test :refer [deftest is testing]]
             [ansatz.core :as a]
-            [wandler.lens :as lens]
+            [wandler.inference.lens :as lens]
             [wandler.test-env :as test-env]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.env :as kenv]))

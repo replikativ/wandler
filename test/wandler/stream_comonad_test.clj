@@ -1,11 +1,11 @@
-(ns wandler.stream-comonad-test
-  "`Stream A := Nat → A` is a lawful COMONAD, proven in the kernel (`wandler.stream-comonad`): the
+(ns wandler.stream-test
+  "`Stream A := Nat → A` is a lawful COMONAD, proven in the kernel (`wandler.exec.stream`): the
    exponent/stream comonad `(extract, duplicate, map)` with the three comonad laws (counit-left,
    counit-right, coassociativity). Closes the literal \"not a comonad\" part of the comonad/∂ debt; the
    guarded/causal ▷-modality is a separate formal system, documented as such. See [[programming-model-4-structures]]."
   (:require [clojure.test :refer [deftest is testing]]
             [ansatz.core :as a]
-            [wandler.stream-comonad :as sc]
+            [wandler.exec.stream :as sc]
             [wandler.test-env :as test-env]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.env :as kenv]))
@@ -14,7 +14,7 @@
 (defn- setup [f]
   (when @test-env/init-full-env
     (reset! a/ansatz-env @test-env/init-full-env)
-    (sc/install!))
+    (sc/install-comonad!))
   (f))
 (clojure.test/use-fixtures :once setup)
 (defn- ready? [] (some? @test-env/init-full-env))

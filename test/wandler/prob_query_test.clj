@@ -12,8 +12,8 @@
 
    Pure runtime (the symbolic correctness rides the proven semiring laws; the numbers are the trusted WMC)."
   (:require [clojure.test :refer [deftest is testing]]
-            [wandler.semiring :as sr]
-            [wandler.dist :as d]))
+            [wandler.inference.semiring :as sr]
+            [wandler.inference.dist :as d]))
 
 (def ^:private all-edges
   {[1 2] {:p 0.9 :verified true}  [1 3] {:p 0.5 :verified true}

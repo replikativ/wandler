@@ -5,7 +5,7 @@
    aggregated per user, the |users|·|orders| product never built)."
   (:require [ansatz.core :as a]
             [wandler.optimize :as opt]
-            [wandler.rel-laws :as rl]
+            [wandler.laws.relational :as rl]
             [wandler.kmap :as kmap]
             [wandler.test-env :as test-env]
             [ansatz.kernel.expr :as e]

@@ -1,6 +1,6 @@
 (ns wandler.bridge
   "OPTIONAL α/γ bridge between external query engines (datahike, stratum, …) and the Ansatz kernel
-   IR, via the plan lens (wandler.plan). Ansatz has NO hard dependency on any engine — an engine is
+   IR, via the plan lens (wandler.optimize.plan). Ansatz has NO hard dependency on any engine — an engine is
    described by an adapter map registered with `register-engine!`, and the optional adapter
    namespaces (ansatz.bridge.<engine>) `requiring-resolve` the engine, so if it isn't on the
    classpath the adapter simply doesn't load and the bridge stays empty.
@@ -23,7 +23,7 @@
      :lift     (fn [engine-ir] → kernel term) — α: engine IR → ansatz kernel IR (a CIC term)
      :lower    (fn [plan] → exec-form)         — γ: ansatz plan → engine physical executor call
      :estimate (fn [plan] → {pred→rate})    — optional: feeds optimize's :selectivity hook"
-  (:require [wandler.plan :as plan]
+  (:require [wandler.optimize.plan :as plan]
             [wandler.optimize :as opt]))
 
 (defonce ^:private engines (atom {}))

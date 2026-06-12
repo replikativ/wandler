@@ -36,7 +36,7 @@ transforms and optimizes.**
 
 ;; relational re-planning, certified per plan: install the PROVEN law library,
 ;; and an O(n·m) membership scan re-plans to a build-once hash-index semijoin
-(require '[wandler.rel-laws :as laws])
+(require '[wandler.laws.relational :as laws])
 (laws/install!)
 (a/defn only-known [xs :- (List Nat), ys :- (List Nat)] (List Nat)
   (filter (fn [x] (member x ys)) xs))
@@ -90,16 +90,17 @@ certificate for fork-join), DBSP increment laws, Z-set group laws.
 
 ## Layout (v0.1 core)
 
-| namespace(s) | role |
+| prefix | role |
 |---|---|
-| `wandler.core` | `install!` (the three seams), `explain`, `plan`, the measure→replan loop |
-| `wandler.collections` · `wandler.records` · `wandler.relational` · `wandler.kmap` | the Clojure surface → kernel terms |
-| `wandler.optimize` (+ `egraph`) · `wandler.rel-laws` · `wandler.plan` · `wandler.faq-plan` | the certified cost-directed optimizer + proven law library |
-| `wandler.runtime` | the codegen seam: unboxed `long[]` scans, monoid-licensed parallel fold, hash-map joins |
-| `wandler.reducers*` | reducer/transducer fusion algebra |
-| `wandler.zset` · `wandler.dbsp*` · `wandler.stream*` · `wandler.mode` | incremental (DBSP) + stream execution; the mode lattice |
-| `wandler.semiring` · `wandler.dist` · `wandler.wmc` · `wandler.giry` · `wandler.lens` | the inference layer (semiring readings of the same core) |
+| `wandler.core` | the front door: `install!` (the three seams), `explain`/`plan`, the measure→replan loop |
+| `wandler.surface.*` | SEAM 1 — the Clojure verb vocabulary → kernel terms (collections · records · relational · edn · streams · malli · refine) |
+| `wandler.optimize.*` | SEAM 2 — `certify` (the kernel gate) · `cost` (the resource model) · `physical` (plan drivers) · `egraph` · `plan`/`faq` |
+| `wandler.laws.*` | the proven law library (relational · proofs · dist) — one dependency DAG, strict admission |
+| `wandler.runtime` · `wandler.algebra` | SEAM 3 — lowering (unboxed scans, hash joins) + the law-gated licences (parallel monoid fold) |
+| `wandler.exec.*` | the three verified paths: batch is implicit; `zset`/`dbsp*` (incremental) · `stream` (windows/comonad) · `live`/`fork` (push/JIT) · `mode` (the lattice) |
+| `wandler.inference.*` | semiring readings of the same core (semiring · dist · wmc · giry · lens) |
 | `wandler.bridge.*` | external engine adapters (datahike · spindel · stratum) — optional deps |
+| `wandler.kmap` · `wandler.reducers*` · `wandler.gradual` · `wandler.regex` · `wandler.verified` | the verified Map · the (deferred) reducer calculus · gradual UI · regex planning · transducer surface |
 
 See [`docs/CORE.md`](docs/CORE.md) for the architecture spec.
 

@@ -10,7 +10,7 @@
      • datahike (index engine) is great at PATTERN-MATCHING facts — its AVET index turns `status=:active`
        into a direct lookup. → push the `:active` predicate DOWN into datahike (streaming → query).
      • the streaming engine is great at AGGREGATES — the Σ-by-customer is a semiring sum-product (the same
-       FAQ machinery as `wandler.semiring/q`). datahike doesn't aggregate well; keep it in the stream.
+       FAQ machinery as `wandler.inference.semiring/q`). datahike doesn't aggregate well; keep it in the stream.
 
    Direction 1 (streaming → query): a filter that sits ABOVE a datahike scan is pushed INTO the scan, so
      datahike's index does it and returns only matching datoms.  (Map.filter_join_pushdown, CERTIFIED.)
@@ -24,7 +24,7 @@
             [wandler.bridge :as bridge]
             [wandler.bridge.datahike :as dh]
             [wandler.optimize :as opt]
-            [wandler.rel-laws :as rl]
+            [wandler.laws.relational :as rl]
             [wandler.kmap :as kmap]
             [wandler.test-env :as test-env]
             [ansatz.kernel.expr :as e]

@@ -2,10 +2,10 @@
   "The DBSP stream-operator algebra (rung 3): streams = Nat→Int with delay/D/I/incremental, the
    fundamental theorems D∘I=id and I∘D=id, and the chain rule (Q1∘Q2)^Δ=Q1^Δ∘Q2^Δ — all kernel-
    certified. Plus a concrete reduction check that D and I actually compute as inverses on a sample
-   stream. See wandler.dbsp-stream, ../dbsp-theory."
+   stream. See wandler.exec.dbsp-stream, ../dbsp-theory."
   (:require [clojure.test :refer [deftest is testing]]
             [ansatz.core :as a]
-            [wandler.dbsp-stream :as ds]
+            [wandler.exec.dbsp-stream :as ds]
             [wandler.test-env :as test-env]
             [ansatz.kernel.env :as kenv]
             [ansatz.kernel.name :as name]

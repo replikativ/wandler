@@ -5,7 +5,7 @@
    elaborates the head before its args, so an untyped lambda arg can't NPE-mask the cause).
    See [[pipelines-system-design]]."
   (:require [ansatz.core :as a]
-            [wandler.collections :as coll]
+            [wandler.surface.collections :as coll]
             [wandler.test-env :as test-env]
             [clojure.test :refer [deftest is]]))
 

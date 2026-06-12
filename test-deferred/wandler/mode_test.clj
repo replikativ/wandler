@@ -1,14 +1,14 @@
 (ns wandler.mode-test
-  "The MODE LATTICE + ∂ pass (wandler.mode): one surface pipeline mixing BATCH / DIFFERENTIAL / ASYNC,
+  "The MODE LATTICE + ∂ pass (wandler.exec.mode): one surface pipeline mixing BATCH / DIFFERENTIAL / ASYNC,
    organized by a 2-axis (×clock) mode lattice, with the ∂ pass lowering a plan-lens into the Z-set
    incremental engine + a kernel certificate. Grounded in Uustalu–Vene comonadic dataflow + distributive
    laws, Bahr modal FRP, and Rhine type-level clocks (../rhine → ../spindel)."
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.string :as str]
             [ansatz.core :as a]
-            [wandler.mode :as m]
-            [wandler.live :as live]
-            [wandler.zset :as zs]
+            [wandler.exec.mode :as m]
+            [wandler.exec.live :as live]
+            [wandler.exec.zset :as zs]
             [wandler.test-env :as test-env]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]
@@ -162,8 +162,8 @@
   ;; one type-driven front door produces a runnable in every mode.
   (when (ready?)
     ((requiring-resolve 'wandler.kmap/install!))
-    ((requiring-resolve 'wandler.rel-laws/install!))
-    ((requiring-resolve 'wandler.collections/install!))
+    ((requiring-resolve 'wandler.laws.relational/install!))
+    ((requiring-resolve 'wandler.surface.collections/install!))
     (let [natT (e/const' (nm "Nat") [])
           listNat (e/app (e/const' (nm "List") [z]) natT)
           xs (e/fvar 1)
@@ -268,7 +268,7 @@
 (deftest value-pipeline-edn-aligned
   (when (ready?)
     (testing "EDN keyword-maps flow through the certified incremental engine over the kernel-native Value rep"
-      ((requiring-resolve 'wandler.edn/install-core!))
+      ((requiring-resolve 'wandler.surface.edn/install-core!))
       (let [ValueT (e/const' (nm "Value") [])
             prodVV (e/app* (e/const' (nm "Prod") [z z]) ValueT ValueT)
             vkw    (fn [s] (e/app (e/const' (nm "Value.vkw") []) (e/lit-str s)))

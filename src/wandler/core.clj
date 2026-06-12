@@ -14,9 +14,9 @@
   (:require [ansatz.core :as a]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]
-            [wandler.collections :as coll]
-            [wandler.records :as rec]
-            [wandler.relational :as rel]
+            [wandler.surface.collections :as coll]
+            [wandler.surface.records :as rec]
+            [wandler.surface.relational :as rel]
             [wandler.kmap :as kmap]
             [wandler.runtime :as rt]
             [wandler.optimize :as opt]))

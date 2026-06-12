@@ -1,11 +1,11 @@
 (ns wandler.dist-test
-  "FinSet / FinDist (wandler.dist) — the monad view of the semiring's `Rel A S`. Demonstrates: (1) a FinDist
+  "FinSet / FinDist (wandler.inference.dist) — the monad view of the semiring's `Rel A S`. Demonstrates: (1) a FinDist
    probabilistic program (Bernoulli edges + Boolean reachability) whose marginal AGREES with the provenance
    semiring → WMC path (same answer, different route); (2) FinSet nondeterminism via the set monad; (3) the
    monad laws for both instances. All pure runtime — the symbolic correctness lives in the proven semiring."
   (:require [clojure.test :refer [deftest is testing]]
-            [wandler.dist :as d]
-            [wandler.semiring :as sr]))
+            [wandler.inference.dist :as d]
+            [wandler.inference.semiring :as sr]))
 
 ;; the joint FinDist of independent Bernoulli draws (a vector of outcomes), built by monadic bind
 (defn- joint [ps]

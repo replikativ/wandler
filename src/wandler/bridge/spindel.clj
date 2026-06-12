@@ -1,14 +1,14 @@
 (ns wandler.bridge.spindel
   "OPTIONAL Forkable over a live spindel FRP system — the O(1) copy-on-write fork the streaming JIT
    speculates on for an EFFECTFUL source (a running spindel graph), vs. the trivial value-copy
-   `wandler.fork/atom-cell` used for a pure coalgebra. Follows the wandler.bridge doctrine: NO hard
+   `wandler.exec.fork/atom-cell` used for a pure coalgebra. Follows the wandler.bridge doctrine: NO hard
    dependency. Every spindel fn is `requiring-resolve`d, so this namespace LOADS with or without
    spindel on the classpath — absent spindel just makes `detect?` false and `spindel-cell` throw a
    clear error. Put ../spindel on the classpath via the `:spindel` deps alias to use it.
 
    Maps onto spindel's `org.replikativ.spindel.engine.context`:
      snapshot ← snapshot-context   fork ← fork-context (OverlayBackend, O(1) CoW)   restore! ← restore-snapshot"
-  (:require [wandler.fork :as fork]))
+  (:require [wandler.exec.fork :as fork]))
 
 (def ^:private ctx-ns "org.replikativ.spindel.engine.context")
 (defn- rr [fn-name] (try (requiring-resolve (symbol ctx-ns fn-name)) (catch Throwable _ nil)))
@@ -26,7 +26,7 @@
   (current  [_]   @ctx-atom))
 
 (defn spindel-cell
-  "Wrap a live spindel ExecutionContext as an `wandler.fork/Forkable`. fork = spindel's O(1) CoW
+  "Wrap a live spindel ExecutionContext as an `wandler.exec.fork/Forkable`. fork = spindel's O(1) CoW
    OverlayBackend fork; snapshot/restore = spindel's serializable ImmutableBackend. Requires
    ../spindel on the classpath (else throws)."
   [ctx]

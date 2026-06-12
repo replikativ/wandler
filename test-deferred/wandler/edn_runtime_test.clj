@@ -6,7 +6,7 @@
    are exercised at runtime and differential-tested against `clojure.core/get` and (when present)
    `malli.core/validate`. See [[edn-core-formalization]] / [[pipelines-system-design]]."
   (:require [ansatz.core :as a]
-            [wandler.edn :as edn]
+            [wandler.surface.edn :as edn]
             [wandler.test-env :as test-env]
             [clojure.test :refer [deftest is]]))
 

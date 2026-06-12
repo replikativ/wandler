@@ -1,7 +1,7 @@
 (ns wandler.plan-test
-  "The plan LENS (wandler.plan): a typed structured VIEW of the relational/SOAC fragment of a kernel
+  "The plan LENS (wandler.optimize.plan): a typed structured VIEW of the relational/SOAC fragment of a kernel
    term — the shared interface for explain/cost and the α/γ bridge to datahike/stratum."
-  (:require [wandler.plan :as plan]
+  (:require [wandler.optimize.plan :as plan]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.level :as lvl]

@@ -5,12 +5,12 @@
      LINEAR   count∘filter  — filter_count_incr.
      BILINEAR count∘join    — join_count_incr, the DIFFERENTIAL JOIN (semi-naive: join only the new
               build tuples against the fixed probe, accumulate). count(join xs (⋃ dys_i)) = Σ count(join xs dys_i).
-   See wandler.dbsp + [[windowed-stream-coalgebra]]."
+   See wandler.exec.dbsp + [[windowed-stream-coalgebra]]."
   (:require [clojure.test :refer [deftest is testing]]
             [ansatz.core :as a]
             [wandler.kmap :as km]
-            [wandler.rel-laws :as rl]
-            [wandler.dbsp :as dbsp]
+            [wandler.laws.relational :as rl]
+            [wandler.exec.dbsp :as dbsp]
             [wandler.test-env :as test-env]
             [ansatz.kernel.env :as kenv]
             [ansatz.kernel.name :as name]

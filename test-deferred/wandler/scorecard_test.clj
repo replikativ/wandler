@@ -7,9 +7,9 @@
   (:require [clojure.test :refer [deftest is testing]]
             [ansatz.core :as a]
             [wandler.kmap :as km]
-            [wandler.rel-laws :as rl]
-            [wandler.collections :as coll]
-            [wandler.relational]
+            [wandler.laws.relational :as rl]
+            [wandler.surface.collections :as coll]
+            [wandler.surface.relational]
             [wandler.test-env :as test-env]))
 
 (defn- setup [f]

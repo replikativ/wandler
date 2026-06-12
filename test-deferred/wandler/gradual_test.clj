@@ -5,7 +5,7 @@
   (:require [clojure.test :refer [deftest is testing]]
             [ansatz.core :as a]
             [wandler.kmap :as km]
-            [wandler.rel-laws :as rl]
+            [wandler.laws.relational :as rl]
             [wandler.gradual :as g]
             [wandler.test-env :as test-env]
             [ansatz.kernel.name :as name]

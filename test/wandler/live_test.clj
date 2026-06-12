@@ -1,10 +1,10 @@
 (ns wandler.live-test
-  "The LIVE async executor (wandler.live): push-driven certified incremental views wired into a reactive
-   DATAFLOW GRAPH. Pure runtime over wandler.zset — no kernel env needed; the certificates live in the
+  "The LIVE async executor (wandler.exec.live): push-driven certified incremental views wired into a reactive
+   DATAFLOW GRAPH. Pure runtime over wandler.exec.zset — no kernel env needed; the certificates live in the
    operators (Zproduct_product_rule for the join, Mode.diff_async_dist for the linear stages)."
   (:require [clojure.test :refer [deftest is testing]]
-            [wandler.live :as live]
-            [wandler.zset :as zs]))
+            [wandler.exec.live :as live]
+            [wandler.exec.zset :as zs]))
 
 (deftest fanout-dataflow-graph
   (testing "a reactive DAG: orders ⋈ customers fans out to premium-revenue AND count, both incremental"
@@ -62,9 +62,9 @@
 
 (deftest flow-rejects-non-incrementalizable
   (testing "the coach flags what can't be incrementalized (barriers), instead of silently doing the wrong thing"
-    (is (re-find #"group" (expand-err '(wandler.live/flow (join :cid :id) (reduce max 0))))
+    (is (re-find #"group" (expand-err '(wandler.exec.live/flow (join :cid :id) (reduce max 0))))
         "a non-group reduce (max under deletion) is rejected with guidance")
-    (is (re-find #"BARRIER" (expand-err '(wandler.live/flow (join :cid :id) (frobnicate x))))
+    (is (re-find #"BARRIER" (expand-err '(wandler.exec.live/flow (join :cid :id) (frobnicate x))))
         "an unrecognized operator is flagged as an incremental barrier")))
 
 (deftest live-equals-batch

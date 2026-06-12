@@ -4,8 +4,8 @@
    the fast executor; they must agree on the regular subset). See [[regex-planning-spike]]."
   (:require [ansatz.core :as a]
             [wandler.regex :as re]
-            [wandler.edn :as edn]
-            [wandler.collections :as coll]
+            [wandler.surface.edn :as edn]
+            [wandler.surface.collections :as coll]
             [wandler.test-env :as test-env]
             [ansatz.kernel.env :as kenv]
             [ansatz.kernel.name :as name]
