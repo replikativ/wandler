@@ -1,61 +1,119 @@
 # Wandler — a verified data-transformation runtime
 
-> *Wandler* (German: **transducer / converter**) — the runtime layer of the Ansatz system. You write
-> ordinary Clojure data pipelines; they are **fused, optimized, and certified correct by a CIC kernel**,
-> then run as **batch, incremental, or async** depending on the source type.
+> *Wandler* (German: **transducer / converter**). You write ordinary Clojure data
+> pipelines; they are elaborated to CIC kernel terms, **optimized by certified
+> rewriting**, and lowered to fast Clojure. Every adopted rewrite carries a kernel
+> proof `optimized ≡ original` — *translation validation*, checked per program by
+> the same kernel that admits Mathlib. The optimizer's search is untrusted; only
+> the certificate is. A bad rewrite is rejected, never miscompiled.
 
-Wandler is built on [`ansatz`](../ansatz) — the Lean4-in-Clojure proof kernel + DSL. **Ansatz formulates and
-proves; Wandler transforms and optimizes.**
-
-## What you get
-
-- **Write normal Clojure** — `(a/defn revenue [orders :- (List (Prod Nat Nat))] Nat (reduce + 0 (map second (filter ... orders))))`.
-- **Every optimization is certified** — fusion (`map∘filter` → one pass), relational pushdown, join planning,
-  aggregation-through-join — each kernel-checked `optimized ≡ naive`, *per program* (translation validation, not a fixed rule set).
-- **The type chooses the mode** — `List` → batch fusion, `Zset` → incremental (DBSP), `Strm` → async, `Datahike.DB` → relational.
-- **The semiring chooses the domain** — counting / shortest-path / datalog reachability / provenance / probability (`ansatz.semiring`/`dist`/`wmc`).
+Wandler is built on [`ansatz`](https://github.com/replikativ/ansatz) — the
+Lean4-in-Clojure proof kernel + DSL. **Ansatz formulates and proves; Wandler
+transforms and optimizes.**
 
 ## Quickstart
 
 ```clojure
-(require '[ansatz.core :as a] '[ansatz.stdlib :as std])
+(require '[ansatz.core :as a])
+(a/init! "test-data/init-store" "init")  ; the Lean Init env (lazy PSS store, ~40ms)
+(require '[wandler.core :as w])
+(w/install!)                             ; fill ansatz's three seams (surface · optimizer · runtime)
 
-(a/init-store! "init")     ; full Lean Init — the optimizer's relational laws live here
-                           ; (build once: ../ansatz/scripts/setup-init.sh)
-(std/install!)             ; install the verified collection/relational laws
-
+;; ordinary Clojure — verified, optimized, certified, compiled
 (a/defn big-squares [xs :- (List Nat)] (List Nat)
   (map (fn [x] (* x x)) (filter (fn [x] (< 2 x)) xs)))
 
-(big-squares [1 2 3 4 5])  ; => (9 16 25)
-(a/explain "big-squares")  ; => {:verified? true, :rewrites [List.map_filter_filterMap]}   ← fused to one pass, proven equal
+(big-squares '(1 2 3 4 5))   ;; => (9 16 25)
+(w/explain "big-squares")
+;; => {:verified? true, :changed? true,
+;;     :rewrites ["List.map_filter_filterMap"],
+;;     :stages-before ["map" "filter"], :stages-after ["filterMap"],
+;;     :passes-before 2, :passes-after 1}
+
+;; transducers are the same pipeline IR in another spelling
+(a/defn sum-big [xs :- (List Nat)] Nat
+  (transduce (comp (filter (fn [x] (< 2 x))) (map (fn [x] (* x x)))) + 0 xs))
+
+;; relational re-planning, certified per plan: install the PROVEN law library,
+;; and an O(n·m) membership scan re-plans to a build-once hash-index semijoin
+(require '[wandler.rel-laws :as laws])
+(laws/install!)
+(a/defn only-known [xs :- (List Nat), ys :- (List Nat)] (List Nat)
+  (filter (fn [x] (member x ys)) xs))
+(w/explain "only-known")
+;; => {:verified? true, :rewrites ["List.elem_filter_eq_index_probe"], …}
+
+;; the measure→replan loop (the verified JIT): selectivities measured on real
+;; data feed the cost model; the adapted plan is re-certified before it runs
+(w/optimize-measured (a/env) term sample-data :compare? true)
 ```
 
-## Layout
+See [`dev/demo.clj`](dev/demo.clj) for the full walk-through (fusion → transducer
+re-execution → certified re-planning → batch/incremental/stream modes).
+
+## The stack
+
+```
+   Clojure surface             (a/defn revenue [orders :- (List …)] …
+   map/filter/reduce/             (reduce + 0 (map :amt (filter premium? orders))))
+   group-by/join/records/             │
+   transducers                        │  ELABORATE   (SEAM 1 — term/macro elaborator registries,
+                                      ▼               lean4's elab_rules / macro_rules)
+   kernel IR = CIC term        List.foldl + 0 (List.map amt (List.filter premium? orders))
+   (the term IS the plan)             │
+                                      │  OPTIMIZE    (SEAM 2 — a/optimize-hook:
+                                      │               simp fusion + cost search + relational laws)
+                                      ▼
+                              term′ + PROOF: term = term′   ◀── the kernel CERTIFIES (yes/no)
+                                      │
+                                      │  LOWER       (SEAM 3 — a/codegen-registry:
+                                      ▼               unboxed scans, parallel monoid fold, hash joins)
+   fast Clojure                an ordinary fn
+```
+
+Integration with ansatz is **three additive seams** — no fork, no carve. ansatz
+alone still runs base `a/defn`; ansatz + wandler is the full pipeline.
+
+## Trust ledger
+
+| level | meaning | enforced by |
+|---|---|---|
+| **L0** | kernel-certified — an algebraic law proven as a CIC term | the kernel's `check` (the path that admits Mathlib) |
+| **L1** | sound by construction — codegen of a proven-equal term | the `define-verified` invariant |
+| **L2** | trusted oracle — numeric/external, *not* a CIC proof | WMC counts, measured selectivity profiles, external engine planners |
+
+Highlights at L0: pipeline fusion (`map∘filter → filterMap`, fold fusion),
+relational pushdown + semijoin (`List.elem_filter_eq_index_probe`),
+aggregation-through-join factorization, the parallel-fold licence
+(`Nat.add_assoc` + identities — the associativity proof *is* the soundness
+certificate for fork-join), DBSP increment laws, Z-set group laws.
+
+## Layout (v0.1 core)
 
 | namespace(s) | role |
 |---|---|
-| `ansatz.collections` · `ansatz.records` · `ansatz.relational` · `ansatz.edn` | the Clojure surface → kernel terms |
-| `ansatz.optimize` (+ `egraph`) · `ansatz.rel-laws` · `ansatz.kmap` · `ansatz.plan` · `ansatz.faq-plan` | the certified cost-directed optimizer |
-| `ansatz.mode` · `ansatz.live` · `ansatz.zset` · `ansatz.dbsp*` · `ansatz.stream*` · `ansatz.fork` | incremental + async execution |
-| `ansatz.semiring` · `ansatz.dist` (+ `laws`) · `ansatz.wmc` (+ `logicng`) · `ansatz.giry` · `ansatz.lens` | the inference layer (FinSet/FinDist + WMC) |
-| `ansatz.bridge.*` (datahike · spindel · stratum) | external engine adapters |
-| `ansatz.malli` · `ansatz.refine` · `ansatz.gradual` · `ansatz.reducers*` | malli bridge · refinement · gradual UI · reducer fusion |
+| `wandler.core` | `install!` (the three seams), `explain`, `plan`, the measure→replan loop |
+| `wandler.collections` · `wandler.records` · `wandler.relational` · `wandler.kmap` | the Clojure surface → kernel terms |
+| `wandler.optimize` (+ `egraph`) · `wandler.rel-laws` · `wandler.plan` · `wandler.faq-plan` | the certified cost-directed optimizer + proven law library |
+| `wandler.runtime` | the codegen seam: unboxed `long[]` scans, monoid-licensed parallel fold, hash-map joins |
+| `wandler.reducers*` | reducer/transducer fusion algebra |
+| `wandler.zset` · `wandler.dbsp*` · `wandler.stream*` · `wandler.mode` | incremental (DBSP) + stream execution; the mode lattice |
+| `wandler.semiring` · `wandler.dist` · `wandler.wmc` · `wandler.giry` · `wandler.lens` | the inference layer (semiring readings of the same core) |
+| `wandler.bridge.*` | external engine adapters (datahike · spindel · stratum) — optional deps |
 
-> Note: the namespaces are currently under the shared `ansatz.*` prefix (additive split from the monorepo);
-> a rename to `wandler.*` is a possible future cleanup.
+See [`docs/CORE.md`](docs/CORE.md) for the architecture spec.
 
-See [`../ansatz/docs/PROGRAMMING_MODEL.md`](../ansatz/docs/PROGRAMMING_MODEL.md) for the full programming model.
+## Status
 
-## Optional features (deps aliases)
-
-- `:logicng` — pure-JVM weighted-model-counting backend (`ansatz.wmc.logicng`).
-- `:spindel` — live FRP async substrate (`ansatz.bridge.spindel`).
-- `:datahike` — live datahike engine for the bridge boundary property tests.
+v0.1 — first public cut, fix-forwarded onto ansatz's unified (fvar/metavar)
+elaborator and the three runtime seams. The core path (collections + records +
+relational surface, certified optimizer + proven law library, runtime lowering,
+`explain`/`plan`) is exercised end-to-end; the research tiers (EDN dynamic data,
+modes, inference, bridges) are ported and compile but are pre-release surface.
 
 ## Tests
 
 ```
-clj -M:test                 # the full verified-runtime suite (needs the full Init store, ../ansatz/test-data/init-store)
+clj -M:test                 # needs the full Init store at test-data/init-store
 clj -M:test:logicng         # + the LogicNG WMC path
 ```
