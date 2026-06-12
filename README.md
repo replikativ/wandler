@@ -106,15 +106,18 @@ See [`docs/CORE.md`](docs/CORE.md) for the architecture spec.
 
 ## Status
 
-v0.1 — first public cut, fix-forwarded onto ansatz's unified (fvar/metavar)
-elaborator and the three runtime seams. The core path — collections + records +
-relational surface, certified optimizer + proven law library, runtime lowering,
-`explain`/`plan` and the measure→replan loop — is suite-covered and green
-(joins, semijoin re-planning, aggregation factorization, reducer fusion, zset/
-DBSP/stream algebras, kmap, semiring/dist/wmc). Quarantined in
-[`test-deferred/`](test-deferred/) for v0.2: the EDN dynamic-data tier, regex,
-mode/stream surface routing, the Float/`def-record` primitive tier, and a few
-elaboration-breadth verbs (`some->`, `str`/`clojure.string` ops).
+v0.2 — the cohesion release ([`docs/COHESION_AUDIT.md`](docs/COHESION_AUDIT.md)):
+role-prefixed layout, the optimizer split (certify/cost/physical), the
+`wandler.algebra` licence registry, one stream home, `mode/execute` (the type
+picks the lowering — batch fuse / pull-incremental / push live graph), the
+vocabulary as data ([`docs/SURFACE.md`](docs/SURFACE.md) is generated from it),
+and the tier revival: mode, streams-JIT, EDN core (vcount via lean4-style
+data-typed measures), records with refined-field writes, Option narrowing
+(`if-let`/`some->`), strings, Float literals, type-directed comparisons.
+Suite: 251 tests / 1074 assertions, green. [`test-deferred/`](test-deferred/)
+documents the remaining quarantine — most of it now passes standalone and is
+blocked on a shared test-isolation fixture (cross-namespace registry/env
+pollution in the single-JVM runner), not per-test bugs.
 
 ## Tests
 

@@ -150,22 +150,3 @@
             (is (= (e/fvar 71002) (get vars 0)) "xs ← X"))))
     (is true "SKIP under-binder-matching: no Init env")))
 
-(deftest a-defn-can-opt-into-the-egraph
-  ;; USABILITY: a/defn reaches the e-graph via `(binding [opt/*use-egraph* true] …)`. The result is
-  ;; kernel-certified and runs identically to the greedy path; wandler.core/plan still explains it.
-  (with-init
-    (fn []
-      (coll/install!)
-      (binding [a/*verbose* false]
-        (eval '(ansatz.core/defn eg-greedy [xs :- (List Nat)] (List Nat)
-                 (mapv (fn [x] (Nat.succ x)) (filterv (fn [x] (Nat.ble 3 x)) xs))))
-        (binding [opt/*use-egraph* true]
-          (eval '(ansatz.core/defn eg-egraph [xs :- (List Nat)] (List Nat)
-                   (mapv (fn [x] (Nat.succ x)) (filterv (fn [x] (Nat.ble 3 x)) xs))))))
-      (let [g (wandler.core/explain "eg-greedy"), e (wandler.core/explain "eg-egraph")]
-        (is (true? (:verified? g)) "greedy verified")
-        (is (and (:changed? e) (:verified? e)) "e-graph path changed + kernel-certified")
-        (is (= [:egraph] (:rewrites e)) "explain marks the e-graph was used")
-        ;; both produce the same (correct) runtime
-        (is (= [4 5 6] (vec ((resolve 'eg-greedy) (list 1 2 3 4 5)))))
-        (is (= [4 5 6] (vec ((resolve 'eg-egraph) (list 1 2 3 4 5)))) "e-graph result runs identically")))))

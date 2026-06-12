@@ -17,6 +17,10 @@
 
 ;; deferred: the EDN/Value tier (see test-deferred/README.md)
 
+(defn- ready? [] (some? @test-env/init-full-env))
+(defn- nm [s] (name/from-string s))
+(def ^:private z lvl/zero)
+
 (deftest value-pipeline-edn-aligned
   (when (ready?)
     (testing "EDN keyword-maps flow through the certified incremental engine over the kernel-native Value rep"

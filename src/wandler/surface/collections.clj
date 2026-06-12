@@ -446,6 +446,10 @@
 (defn- thread-last [x forms]
   (reduce (fn [acc form] (if (seq? form) (concat form [acc]) (list form acc))) x forms))
 
+(defn- not-elaborator [est args]
+  ;; (not x) → Bool.not x (Bool is the runtime truth carrier in verified bodies)
+  (e/app (e/const' (nm "Bool.not") []) (api/elab est (first args))))
+
 (defn- inc-elaborator [est args]
   ;; (inc x) → Nat.succ x  (Int via type dispatch when Int ops land in Init)
   (e/app (e/const' (nm "Nat.succ") []) (api/elab est (first args))))
@@ -460,6 +464,7 @@
   []
   (api/register-elaborator! '-> (fn [args] (thread-first (first args) (rest args))))
   (api/register-elaborator! '->> (fn [args] (thread-last (first args) (rest args))))
+  (api/register-term-elaborator! 'not not-elaborator)
   (api/register-term-elaborator! 'inc inc-elaborator)
   (api/register-term-elaborator! 'dec dec-elaborator)
   (api/register-term-elaborator! 'count count-elaborator)
