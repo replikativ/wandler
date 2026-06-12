@@ -147,7 +147,7 @@
 (defn- field-index [fields k]
   (first (keep-indexed (fn [i f] (when (= f k) i)) fields)))
 
-(declare refined-field-spec discharge-refined discharge-refined-update)
+(declare refined-field-spec discharge-refined discharge-refined-update coerce-to-carrier struct-field-types)
 
 (defn- pipeline-state
   "Fold an assoc/update receiver chain into {:ctor :tname :fields :vals}, where
@@ -167,7 +167,8 @@
           (throw (ex-info (str (name op) ": unknown field :" k " on " tname) {:fields fields})))
         (case op
           assoc (assoc-in st [:vals idx]
-                          (let [v (api/elab est (nth form 3))]
+                          (let [v0 (api/elab est (nth form 3))
+                                v (coerce-to-carrier env (nth (struct-field-types env tname) idx nil) v0)]
                             ;; writing a refined field discharges its predicate
                             (if-let [spec (refined-field-spec env tname idx)]
                               (discharge-refined spec v)
@@ -278,6 +279,22 @@
   [env tname]
   (loop [t (.type (kenv/lookup env (name/from-string (str tname ".mk")))) acc []]
     (if (e/forall? t) (recur (e/forall-body t) (conj acc (e/forall-type t))) acc)))
+
+(defn- coerce-to-carrier
+  "Coerce a written value to the field's CARRIER type: a Nat literal written into an
+   Int(-refined) field lifts via Int.ofNat (the elaborator types bare literals as Nat;
+   the field decides). Other values pass through."
+  [env ftype v]
+  (let [unf (if (and ftype (e/const? ftype))
+              (try (.value (kenv/lookup env (e/const-name ftype))) (catch Throwable _ ftype))
+              ftype)
+        [h args] (when unf (e/get-app-fn-args unf))
+        carrier (if (and h (e/const? h) (= "Subtype" (name/->string (e/const-name h))) (= 2 (count args)))
+                  (nth args 0) unf)
+        [ch _] (when carrier (e/get-app-fn-args carrier))]
+    (if (and (e/lit-nat? v) ch (e/const? ch) (= "Int" (name/->string (e/const-name ch))))
+      (e/app (e/const' (name/from-string "Int.ofNat") []) v)
+      v)))
 
 (defn- refined-field-spec
   "If field `idx` of `tname` is a `[:>= k]` refinement `{v:Nat // k≤v}` (after

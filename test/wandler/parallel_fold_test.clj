@@ -51,12 +51,12 @@
         ;; wrong identity: + with init 1 is NOT the monoid identity → stays sequential
         (eval '(ansatz.core/defn pf-sum1 [xs :- (List Nat)] Nat (reduce + 1 xs))))
       ;; (1) codegen: proven monoids → apfoldl; non-monoid / wrong-identity → afoldl
-      (is (true?  (emits? 'ansatz.core/apfoldl "pf-sum"))    "sum monoid → parallel apfoldl")
-      (is (true?  (emits? 'ansatz.core/apfoldl "pf-prod"))   "product monoid → parallel apfoldl")
-      (is (true?  (emits? 'ansatz.core/apfoldl "pf-sumdbl")) "fused sum-of-map → parallel apfoldl")
-      (is (true?  (emits? 'ansatz.core/afoldl  "pf-horner")) "non-monoid → sequential afoldl")
-      (is (false? (emits? 'ansatz.core/apfoldl "pf-horner")) "non-monoid is NOT parallelized")
-      (is (false? (emits? 'ansatz.core/apfoldl "pf-sum1"))   "wrong identity is NOT parallelized")
+      (is (true?  (emits? 'wandler.runtime/apfoldl "pf-sum"))    "sum monoid → parallel apfoldl")
+      (is (true?  (emits? 'wandler.runtime/apfoldl "pf-prod"))   "product monoid → parallel apfoldl")
+      (is (true?  (emits? 'wandler.runtime/apfoldl "pf-sumdbl")) "fused sum-of-map → parallel apfoldl")
+      (is (true?  (emits? 'wandler.runtime/afoldl  "pf-horner")) "non-monoid → sequential afoldl")
+      (is (false? (emits? 'wandler.runtime/apfoldl "pf-horner")) "non-monoid is NOT parallelized")
+      (is (false? (emits? 'wandler.runtime/apfoldl "pf-sum1"))   "wrong identity is NOT parallelized")
       ;; (2) all kernel-certify (the monoid proof is in Init; the decl type-checks)
       (is (true? (kernel-checks? "pf-sum"))    "sum certifies")
       (is (true? (kernel-checks? "pf-sumdbl")) "fused sum certifies")

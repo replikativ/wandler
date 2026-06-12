@@ -265,12 +265,12 @@
                  (mapv Nat.succ (filterv (fn [x] (Nat.ble 3 x)) (mapv Nat.succ xs)))))
         (eval '(ansatz.core/defn ex-noop [x :- Nat] Nat (Nat.add x x))))
       ;; a fusible pipeline is rewritten + verified
-      (is (= {:changed? true :verified? true :rewrites []} (wandler.core/explain 'ex-fused)))
+      (is (= {:changed? true :verified? true :rewrites []} (select-keys (wandler.core/explain 'ex-fused) [:changed? :verified? :rewrites])))
       ;; map∘filter∘map adopts the map+filter→filterMap cost-rewrite (a single-pass win on the
       ;; inner map∘filter: map→filter→map ⇒ filterMap→map, kernel-certified)
-      (is (= {:changed? true :verified? true :rewrites ["List.map_filter_filterMap"]} (wandler.core/explain 'ex-mfm)))
+      (is (= {:changed? true :verified? true :rewrites ["List.map_filter_filterMap"]} (select-keys (wandler.core/explain 'ex-mfm) [:changed? :verified? :rewrites])))
       ;; a non-pipeline body is left untouched (skipped cheaply)
-      (is (= {:changed? false :verified? true :rewrites []} (wandler.core/explain 'ex-noop))))
+      (is (= {:changed? false :verified? true :rewrites []} (select-keys (wandler.core/explain 'ex-noop) [:changed? :verified? :rewrites]))))
     (do (println "SKIP explain-reports-the-optimization: no Init env") (is true))))
 
 (deftest optimize-on-by-default-differential
