@@ -977,7 +977,11 @@
             ;; (keeps the default-on path free for non-pipeline bodies). EXCEPTION: a single
             ;; `filter` over a membership scan (List.elem) is SOAC-trivial but the scan is O(in·ys)
             ;; — the verified SEMIJOIN rewrites it to a build-once index probe, so don't skip it.
-            res (if (and (< cost-before 2) (not (mentions-const? e "List.elem")))
+            res (if (and (< cost-before 2)
+                         (not (mentions-const? e "List.elem"))
+                         ;; a bare aggregate over a join is SOAC-trivial but carries the
+                         ;; |xs|*|ys| product — the factorization laws are exactly for it
+                         (not (mentions-const? e "Map.join")))
                   {:term e :verified? true :changed? false :rewrites []}
                   ;; cost-directed search (confluent fusion + cost-gated reorderings),
                   ;; each adopted step kernel-certified; helper unfolds inline named steps

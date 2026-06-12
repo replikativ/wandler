@@ -26,13 +26,25 @@
   [env t]
   (lvl/succ-pred (e/sort-level (.inferType (TypeChecker. env) t))))
 
-(defn list-elem
-  "The element type α of a `coll` of inferred type `List α`, or nil."
+(defn list-elem?
+  "The element type α of a `coll` of inferred type `List α`, or nil (probe form)."
   [est coll]
   (let [t (api/arg-type est coll)
         [h args] (when t (e/get-app-fn-args t))]
     (when (and h (e/const? h) (= "List" (name/->string (e/const-name h))) (seq args))
       (first args))))
+
+(defn list-elem
+  "The element type α of a `coll` of inferred type `List α`. THROWS when the receiver's
+   type is not an inferable List — an honest error beats silently defaulting to List ops
+   (the receiver might be a Strm/Map/Value the verb doesn't mean the same thing on)."
+  [est coll]
+  (or (list-elem? est coll)
+      (throw (ex-info (str "collection verb: receiver type is not an inferable (List _) — "
+                           "annotate the receiver, or use the type's own surface "
+                           "(inferred: " (let [t (api/arg-type est coll)]
+                                           (if t (e/->string t) "nil")) ")")
+                      {:kind :uninferable-receiver}))))
 
 ;; operator sugar: a bare `+`/`*`/… function argument → its kernel constant
 (def ^:private op->const

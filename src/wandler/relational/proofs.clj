@@ -61,7 +61,20 @@
 (defn- sy [ty x y h] (e/app* (e/const' (nm "Eq.symm") [L1]) ty x y h))
 (defn- imp [P Q h ha] (e/app* (e/const' (nm "Iff.mp") []) P Q h ha))
 (defn- impr [P Q h hb] (e/app* (e/const' (nm "Iff.mpr") []) P Q h hb))
-(defn- reg-anon! [n g p] (reset! a/ansatz-env (kenv/add-constant (a/env) (kenv/mk-thm (nm n) [] g p))))
+(def ^:dynamic *admit-sink*
+  "When bound (by rel-laws/build-all) to an atom, every intermediate admitted by reg-anon!
+   is ALSO recorded there — so the law cache carries the full dependency closure and the
+   strict replay path can re-check capstones whose proofs reference the intermediates."
+  nil)
+
+(defn- reg-anon!
+  "Admit an intermediate theorem STRICTLY (check-constant, the kernel gate) — intermediates
+   are part of the trust chain even when the capstone only references their types."
+  [n g p]
+  (let [ci (kenv/mk-thm (nm n) [] g p)]
+    (swap! a/ansatz-env kenv/check-constant ci)
+    (when *admit-sink* (swap! *admit-sink* conj ci))
+    ci))
 (defn- eq-via-simp [goal lems names]
   (let [[ps _] (proof/start-proof (a/env) goal) ps (basic/intros ps names)
         ps (try (simp/simp ps lems) (catch Throwable _ ps))]

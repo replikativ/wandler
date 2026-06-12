@@ -614,14 +614,73 @@
         ps (simp/simp-all ps1 ['List.foldl_flatMap 'List.foldl_map])]
     [goal (when (proof/solved? ps) (extract/extract ps))]))
 
+;; ── COUNT factorization (Map.count_join_factor) — ported from count_factor_test so the
+;; optimizer path try-count-factor has its law INSTALLED (it was test-only: a coherence bug).
+(def ^:private cf-z lvl/zero)
+(def ^:private cf-L1 (lvl/succ cf-z))
+(def ^:private cf-type0 (e/sort' cf-L1))
+
+(defn- cf-jvars []
+  (let [K (e/fvar 1) X (e/fvar 2) Y (e/fvar 3) dec (e/fvar 4)
+        kf (e/fvar 5) lf (e/fvar 6) xs (e/fvar 7) ys (e/fvar 8)]
+    {:K K :X X :Y Y :dec dec :kf kf :lf lf :xs xs :ys ys
+     :PXY (e/app* (e/const' (nm "Prod") [cf-z cf-z]) X Y)
+     :listX (e/app (e/const' (nm "List") [cf-z]) X)
+     :listY (e/app (e/const' (nm "List") [cf-z]) Y)
+     :deceqK (e/app (e/const' (nm "DecidableEq") [cf-L1]) K)
+     :xToK (e/forall' "_" X K :default) :yToK (e/forall' "_" Y K :default)}))
+
+(defn- prove-count-join-factor
+  "Prove Map.count_join_factor on the Map.join form (length of the join = sum of per-key
+   bucket lengths — count WITHOUT materializing the product). Returns [goal proof]."
+  []
+  (let [{:keys [K X Y dec kf lf xs ys PXY listX listY deceqK xToK yToK]} (cf-jvars)
+        NatT (e/const' (nm "Nat") [])
+        lhs (e/app* (e/const' (nm "List.length") [cf-z]) PXY
+                    (e/app* (e/const' (nm "Map.join") []) K X Y dec kf lf xs ys))
+        bucket (fn [k'] (e/app* (e/const' (nm "Option.getD") [cf-z]) listY
+                                (e/app* (e/const' (nm "Map.lookup") []) K listY dec k'
+                                        (e/app* (e/const' (nm "Map.group_by") []) K Y dec lf ys))
+                                (e/app (e/const' (nm "List.nil") [cf-z]) Y)))
+        lenFn (e/lam "x" X (e/app* (e/const' (nm "List.length") [cf-z]) Y (bucket (e/app kf (e/bvar 0)))) :default)
+        mapped (e/app* (e/const' (nm "List.map") [cf-z cf-z]) X NatT lenFn xs)
+        zeroNat (e/app* (e/const' (nm "Zero.ofOfNat0") [cf-z]) NatT
+                        (e/app (e/const' (nm "instOfNatNat") []) (e/lit-nat 0)))
+        rhs (e/app* (e/const' (nm "List.sum") [cf-z]) NatT (e/const' (nm "instAddNat") []) zeroNat mapped)
+        eqn (e/app* (e/const' (nm "Eq") [cf-L1]) NatT lhs rhs)
+        wrap (fn [t]
+               (-> t (#(e/forall' "ys" listY (e/abstract1 % 8) :default))
+                   (#(e/forall' "xs" listX (e/abstract1 % 7) :default))
+                   (#(e/forall' "lf" yToK (e/abstract1 % 6) :default))
+                   (#(e/forall' "kf" xToK (e/abstract1 % 5) :default))
+                   (#(e/forall' "dec" deceqK (e/abstract1 % 4) :default))
+                   (#(e/forall' "Y" cf-type0 (e/abstract1 % 3) :default))
+                   (#(e/forall' "X" cf-type0 (e/abstract1 % 2) :default))
+                   (#(e/forall' "K" cf-type0 (e/abstract1 % 1) :default))))
+        goal (wrap eqn)
+        ps0 (basic/intros (first (proof/start-proof (a/env) goal)) ["K" "X" "Y" "dec" "kf" "lf" "xs" "ys"])
+        fvid (fn [ps n] (some (fn [[id d]] (when (= n (:name d)) id)) (:lctx (proof/current-goal ps))))
+        hv (fn [n] (e/fvar (fvid ps0 n)))
+        ps1 (basic/rewrite ps0 (e/app* (e/const' (nm "Map.join.eq_unfold") [])
+                                       (hv "K") (hv "X") (hv "Y") (hv "dec")
+                                       (hv "kf") (hv "lf") (hv "xs") (hv "ys")))
+        ps (simp/simp-all ps1 ['List.length_flatMap 'List.length_map])]
+    (when-not (proof/solved? ps)
+      (throw (ex-info "Map.count_join_factor proof did not close" {})))
+    [goal (extract/extract ps)]))
+
 (defn- build-all
   "Build + admit ALL relational laws in dependency order (each proof references earlier laws), and
    cache the ConstantInfos. Each is independently check-constant'd (kernel-verified) as it lands.
    Requires kmap/install!. Returns the ordered CIs."
   []
   (or @cache
-      (binding [a/*verbose* false]
+      (binding [a/*verbose* false
+                ;; intermediates admitted inside rp/ proofs land in the SAME ordered cache,
+                ;; so replay carries the full dependency closure (strict re-check works)
+                rp/*admit-sink* (atom nil)]
         (let [acc (atom [])
+              _ (set! rp/*admit-sink* acc)
               admit! (fn [ci] (swap! a/ansatz-env kenv/check-constant ci) (swap! acc conj ci))
               thm! (fn [name [goal proof]] (admit! (kenv/mk-thm (nm name) [] goal proof)))]
           ;; lookup / group_by foundation
@@ -642,6 +701,7 @@
           ;; aggregation-through-join factorization (general; needs the Map.join unfold equation)
           (admit! ((requiring-resolve 'wandler.optimize/unfold-eqn-ci) (a/env) "Map.join"))
           (thm! "Map.foldl_join_factor" (prove-foldl-join-factor))
+          (thm! "Map.count_join_factor" (prove-count-join-factor))
           ;; JOIN COMMUTATIVITY chain (perm → bucket → join_comm → Perm→Eq count bridge), the
           ;; drive-direction reorder: try-join-reorder consumes Map.join_length_comm. From the clean
           ;; src home ansatz.relational.proofs. prove-join-comm admits its intermediates (pushout/qeq/
@@ -696,6 +756,9 @@
   []
   (when-not (kenv/lookup (a/env) (nm "Map.join_length_comm"))
     (if @cache
-      (doseq [ci @cache] (swap! a/ansatz-env kenv/add-constant ci))
+      ;; replay through the same strict gate as the first build — the cache is
+      ;; env-independent (Init-only proofs), but symmetry costs little and the
+      ;; kernel re-check catches any drift
+      (doseq [ci @cache] (swap! a/ansatz-env kenv/check-constant ci))
       (build-all)))
   (a/env))

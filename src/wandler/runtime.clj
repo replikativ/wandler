@@ -456,6 +456,9 @@
             "List.cons" (list 'clojure.core/cons (nth ca 1) (nth ca 2))
             "List.nil" nil
             "List.length" (list 'count (nth ca 1))
+            ;; List.sum α addInst zero coll → (reduce + 0 coll). The Add/Zero instances
+            ;; erase; + is correct for the Nat/Int carriers the factorization laws emit.
+            "List.sum" (list 'clojure.core/reduce '+ 0 (nth ca 3))
             ;; List SOACs (args: types…, then runtime values) → native Clojure.
             ;; A foldl step is acc→elem→acc. An inline-fn step compiles to a CURRIED
             ;; lambda, but clojure.core/reduce invokes it (f acc x) — flat. So peel a
@@ -612,6 +615,7 @@
 
 (def ^:private lowered-heads
   [
+    "List.sum"
     "Int.add"
     "Int.mul"
     "Int.sub"

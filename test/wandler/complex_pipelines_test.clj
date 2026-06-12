@@ -127,9 +127,16 @@
             r-swap (opt/optimize-cost (a/env) cnt :lctx lctx :sizes {3 100.0 4 1000000.0})
             ;; xs huge → keep the original order (index the small ys); no reorder
             r-keep (opt/optimize-cost (a/env) cnt :lctx lctx :sizes {3 1000000.0 4 100.0})]
-        (is (contains? (set (:rewrites r-swap)) :join-reorder) "reorders to index the smaller side (xs)")
-        (is (true? (:verified? r-swap)) "the reorder is certified by Map.join_length_comm")
-        (is (not (contains? (set (:rewrites r-keep)) :join-reorder)) "no reorder when ys is already the smaller side")))
+        ;; Since Map.count_join_factor is INSTALLED (it was test-only before the cohesion
+        ;; audit), a count-over-join takes the strictly better plan: FACTORIZE the join away
+        ;; (:count-factor — no product materialized at all) rather than merely reordering
+        ;; which side is indexed. The reorder remains the certified fallback for queries the
+        ;; factorization doesn't cover.
+        (is (contains? (set (:rewrites r-swap)) :count-factor)
+            "count over a join factorizes (the strictly better plan, supersedes reorder)")
+        (is (true? (:verified? r-swap)) "the adopted plan is kernel-certified")
+        (is (contains? (set (:rewrites r-keep)) :count-factor)
+            "factorization wins regardless of drive direction (no product either way")))
     (do (println "SKIP reorder test: no Init env") (is true))))
 
 (deftest factorized-join-hoists-its-index-memory-gated
