@@ -54,17 +54,27 @@
      :passes-before (:passes-before r)
      :passes-after (:passes-after r)}))
 
-(defn install!
-  "Install the wandler runtime into ansatz's three seams (idempotent). Call after the
-   kernel env is loaded — (a/init! \"init\") or richer — then define pipelines with a/defn."
+(defn install-registries!
+  "Fill the env-FREE seams (surface verb registries, runtime lowering, the optimizer
+   hook). Safe at namespace load — nothing here consults the kernel env."
   []
-  (kmap/install!)
   (coll/install!)
   (rec/install!)
   (rel/install!)
   (rt/install!)
   (reset! a/optimize-hook optimize-hook)
   :installed)
+
+(defn install!
+  "Install the wandler runtime into ansatz's three seams (idempotent). Call after the
+   kernel env is loaded — (a/init! \"init\") or richer — then define pipelines with a/defn.
+   (The registry seams are already filled at load; this adds the env-dependent pieces.)"
+  []
+  (install-registries!)
+  (kmap/install!)
+  :installed)
+
+(install-registries!)
 
 ;; ── the plan view + the measure→replan loop (the verified JIT) ───────────────────────────
 

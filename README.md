@@ -106,10 +106,14 @@ See [`docs/CORE.md`](docs/CORE.md) for the architecture spec.
 ## Status
 
 v0.1 — first public cut, fix-forwarded onto ansatz's unified (fvar/metavar)
-elaborator and the three runtime seams. The core path (collections + records +
+elaborator and the three runtime seams. The core path — collections + records +
 relational surface, certified optimizer + proven law library, runtime lowering,
-`explain`/`plan`) is exercised end-to-end; the research tiers (EDN dynamic data,
-modes, inference, bridges) are ported and compile but are pre-release surface.
+`explain`/`plan` and the measure→replan loop — is suite-covered and green
+(joins, semijoin re-planning, aggregation factorization, reducer fusion, zset/
+DBSP/stream algebras, kmap, semiring/dist/wmc). Quarantined in
+[`test-deferred/`](test-deferred/) for v0.2: the EDN dynamic-data tier, regex,
+mode/stream surface routing, the Float/`def-record` primitive tier, and a few
+elaboration-breadth verbs (`some->`, `str`/`clojure.string` ops).
 
 ## Tests
 
