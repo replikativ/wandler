@@ -121,3 +121,7 @@ elaboration-breadth verbs (`some->`, `str`/`clojure.string` ops).
 clj -M:test                 # needs the full Init store at test-data/init-store
 clj -M:test:logicng         # + the LogicNG WMC path
 ```
+
+## License
+
+Copyright © 2026 Christian Weilbach. Distributed under the [Apache License 2.0](LICENSE).
