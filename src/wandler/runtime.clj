@@ -272,6 +272,88 @@
     (let [gs (mapv (fn [_] (gensym "eta")) (range (- arity (count ca))))]
       (list 'clojure.core/fn gs (saturated (into ca gs))))))
 
+;; ── loop-invariant hoisting (index builds out of element fns) ───────────────
+
+(clojure.core/defn- form-free-syms
+  "Free (unbound, unqualified) symbols of an emitted Clojure form, given the
+   set `bound` of symbols already in scope. Understands the emitted grammar's
+   binders (`fn` param vectors, sequential `let` bindings); everything else is
+   treated as application/literal structure."
+  [form bound]
+  (cond
+    (symbol? form)
+    (if (or (contains? bound form) (namespace form) (special-symbol? form)) #{} #{form})
+
+    (seq? form)
+    (let [[op & more] form]
+      (cond
+        (and (contains? #{'fn 'clojure.core/fn} op) (vector? (first more)))
+        (let [b (into bound (filter symbol? (first more)))]
+          (reduce into #{} (map #(form-free-syms % b) (rest more))))
+
+        (and (contains? #{'let 'clojure.core/let} op) (vector? (first more)))
+        (loop [bs (partition 2 (first more)), b bound, acc #{}]
+          (if-let [[[s v] & r] (seq bs)]
+            (recur r (conj b s) (into acc (form-free-syms v b)))
+            (reduce into acc (map #(form-free-syms % b) (rest more)))))
+
+        :else (reduce into #{} (map #(form-free-syms % bound) form))))
+
+    (coll? form) (reduce into #{} (map #(form-free-syms % bound) (seq form)))
+    :else #{}))
+
+(def ^:private hoistable-heads
+  "Emitted heads that BUILD an index/lookup structure (O(n) work) — worth hoisting
+   out of a per-element fn when they depend on none of its binders."
+  #{'clojure.core/group-by 'clojure.core/into})
+
+(clojure.core/defn- hoist-invariants
+  "Loop-invariant code motion over an emitted element-fn form: any index-building
+   subform (`hoistable-heads`) that references none of the fn's params nor any
+   binder on its path is lifted out. Returns [let-bindings fn-form']. The semijoin
+   probe `(filter (fn [x] (get (group-by kf ys) x)) xs)` is the motivating case:
+   without the hoist the index is rebuilt per element — O(n·m) instead of O(n+m)."
+  [fn-form]
+  (if-not (and (seq? fn-form) (contains? #{'fn 'clojure.core/fn} (first fn-form))
+               (vector? (second fn-form)))
+    [[] fn-form]
+    (let [hoisted (atom [])                                ;; [[form sym] …] in discovery order
+          sym-for (fn [form]
+                    (or (some (fn [[f g]] (when (= f form) g)) @hoisted)
+                        (let [g (gensym "idx")] (swap! hoisted conj [form g]) g)))
+          walk (fn walk [form bound]
+                 (cond
+                   (and (seq? form) (contains? hoistable-heads (first form))
+                        (not-any? bound (form-free-syms form #{})))
+                   (sym-for form)
+
+                   (seq? form)
+                   (let [[op & more] form]
+                     (cond
+                       (and (contains? #{'fn 'clojure.core/fn} op) (vector? (first more)))
+                       (let [b (into bound (filter symbol? (first more)))]
+                         (apply list op (first more) (map #(walk % b) (rest more))))
+
+                       (and (contains? #{'let 'clojure.core/let} op) (vector? (first more)))
+                       (loop [bs (partition 2 (first more)), b bound, out []]
+                         (if-let [[[s v] & r] (seq bs)]
+                           (recur r (conj b s) (conj out s (walk v b)))
+                           (apply list op out (map #(walk % b) (rest more)))))
+
+                       :else (apply list (map #(walk % bound) form))))
+
+                   :else form))
+          params (set (filter symbol? (second fn-form)))
+          body' (map #(walk % params) (drop 2 fn-form))
+          fn-form' (apply list (first fn-form) (second fn-form) body')]
+      [(into [] (mapcat (fn [[f g]] [g f])) @hoisted) fn-form'])))
+
+(clojure.core/defn- with-hoisted
+  "Emit `(make fn-form')` with any invariant index builds hoisted to a wrapping let."
+  [fn-form make]
+  (let [[bs f'] (hoist-invariants fn-form)]
+    (if (seq bs) (list 'clojure.core/let bs (make f')) (make fn-form))))
+
 ;; ── the lowering table (codegen-registry entries) ───────────────────────────
 
 (defn- lower
@@ -463,9 +545,10 @@
                   ;; Item B: if this is a proven associative-monoid fold, lower to
                   ;; the parallel fork-join apfoldl (vector path); else sequential afoldl.
                   mop (when *parallel-fold* (monoid-fold-op env f-expr (nth ca 3)))]
-              (if mop
-                (list 'wandler.runtime/apfoldl mop step (nth ca 3) (nth ca 4))
-                (list 'wandler.runtime/afoldl step (nth ca 3) (nth ca 4))))
+              (with-hoisted step
+                #(if mop
+                   (list 'wandler.runtime/apfoldl mop % (nth ca 3) (nth ca 4))
+                   (list 'wandler.runtime/afoldl % (nth ca 3) (nth ca 4)))))
             ;; map fn α→β: hint param α + RETURN β so it's IFn$LL/DD (amapl invokePrim).
             ;; prefix/suffix + head/tail → Clojure runtime ops. take/take-while/drop are
             ;; LAZY (a bounded terminal makes an infinite lazy pipeline consumable).
@@ -543,13 +626,11 @@
             "Option.bind" (let [o (gensym "o")]                       ; α β opt f
                             (list 'clojure.core/let [o (nth ca 2)]
                                   (list 'if (list 'clojure.core/nil? o) nil (list (nth ca 3) o))))
-            "List.map" (list 'wandler.runtime/amapl
-                             (emit-hinted-fn env (nth args 2) 1 (prim-tag (nth args 1)) names)
-                             (nth ca 3))
+            "List.map" (with-hoisted (emit-hinted-fn env (nth args 2) 1 (prim-tag (nth args 1)) names)
+                         #(list 'wandler.runtime/amapl % (nth ca 3)))
             ;; filter pred α→Bool: hint param α (return Bool stays Object → IFn$LO for afilter).
-            "List.filter" (list 'wandler.runtime/afilter
-                                (emit-hinted-fn env (nth args 1) 1 nil names)
-                                (nth ca 2))
+            "List.filter" (with-hoisted (emit-hinted-fn env (nth args 1) 1 nil names)
+                            #(list 'wandler.runtime/afilter % (nth ca 2)))
             ;; assoc lookup: List.lookup α β (BEq α) k l → value-or-nil. The
             ;; runtime list is a seq of [k v] pairs (Prod.mk erases to a vector),
             ;; so (into {} l) is the map; Option β is modeled as value-or-nil
