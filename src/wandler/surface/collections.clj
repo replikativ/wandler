@@ -446,12 +446,22 @@
 (defn- thread-last [x forms]
   (reduce (fn [acc form] (if (seq? form) (concat form [acc]) (list form acc))) x forms))
 
+(defn- inc-elaborator [est args]
+  ;; (inc x) → Nat.succ x  (Int via type dispatch when Int ops land in Init)
+  (e/app (e/const' (nm "Nat.succ") []) (api/elab est (first args))))
+
+(defn- dec-elaborator [est args]
+  ;; (dec x) → Nat.sub x 1 (truncated Nat subtraction, the kernel denotation)
+  (e/app* (e/const' (nm "Nat.sub") []) (api/elab est (first args)) (e/lit-nat 1)))
+
 (defn install!
   "Register the collection-op elaborators (idempotent). Type-directed verbs are TERM
    elaborators (elab_rules); pure form rewrites (threading) are macro elaborators."
   []
   (api/register-elaborator! '-> (fn [args] (thread-first (first args) (rest args))))
   (api/register-elaborator! '->> (fn [args] (thread-last (first args) (rest args))))
+  (api/register-term-elaborator! 'inc inc-elaborator)
+  (api/register-term-elaborator! 'dec dec-elaborator)
   (api/register-term-elaborator! 'count count-elaborator)
   (api/register-term-elaborator! 'reduce reduce-elaborator)
   (api/register-term-elaborator! 'reductions reductions-elaborator)

@@ -18,11 +18,13 @@ surface.
 | `->>` | `(->> x f1 (f2 a) …)` | pure form rewrite | `the threaded form` | — | core |
 | `concat` | `(concat a b …)` | List (n-ary as nested append) | `List.append` | concat | core |
 | `count` | `(count coll)` | List → length · Map → entry count · Value → vsize | `List.length / List.length∘Map.entries / vsize` | count | core |
+| `dec` | `(dec x)` | Nat (truncated) | `Nat.sub x 1` | max 0 (dec x) | core |
 | `drop` | `(drop n coll)` | List | `List.drop` | drop | core |
 | `drop-while` | `(drop-while p coll)` | List | `List.dropWhile` | drop-while | core |
 | `filter` | `(filter p coll)` | List only (raw streams are rejected: window first) | `List.filter α p coll` | afilter | core |
 | `filterv` | `(filterv p coll)` | as filter | `List.filter` | afilter | core |
 | `first` | `(first x)` | Prod → fst · List → head? (Option) | `Prod.fst / List.head?` | nth 0 / first | core |
+| `inc` | `(inc x)` | Nat | `Nat.succ` | inc | core |
 | `interpose` | `(interpose sep coll)` | List | `List.intersperse` | interpose | core |
 | `into` | `(into [] xform? coll)` | vector target only; the xform desugars to the nested SOAC form | `the desugared pipeline` | as the pipeline | core |
 | `last` | `(last xs)` | List → Option | `List.getLast?` | last | core |

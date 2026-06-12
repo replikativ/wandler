@@ -56,6 +56,8 @@
    [into        {:sig "(into [] xform? coll)" :dispatch "vector target only; the xform desugars to the nested SOAC form" :denotation "the desugared pipeline" :lowering "as the pipeline" :tier :core}]
    [transduce   {:sig "(transduce xform rf init coll)" :dispatch "xform = (comp (map f) (filter p) (remove p)…)" :denotation "reduce over the desugared pipeline" :lowering "as the pipeline (fuses + certifies)" :tier :core}]
    [sequence    {:sig "(sequence xform coll)" :dispatch "as into" :denotation "the desugared pipeline" :lowering "as the pipeline" :tier :core}]
+   [inc         {:sig "(inc x)" :dispatch "Nat" :denotation "Nat.succ" :lowering "inc" :tier :core}]
+   [dec         {:sig "(dec x)" :dispatch "Nat (truncated)" :denotation "Nat.sub x 1" :lowering "max 0 (dec x)" :tier :core}]
    [->          {:sig "(-> x f1 (f2 a) …)" :dispatch "pure form rewrite (macro_rules-shaped)" :denotation "the threaded form" :lowering "—" :tier :core}]
    [->>         {:sig "(->> x f1 (f2 a) …)" :dispatch "pure form rewrite" :denotation "the threaded form" :lowering "—" :tier :core}]])
 

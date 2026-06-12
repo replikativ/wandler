@@ -16,6 +16,8 @@
             [ansatz.kernel.name :as name]
             [wandler.surface.vocabulary]
             [wandler.surface.collections :as coll]
+            [wandler.surface.strings]
+            [wandler.surface.option]
             [wandler.surface.records :as rec]
             [wandler.surface.relational :as rel]
             [wandler.kmap :as kmap]
