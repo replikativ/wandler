@@ -21,6 +21,7 @@
 (ns wandler.surface.edn
   (:require [ansatz.core :as a]
             [ansatz.surface.api :as api]
+            [wandler.surface.common :refer [head-name]]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.env :as env]))
@@ -781,9 +782,6 @@
 ;; `v*` primitives when the operand is a `Value`. Keyword access `(:k v)` is handled in
 ;; ansatz.core; the symbol-headed ops below register elaborators (no core change).
 
-(defn- head-name [t]
-  (let [[h _] (when t (e/get-app-fn-args t))]
-    (when (and h (e/const? h)) (name/->string (e/const-name h)))))
 
 (defn- value-typed? [est ex] (= "Value" (head-name (api/arg-type est ex))))
 

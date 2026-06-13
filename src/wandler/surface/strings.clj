@@ -4,11 +4,11 @@
 (ns wandler.surface.strings
   (:require [ansatz.core :as a]
             [ansatz.surface.api :as api]
+            [wandler.surface.common :refer [nm]]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]
             [wandler.surface.vocabulary :as vocab]))
 
-(defn- nm [s] (name/from-string s))
 
 (defn- str-elaborator [est args]
   ;; (str a b c …) folds String.append; each arg must already be a String.

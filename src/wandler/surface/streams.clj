@@ -19,13 +19,13 @@
    possibly-finite lazy seqs) and wandler.exec.dbsp-stream (the Nat→Int operator algebra)."
   (:require [ansatz.core :as a]
             [ansatz.surface.api :as api]
+            [wandler.surface.common :refer [nm]]
             [ansatz.kernel.env :as kenv]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.tc :as tc]
             [ansatz.kernel.level :as lvl]))
 
-(defn- nm [s] (name/from-string s))
 (def ^:private z lvl/zero) (def ^:private L1 (lvl/succ z)) (def ^:private type0 (e/sort' L1))
 (def ^:private prop (e/sort' z))
 (def ^:private natT (e/const' (nm "Nat") []))

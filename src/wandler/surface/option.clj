@@ -10,13 +10,13 @@
 (ns wandler.surface.option
   (:require [ansatz.core :as a]
             [ansatz.surface.api :as api]
+            [wandler.surface.common :refer [nm]]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.level :as lvl]
             [ansatz.kernel.tc :as tc]
             [wandler.surface.vocabulary :as vocab]))
 
-(defn- nm [s] (name/from-string s))
 
 (defn- option-elem
   "If `expr` has type `Option α`, return α; else nil."

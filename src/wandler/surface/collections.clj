@@ -13,18 +13,14 @@
 (ns wandler.surface.collections
   (:require [ansatz.core :as a]
             [ansatz.surface.api :as api]
+            [wandler.surface.common :refer [nm head-name univ]]
             [ansatz.surface.ingest]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.level :as lvl])
   (:import [ansatz.kernel TypeChecker]))
 
-(defn nm [s] (name/from-string s))
 
-(defn univ
-  "The universe level `u` of a type `t : Sort(u+1)` (e.g. 0 for `Nat`)."
-  [env t]
-  (lvl/succ-pred (e/sort-level (.inferType (TypeChecker. env) t))))
 
 (defn list-elem?
   "The element type α of a `coll` of inferred type `List α`, or nil (probe form)."
@@ -56,11 +52,6 @@
   [form]
   (and (seq? form) (#{'fn 'fn* 'lam} (first form)) (vector? (second form))))
 
-(defn- head-name
-  "Head constant name of a kernel type expr (e.g. \"Int\" for `Int`), or nil."
-  [t]
-  (let [[h _] (when t (e/get-app-fn-args t))]
-    (when (and h (e/const? h)) (name/->string (e/const-name h)))))
 
 (defn- bare-op-const
   "A bare operator (`+`/`*`/`-`) as a function ARGUMENT resolves to the typed op for the

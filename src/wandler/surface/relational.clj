@@ -17,13 +17,13 @@
 (ns wandler.surface.relational
   (:require [ansatz.core :as a]
             [ansatz.surface.api :as api]
+            [wandler.surface.common :refer [nm univ]]
             [wandler.surface.collections :as coll]
             [ansatz.kernel.env :as env]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.level :as lvl]
             [ansatz.kernel.name :as name]))
 
-(defn- nm [s] (name/from-string s))
 
 (defn- type-name
   "Head constant name of a type expr (e.g. \"Nat\" for `Nat`, \"List\" for `List α`)."
@@ -45,7 +45,7 @@
   "A `BEq α` instance term for `elem`: `instBEqOfDecidableEq α (DecidableEq α)`."
   [^ansatz.kernel.Env env elem]
   (when-let [deceq (resolve-deceq env elem)]
-    (e/app* (e/const' (nm "instBEqOfDecidableEq") [(coll/univ env elem)]) elem deceq)))
+    (e/app* (e/const' (nm "instBEqOfDecidableEq") [(univ env elem)]) elem deceq)))
 
 (defn- le-cmp
   "An ascending Bool comparator `α → α → Bool` for `elem` (`Nat.ble` for Nat, or
@@ -67,7 +67,7 @@
         beq (or (resolve-beq (:env est) a)
                 (throw (ex-info "distinct: no BEq/DecidableEq instance for element type"
                                 {:elem (when a (type-name a))})))]
-    (e/app* (e/const' (nm "List.eraseDups") [(coll/univ (:env est) a)]) a beq coll)))
+    (e/app* (e/const' (nm "List.eraseDups") [(univ (:env est) a)]) a beq coll)))
 
 (defn- sort-elaborator [est args]
   ;; (sort coll) → List.mergeSort α coll cmp   (cmp ascending)
@@ -76,7 +76,7 @@
         cmp (or (le-cmp (:env est) a)
                 (throw (ex-info "sort: no ascending ordering for element type"
                                 {:elem (when a (type-name a))})))]
-    (e/app* (e/const' (nm "List.mergeSort") [(coll/univ (:env est) a)]) a coll cmp)))
+    (e/app* (e/const' (nm "List.mergeSort") [(univ (:env est) a)]) a coll cmp)))
 
 (defn- sort-by-elaborator [est args]
   ;; (sort-by keyfn coll) → List.mergeSort α coll (fun a b => kcmp (keyfn a) (keyfn b))
@@ -93,7 +93,7 @@
                           (e/app* kcmp (e/app keyfn (e/bvar 1)) (e/app keyfn (e/bvar 0)))
                           :default)
                    :default)]
-    (e/app* (e/const' (nm "List.mergeSort") [(coll/univ (:env est) a)]) a coll cmp)))
+    (e/app* (e/const' (nm "List.mergeSort") [(univ (:env est) a)]) a coll cmp)))
 
 ;; ---- relational core over the verified Map (wandler.kmap) --------------------
 
@@ -203,7 +203,7 @@
         a (coll/list-elem est coll)
         beq (or (resolve-beq (:env est) a)
                 (throw (ex-info "dedupe: no BEq/DecidableEq for element type" {:elem (type-name a)})))]
-    (e/app* (e/const' (nm "List.eraseReps") [(coll/univ (:env est) a)]) a beq coll)))
+    (e/app* (e/const' (nm "List.eraseReps") [(univ (:env est) a)]) a beq coll)))
 
 (defn- ->map-elaborator [est args]
   ;; (->map m) → Map.entries K V m : List (K×V); runtime materializes to a Clojure map.
