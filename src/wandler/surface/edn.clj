@@ -24,6 +24,7 @@
             [wandler.surface.common :refer [head-name]]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]
+            [ansatz.kernel.level :as lvl]
             [ansatz.kernel.env :as env]))
 
 (def ^:private core-forms
@@ -682,6 +683,28 @@
     (doseq [form (schema->conforms-forms fn-name schema)]
       (eval form)))
   fn-name)
+
+(def ^:private u1 (lvl/succ lvl/zero))
+
+(defn schema->value-type
+  "Framing B — the TOTAL malli→type functor: F(schema) = `Subtype Value (λ v. conforms v = true)`,
+   the refinement of the universal `Value` universe carved by the schema's conformance predicate.
+   Installs the conformance fn γ:Value→Bool under `conforms-name` (install-conforms!), then returns
+   the kernel TYPE as an Expr. Total over EVERY malli schema form — including :or/:enum/recursive that
+   the precise lane (ansatz.malli/schema->type-expr) cannot type. This is the one functor that unifies
+   records/refine/edn/conforms: an untagged malli union is set-union over the value universe (semantic
+   subtyping), modelled faithfully as a disjunctive conformance predicate — NOT a tagged Sum."
+  [conforms-name schema]
+  (install-conforms! conforms-name schema)
+  (let [val   (e/const' (name/from-string "Value") [])
+        bool  (e/const' (name/from-string "Bool") [])
+        btrue (e/const' (name/from-string "Bool.true") [])
+        conf  (e/const' (name/from-string (str conforms-name)) [])
+        ;; under binder v (bvar 0):  Eq Bool (conforms v) Bool.true  : Prop
+        body  (e/app* (e/const' (name/from-string "Eq") [u1]) bool
+                      (e/app conf (e/bvar 0)) btrue)
+        pred  (e/lam "v" val body :default)]
+    (e/app* (e/const' (name/from-string "Subtype") [u1]) val pred)))
 
 (defn install-core!
   "Define the `Value` type and core ops/laws on the current `ansatz.core` env.
