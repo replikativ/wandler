@@ -18,7 +18,8 @@
             [ansatz.kernel.env :as kenv]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.expr :as e]
-            [ansatz.kernel.level :as lvl]))
+            [ansatz.kernel.level :as lvl]
+            [wandler.exec.laws :as laws]))
 
 (defn- nm [s] (name/from-string s))
 (def ^:private z lvl/zero) (def ^:private L1 (lvl/succ z)) (def ^:private type0 (e/sort' L1))
@@ -107,9 +108,8 @@
 (defn install!
   "Admit the Z-set carrier + the EXACT bilinear differential join (idempotent)."
   []
-  (when-not (kenv/lookup (a/env) (nm "Zproduct_product_rule"))
-    (if-let [c @cache]
-      (doseq [ci c] (swap! a/ansatz-env kenv/check-constant ci))
+  (laws/cached-install! cache "Zproduct_product_rule"
+    (fn []
       (let [defs (op-defs)
             _ (doseq [d defs] (swap! a/ansatz-env kenv/check-constant d))
             thms [["Zproduct_left_linear" (prove-linear :left)]
@@ -117,8 +117,7 @@
                   ["Zproduct_product_rule" (prove-product-rule)]]
             cis (mapv (fn [[name [ty pf]]] (let [ci (kenv/mk-thm (nm name) [] ty pf)]
                                              (swap! a/ansatz-env kenv/check-constant ci) ci)) thms)]
-        (reset! cache (into (vec defs) cis)))))
-  (a/env))
+        (into (vec defs) cis)))))
 
 ;; ── runtime: a Z-set is a map element→weight (0 = absent); deletions are NEGATIVE weights ─────────
 (defn z-add

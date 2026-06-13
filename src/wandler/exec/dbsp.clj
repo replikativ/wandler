@@ -24,7 +24,8 @@
             [ansatz.tactic.proof :as proof]
             [ansatz.tactic.basic :as basic]
             [ansatz.tactic.simp :as simp]
-            [ansatz.tactic.extract :as extract]))
+            [ansatz.tactic.extract :as extract]
+            [wandler.exec.laws :as laws]))
 
 (defn- nm [s] (name/from-string s))
 (def ^:private z lvl/zero) (def ^:private L1 (lvl/succ z)) (def ^:private type0 (e/sort' L1))
@@ -317,9 +318,8 @@
    incrementally with a kernel certificate that the incremental result equals the batch recomputation.
    Requires kmap/install! + rel-laws/install! (for Map.join_append_perm)."
   []
-  (when-not (kenv/lookup (a/env) (nm "Zset.weight_append"))
-    (if-let [c @cache]
-      (doseq [ci c] (swap! a/ansatz-env kenv/check-constant ci))
+  (laws/cached-install! cache "Zset.weight_append"
+    (fn []
       (let [thm (fn [n [g p]] (kenv/mk-thm (nm n) [] g p))
             cis [(thm "List.filter_count_incr" (prove-filter-count-incr))
                  (thm "Map.join_count_incr"      (prove-join-count-incr))
@@ -331,8 +331,7 @@
                  (thm "Zset.weight_append"     (prove-weight-append))
                  (thm "Zset.filter_weight_incr" (prove-filter-weight-incr))]]
         (doseq [ci cis] (swap! a/ansatz-env kenv/check-constant ci))
-        (reset! cache cis))))
-  (a/env))
+        cis))))
 
 ;; ── incremental runtime: maintain a running aggregate over a sequence of delta batches ──────────
 (defn ivm

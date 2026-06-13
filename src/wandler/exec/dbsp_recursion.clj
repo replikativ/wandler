@@ -22,6 +22,7 @@
             [ansatz.tactic.proof :as proof]
             [ansatz.tactic.basic :as basic]
             [ansatz.tactic.extract :as extract]
+            [wandler.exec.laws :as laws]
             [clojure.set :as set]))
 
 (defn- nm [s] (name/from-string s))
@@ -121,15 +122,13 @@
    approximation stream) + `Cycle.iter_fixpoint_stable` (the cycle reaches and holds its fixpoint).
    Idempotent."
   []
-  (when-not (kenv/lookup (a/env) (nm "Cycle.iter_fixpoint_stable"))
-    (if-let [c @cache]
-      (doseq [ci c] (swap! a/ansatz-env kenv/check-constant ci))
+  (laws/cached-install! cache "Cycle.iter_fixpoint_stable"
+    (fn []
       (let [reg! (fn [ci] (swap! a/ansatz-env kenv/check-constant ci) ci)
             bi (reg! (kenv/mk-thm (nm "Recursion.body_incr") [] (first (prove-body-incr)) (second (prove-body-incr))))
             it (reg! (iter-def))
             fs (reg! (kenv/mk-thm (nm "Cycle.iter_fixpoint_stable") [] (first (prove-fixpoint-stable)) (second (prove-fixpoint-stable))))]
-        (reset! cache [bi it fs]))))
-  (a/env))
+        [bi it fs]))))
 
 ;; ── runtime: least-fixpoint of F(R)=R0 ∪ step(R), naive vs SEMI-NAIVE (delta-driven) ────────────
 (defn naive-fixpoint

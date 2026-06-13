@@ -27,7 +27,8 @@
             [ansatz.kernel.level :as lvl]
             [ansatz.tactic.proof :as proof]
             [ansatz.tactic.basic :as basic]
-            [ansatz.tactic.extract :as extract]))
+            [ansatz.tactic.extract :as extract]
+            [wandler.exec.laws :as laws]))
 
 (defn- nm [s] (name/from-string s))
 (def ^:private z lvl/zero) (def ^:private L1 (lvl/succ z))
@@ -202,9 +203,8 @@
   "Admit the stream-operator algebra (delay/D/I/incremental + D_I/I_D/incremental_comp) into the
    global env (idempotent). The chain rule then certifies modular incrementalization."
   []
-  (when-not (kenv/lookup (a/env) (nm "Stream.incremental_linear"))
-    (if-let [c @cache]
-      (doseq [ci c] (swap! a/ansatz-env kenv/check-constant ci))
+  (laws/cached-install! cache "Stream.incremental_linear"
+    (fn []
       ;; register defs FIRST (the proofs typecheck against them), then build+register each proof.
       (let [reg! (fn [ci] (swap! a/ansatz-env kenv/check-constant ci) ci)
             thm! (fn [n pf] (reg! (let [[g p] (pf)] (kenv/mk-thm (nm n) [] g p))))
@@ -214,5 +214,4 @@
             i-d  (thm! "Stream.I_D" prove-I-D)
             ic   (thm! "Stream.incremental_comp" prove-incr-comp)
             il   (thm! "Stream.incremental_linear" prove-incr-linear)]
-        (reset! cache (vec (concat defs [incd d-i i-d ic il]))))))
-  (a/env))
+        (vec (concat defs [incd d-i i-d ic il]))))))
