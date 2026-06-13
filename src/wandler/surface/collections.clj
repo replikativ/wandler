@@ -80,6 +80,14 @@
    ergonomic `#(+ % 1)` / `(fn [x] …)`), an already-typed inline fn, or any other term."
   [est f-form param-types]
   (cond
+    ;; set-literal-as-predicate: (filter #{2 4 6} xs) — the ubiquitous membership
+    ;; idiom. Requires literal elements; desugars to a Bool.or chain of equalities
+    ;; (the 2-arg type-directed ==), so downstream laws see plain comparisons.
+    (and (set? f-form) (seq f-form) (every? (complement coll?) f-form))
+    (let [g (gensym "mem")
+          eqs (map (fn [l] (list '== g l)) (sort-by str f-form))
+          body (reduce (fn [acc e] (list 'Bool.or e acc)) (last eqs) (rest (reverse eqs)))]
+      (compile-fn est (list 'fn [g] body) param-types))
     ;; keyword-as-function: (map :k xs) ≡ (map (fn [x] (:k x)) xs) — the ubiquitous projection
     ;; idiom. Rewrite to an inline untyped fn; the records/Value `(:k x)` elaborator does the
     ;; field access, and the param type is injected from param-types like any anonymous fn.
@@ -242,26 +250,39 @@
 ;; existing mapv/filterv/reduce elaborators (type inference included) and the
 ;; existing optimizer fuses + kernel-certifies it. No new IR code, no new proofs.
 
+(def ^:private xform-stage-heads-1
+  "Transducer stages taking one argument (a fn or literal) before the data."
+  '#{map filter remove take drop take-while drop-while mapcat map-indexed interpose})
+
+(def ^:private xform-stage-heads-0
+  "Nullary transducer stages."
+  '#{distinct dedupe})
+
 (defn- xform-steps
-  "Flatten a transducer expression to an ordered vector of single stages. Each
-   stage is `(map f)`, `(filter p)`, or `(remove p)` (arity-1 — the transducer
-   form, NOT the eager `(map f coll)`); `comp` nests left-to-right (the leftmost
-   stage sees each element first)."
+  "Flatten a transducer expression to an ordered vector of single stages (the
+   arity-without-data transducer forms, NOT the eager `(map f coll)`); `comp`
+   nests left-to-right (the leftmost stage sees each element first)."
   [form]
   (cond
     (and (seq? form) (= 'comp (first form)))
     (vec (mapcat xform-steps (rest form)))
-    (and (seq? form) (#{'map 'filter 'remove} (first form)) (= 2 (count form)))
+    (and (seq? form) (xform-stage-heads-1 (first form)) (= 2 (count form)))
+    [form]
+    (and (seq? form) (xform-stage-heads-0 (first form)) (= 1 (count form)))
     [form]
     :else
     (throw (ex-info (str "Unsupported transducer: " (pr-str form)
-                         " — supported stages are (map f), (filter p), (remove p), composed with comp")
+                         " — supported stages: (map f) (filter p) (remove p) (mapcat f)"
+                         " (map-indexed f) (take n) (drop n) (take-while p) (drop-while p)"
+                         " (interpose x) (distinct) (dedupe), composed with comp")
                     {:form form}))))
 
 (defn- xform->form
   "Build the nested collection FORM a transducer stack denotes when run over
    `coll-form`: fold the stages left-to-right, each wrapping the accumulator
-   (leftmost = innermost data transform = first applied)."
+   (leftmost = innermost data transform = first applied). Values agree with the
+   transducer semantics over finite pure data (purity makes early-termination an
+   efficiency difference, not a value difference)."
   [coll-form steps]
   (reduce (fn [acc st]
             (case (first st)
@@ -273,7 +294,13 @@
                        (if (and (seq? p) (#{'fn 'fn*} (first p)) (vector? (second p)) (= 3 (count p)))
                          (list 'filterv (list 'fn (second p) (list 'Bool.not (nth p 2))) acc)
                          (throw (ex-info "remove currently requires an inline (fn [x] …) predicate"
-                                         {:pred p}))))))
+                                         {:pred p}))))
+              ;; the remaining stages have eager surface verbs of the same name —
+              ;; rebuild the eager call and let the existing elaborators dispatch.
+              (take drop take-while drop-while mapcat map-indexed interpose)
+              (list (first st) (second st) acc)
+              (distinct dedupe)
+              (list (first st) acc)))
           coll-form steps))
 
 (defn- into-elaborator [est args]
@@ -300,6 +327,13 @@
   (when-not (= 2 (count args))
     (throw (ex-info "sequence: expected (sequence xform coll)" {:args args})))
   (api/elab est (xform->form (second args) (xform-steps (first args)))))
+
+(defn- eduction-elaborator [est args]
+  ;; (eduction xf1 xf2 … coll) → the transformed list (eduction takes MULTIPLE
+  ;; xforms before the data; values agree with the lazy view over finite data).
+  (when (< (count args) 2)
+    (throw (ex-info "eduction: expected (eduction xform+ coll)" {:args args})))
+  (api/elab est (xform->form (last args) (vec (mapcat xform-steps (butlast args))))))
 
 ;; ── more clojure.core vocabulary: prefix/suffix + head/tail ──────────────────
 ;; Each maps to the corresponding Lean List op (the verified DENOTATION) and lowers to
@@ -458,6 +492,12 @@
   ;; (dec x) → Nat.sub x 1 (truncated Nat subtraction, the kernel denotation)
   (e/app* (e/const' (nm "Nat.sub") []) (api/elab est (first args)) (e/lit-nat 1)))
 
+(defn- mod-elaborator [est args]
+  ;; (mod a b) → Nat.mod a b. Nat only: Clojure's floored mod and Lean's Nat.mod
+  ;; agree on naturals (incl. Nat.mod n 0 = n at the lowering); Int needs the
+  ;; emod story and stays unsupported for now.
+  (e/app* (e/const' (nm "Nat.mod") []) (api/elab est (first args)) (api/elab est (second args))))
+
 (defn install!
   "Register the collection-op elaborators (idempotent). Type-directed verbs are TERM
    elaborators (elab_rules); pure form rewrites (threading) are macro elaborators."
@@ -494,6 +534,11 @@
   ;; transducer surface (desugars to the nested SOAC form above)
   (api/register-term-elaborator! 'into into-elaborator)
   (api/register-term-elaborator! 'transduce transduce-elaborator)
-  (api/register-term-elaborator! 'sequence sequence-elaborator))
+  (api/register-term-elaborator! 'sequence sequence-elaborator)
+  (api/register-term-elaborator! 'eduction eduction-elaborator)
+  (api/register-term-elaborator! 'mod mod-elaborator)
+  ;; parity predicates: pure form rewrites onto mod + the type-directed ==
+  (api/register-elaborator! 'even? (fn [args] (list '== (list 'mod (first args) 2) 0)))
+  (api/register-elaborator! 'odd?  (fn [args] (list '== (list 'mod (first args) 2) 1))))
 
 (install!)
