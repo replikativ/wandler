@@ -37,5 +37,22 @@
           (let [got  (mapv edn/value->edn ((resolve n) rows))
                 want (truth rows-edn)]
             (is (= (seq got) (seq want))
-                (str n ": " (pr-str got) " ≠ " (pr-str want)))))))
+                (str n ": " (pr-str got) " ≠ " (pr-str want)))))
+        ;; nil = vnil over Value: get-with-default, when (one-armed if), keep — over rows
+        ;; where one row is MISSING :age (absence = vnil).
+        (let [sparse-edn [{:name "ada" :age 36} {:name "bob"} {:name "eve" :age 29}]
+              sparse (mapv edn/edn->value sparse-edn)
+              nil-cases [['nr-getd '(mapv (fn [r] (get r :age 0)) rows)
+                          #(mapv (fn [r] (get r :age 0)) %)]
+                         ['nr-when '(mapv (fn [r] (when (vsome? (get r :age)) (:name r))) rows)
+                          #(mapv (fn [r] (when (some? (:age r)) (:name r))) %)]
+                         ['nr-keep '(keep (fn [r] (get r :age)) rows)
+                          #(keep (fn [r] (get r :age)) %)]]]
+          (doseq [[n body truth] nil-cases]
+            (binding [a/*verbose* false]
+              (eval (list 'ansatz.core/defn n '[rows :- (List Value)] '(List Value) body)))
+            (let [got (mapv edn/value->edn ((resolve n) sparse))
+                  want (truth sparse-edn)]
+              (is (= (seq got) (seq want))
+                  (str n ": " (pr-str got) " ≠ " (pr-str want))))))))
     (println "edn-runtime-breadth: no env, skipping")))

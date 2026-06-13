@@ -70,7 +70,6 @@
 
     ;; Structural node count — recursive (compiles via the auto-sizeOf measure).
     (ansatz.core/defn vcount [m :- Value] Nat
-      :termination-by m
       (match m Value Nat
              (vnil 0) (vbool [b] 0) (vint [i] 0) (vstr [s] 0) (vkw [s] 0)
              (vcons [h t] (Nat.succ (Nat.add (vcount h) (vcount t))))
@@ -135,7 +134,7 @@
     ;; Element count — `(count v)` over a Value. vchain-len walks a vcons/ventry chain; vsize
     ;; gives the top-level element count (vstr → its String.length, like Clojure `count`).
     (ansatz.core/defn vchain-len [c :- Value] Nat
-      :termination-by c (match c Value Nat (vnil 0) (vbool [b] 0) (vint [i] 0) (vstr [s] 0) (vkw [s] 0)
+      (match c Value Nat (vnil 0) (vbool [b] 0) (vint [i] 0) (vstr [s] 0) (vkw [s] 0)
         (vcons [h t] (Nat.succ (vchain-len t))) (vvec [it] 0) (vmap [e] 0)
         (ventry [k v r] (Nat.succ (vchain-len r))) (vfloat [f] 0) (vset [it] 0)))
     (ansatz.core/defn vsize [v :- Value] Nat
@@ -154,25 +153,30 @@
     ;; RECURSION over the entry-chain (Value-returning vget hits the custom-recursion gap, so
     ;; we inline the type-check instead). One per scalar malli type.
     (ansatz.core/defn key-int? [k :- Value, m :- Value] Bool
-      :termination-by m (match m Value Bool (vnil false) (vbool [b] false) (vint [i] false) (vstr [s] false) (vkw [s] false)
+      (match m Value Bool (vnil false) (vbool [b] false) (vint [i] false) (vstr [s] false) (vkw [s] false)
         (vcons [h t] false) (vvec [it] false) (vmap [en] (key-int? k en))
         (ventry [ek ev rest] (if (vkeq k ek) (vint? ev) (key-int? k rest))) (vfloat [f] false) (vset [it] false)))
     (ansatz.core/defn key-str? [k :- Value, m :- Value] Bool
-      :termination-by m (match m Value Bool (vnil false) (vbool [b] false) (vint [i] false) (vstr [s] false) (vkw [s] false)
+      (match m Value Bool (vnil false) (vbool [b] false) (vint [i] false) (vstr [s] false) (vkw [s] false)
         (vcons [h t] false) (vvec [it] false) (vmap [en] (key-str? k en))
         (ventry [ek ev rest] (if (vkeq k ek) (vstr? ev) (key-str? k rest))) (vfloat [f] false) (vset [it] false)))
     (ansatz.core/defn key-bool? [k :- Value, m :- Value] Bool
-      :termination-by m (match m Value Bool (vnil false) (vbool [b] false) (vint [i] false) (vstr [s] false) (vkw [s] false)
+      (match m Value Bool (vnil false) (vbool [b] false) (vint [i] false) (vstr [s] false) (vkw [s] false)
         (vcons [h t] false) (vvec [it] false) (vmap [en] (key-bool? k en))
         (ventry [ek ev rest] (if (vkeq k ek) (vbool? ev) (key-bool? k rest))) (vfloat [f] false) (vset [it] false)))
 
     ;; vget — lookup key `k` in map `m`, returning the VALUE (vnil if absent). A general
     ;; Value-RETURNING recursion (works since the #58 fuel-base-case fix).
     (ansatz.core/defn vget [k :- Value, m :- Value] Value
-      :termination-by m (match m Value Value (vnil (Value.vnil)) (vbool [b] (Value.vnil)) (vint [i] (Value.vnil))
+      (match m Value Value (vnil (Value.vnil)) (vbool [b] (Value.vnil)) (vint [i] (Value.vnil))
         (vstr [s] (Value.vnil)) (vkw [s] (Value.vnil)) (vcons [h t] (Value.vnil)) (vvec [it] (Value.vnil))
         (vmap [en] (vget k en))
-        (ventry [ek ev rest] (if (vkeq k ek) ev (vget k rest))) (vfloat [f] (Value.vnil)) (vset [it] (Value.vnil))))])
+        (ventry [ek ev rest] (if (vkeq k ek) ev (vget k rest))) (vfloat [f] (Value.vnil)) (vset [it] (Value.vnil))))
+
+    ;; vgetD — `get` with a DEFAULT: the value at key `k`, or `d` when absent (vnil).
+    ;; nil = vnil over the dynamic Value universe — no Option needed; vnil IS the absence.
+    (ansatz.core/defn vgetD [k :- Value, m :- Value, d :- Value] Value
+      (let [g (vget k m)] (if (vsome? g) g d)))])
 
 ;; ── malli schema → Value conformance predicate ────────────────────────────────
 ;; A malli schema becomes a REFINEMENT over the Value universe: a kernel-verifiable
@@ -810,13 +814,19 @@
         (throw (ex-info (str "`" sym "` is only supported over a dynamic EDN Value in a "
                              "verified body (operand type is not Value)") {:pred sym}))))))
 
+(declare to-value-operand)
+
 (defn- get-elaborator
-  "`(get v k)` over a Value → `(vget (Value.vkw k) v)` (returns a Value; 2-arg form). Other
-   receivers fall back to core's keyword-projection sugar (get r :k ≡ (:k r))."
+  "`(get v k)` over a Value → `(vget (Value.vkw k) v)`; `(get v k default)` → `(vgetD … d)`
+   (the default returned when the key is absent — nil = vnil over the Value universe).
+   Other receivers fall back to core's keyword-projection sugar (get r :k ≡ (:k r))."
   [est args]
   (let [v (api/elab est (first args))]
     (if (value-typed? est v)
-      (e/app* (const0 "vget") (vkey-expr est (second args)) v)
+      (if (= 3 (count args))
+        (e/app* (const0 "vgetD") (vkey-expr est (second args)) v
+                (to-value-operand est (api/elab est (nth args 2))))
+        (e/app* (const0 "vget") (vkey-expr est (second args)) v))
       (api/elab est (list (second args) (first args))))))
 
 (defn- to-int-operand
@@ -867,6 +877,19 @@
     (fn [_est kw v-expr]
       (e/app* (const0 "vget") (e/app (const0 "Value.vkw") (e/lit-str (kw-str kw))) v-expr)))
   (api/register-comparison! "Value" value-cmp-handler)
+  ;; (when c x) over a Value body → (if c x (Value.vnil)) — nil = vnil. Intercepted as a
+  ;; term elaborator (before macroexpansion to a 3-elem if) so the absence is typed vnil.
+  (a/register-term-elaborator! 'when
+    (fn [est args]
+      (let [x (api/elab est (second args))]
+        (if (value-typed? est x)
+          (api/elab est (list 'if (first args) (second args) '(Value.vnil)))
+          (throw (ex-info "when in a verified body is supported over a dynamic EDN Value body (nil = vnil)"
+                          {:kind :when-nonvalue}))))))
+  ;; (keep f xs) over Value elements → map then drop vnil: (filterv vsome? (mapv f xs)).
+  (a/register-term-elaborator! 'keep
+    (fn [est args]
+      (api/elab est (list 'filterv '(fn [v] (vsome? v)) (list 'mapv (first args) (second args))))))
   (doseq [[sym vpred] surface-preds]
     (a/register-term-elaborator! sym (vpred-elaborator sym vpred)))
   :installed)
