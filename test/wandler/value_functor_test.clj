@@ -15,7 +15,8 @@
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]
             [wandler.core :as w]
-            [wandler.surface.edn :as edn]
+            [ansatz.surface.data :as data]
+            [ansatz.surface.schema :as schema]
             [wandler.test-env :as test-env]))
 
 (def ^:private ready (atom false))
@@ -24,13 +25,13 @@
   (fn [f]
     (if @test-env/init-full-env
       (do (reset! a/ansatz-env @test-env/init-full-env)
-          (binding [a/*verbose* false] (w/install!) (edn/install-core!))
+          (binding [a/*verbose* false] (w/install!) (data/install-core!))
           (reset! ready true)
           (f))
       (do (println "SKIP value-functor: init.ndjson / store absent") (f)))))
 
 (defn- type-verifies? [conf-name schema]
-  (let [ty (edn/schema->value-type conf-name schema)
+  (let [ty (schema/schema->value-type conf-name schema)
         ax (env/mk-axiom (name/from-string (str "tyck-" (gensym))) [] ty)]
     (env/check-constant (a/env) ax)            ;; throws if the type is ill-formed
     (re-find #"Subtype" (ansatz.kernel.expr/->string ty))))
@@ -54,7 +55,7 @@
   ;; true, so the conformance proof (rfl) IS the inhabitation certificate for Subtype Value law-or.
   (when @ready
     (binding [a/*verbose* false]
-      (edn/schema->value-type 'law-or [:or :int :string])   ;; installs law-or : Value → Bool
+      (schema/schema->value-type 'law-or [:or :int :string])   ;; installs law-or : Value → Bool
       (a/prove-theorem 'or-conforms-str []
                        '(= Bool (law-or (Value.vstr "hi")) Bool.true) '[(rfl)])
       (is (some? (env/lookup (a/env) (name/from-string "or-conforms-str")))

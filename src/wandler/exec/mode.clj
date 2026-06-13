@@ -295,7 +295,7 @@
 ;; `run-edn` bridges them with the existing `edn->value` / `value->edn` converters (wandler.surface.edn): ingest
 ;; each delta row (keyword-map → tagged Value), egress each result key back. A join pair `[a b]` of
 ;; Values egresses component-wise; a numeric aggregate (sum/count) passes through.
-(defn- edn-conv [s] (requiring-resolve (symbol "wandler.surface.edn" s)))
+(defn- edn-conv [s] (requiring-resolve (symbol "ansatz.surface.data" s)))
 
 (defn run-edn
   "Wrap an incremental `run` (Δ-stream → running views over the kernel-native `Value` rep) so it accepts

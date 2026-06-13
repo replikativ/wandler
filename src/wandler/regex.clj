@@ -14,7 +14,6 @@
   (:require [wandler.core]
             [ansatz.core :as a]
             [wandler.surface.collections :as coll]
-            [wandler.surface.edn :as edn]
             [ansatz.kernel.env :as kenv]
             [ansatz.kernel.name :as name])
   (:import [java.util.regex Pattern]))

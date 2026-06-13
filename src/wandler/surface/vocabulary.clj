@@ -92,6 +92,6 @@
  '[[smap        {:sig "(map f strm)" :dispatch "via the routed map: Strm/LSeq receivers" :denotation "Strm.smap / LSeq.smap" :lowering "compose / lazy map" :tier :streams}]
    [window      {:sig "(take n strm)" :dispatch "via the routed take: the BOUNDED window of an infinite source" :denotation "Strm.take / Stream.unfoldTake" :lowering "mapv over indices / unfold-take" :tier :streams}]])
 
-(declare-verbs! 'wandler.surface.edn
+(declare-verbs! 'ansatz.surface.data
  '[[get         {:sig "(get v k)" :dispatch "Value → vget · records fall back to keyword projection" :denotation "vget (Value.vkw k) v" :lowering "get" :tier :edn}]
    [int?        {:sig "(int? v) — and string? boolean? keyword? nil? map? vector? set? double? float? some? any?" :dispatch "Value receivers only (named error otherwise)" :denotation "vint? / vstr? / …" :lowering "predicate" :tier :edn}]])
