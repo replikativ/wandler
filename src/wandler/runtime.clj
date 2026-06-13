@@ -356,20 +356,22 @@
 
 ;; ── the lowering table (codegen-registry entries) ───────────────────────────
 
-(defn- lower
-  "Lower one runtime-vocabulary application head to Clojure (consulted by ansatz
-   codegen through the codegen-registry seam for heads it doesn't know natively)."
-  [env expr names]
-  (let [[head args] (e/get-app-fn-args expr)
-        h (name/->string (e/const-name head))
-        ca (mapv #(a/ansatz->clj env % names) args)]
-    ;; Built-ins ansatz lowers NATIVELY (dite, WellFounded.Nat.fix, HAdd…HPow, Nat.add/mul/div/pow/
-    ;; succ/blt/ble/beq, Bool.true/false, Nat.zero, ite, List.cons/nil/length, Subtype.val/mk,
-    ;; SizeOf.sizeOf) are NOT handled here: ansatz's builtin-app table fires BEFORE this codegen-registry
-    ;; seam, so any copy would be dead code. `lower` owns wandler's vocabulary (Int/Float/String/List/
-    ;; Map/Option/Stream/… ops) plus the few built-ins needed in VALUE position (Float.*, OfScientific)
-    ;; that ansatz's builtin-VALUE table doesn't cover.
-    (case h
+(defmacro ^:private lowerings
+  "Build a {head → (fn [env ca args names] → clj-form)} map from case-style `head body` clauses, with
+   env/ca/args/names ANAPHORICALLY bound in each body — ca = pre-compiled arg forms, args = raw Expr
+   args, env/names for arms that recursively lower a sub-term. Keeps the built-in vocabulary readable
+   as a table while making it a single extensible map (vs the old case + parallel head-list pair)."
+  [& clauses]
+  (into {} (for [[k body] (partition 2 clauses)]
+             [k `(fn [~'env ~'ca ~'args ~'names] ~body)])))
+
+(def ^:private builtin-lowerings
+  "wandler's built-in runtime vocabulary (Int/Float/String/List/Map/Option/Stream/… ops) plus the few
+   built-ins needed in VALUE position (Float.*, OfScientific). Heads ansatz lowers NATIVELY (dite,
+   WellFounded.Nat.fix, HAdd…HPow, Nat.add/mul/div/pow/succ/blt/ble/beq, Bool.true/false, Nat.zero,
+   ite, List.cons/nil/length, Subtype.val/mk, SizeOf.sizeOf) are NOT here: ansatz's builtin-app table
+   fires BEFORE this codegen-registry seam, so a copy would be dead."
+  (lowerings
             ;; Int arithmetic → Clojure long ops (signed). Int.ofNat is a no-op at
             ;; runtime (both are JVM long). The Int64 trust decision applies.
             "Int.add" (nary-op '+ ca)
@@ -598,96 +600,39 @@
                           (list 'if (list cmp a b)
                                 (list 'if (list cmp b a) 0 -1) 1))
                     (nth ca 1)))
+    ))
+
+(def lowering-table
+  "The SINGLE source of truth for runtime lowerings: the built-in vocabulary plus anything
+   register-lowering! adds. install! registers exactly its keys into ansatz's codegen-registry, so
+   there is no separate head-list to keep in sync (the old lowered-heads/case dual-maintenance)."
+  (atom builtin-lowerings))
+
+(defn- lower
+  "Lower one runtime-vocabulary application head to Clojure (consulted by ansatz codegen through the
+   codegen-registry seam for heads it doesn't know natively). Dispatches through lowering-table."
+  [env expr names]
+  (let [[head args] (e/get-app-fn-args expr)
+        h (name/->string (e/const-name head))
+        ca (mapv #(a/ansatz->clj env % names) args)]
+    (if-let [f (get @lowering-table h)]
+      (f env ca args names)
       (throw (ex-info (str "wandler.runtime/lower: unregistered head " h) {:head h})))))
 
-(def ^:private lowered-heads
-  [
-    "List.sum"
-    "Int.add"
-    "Int.mul"
-    "Int.sub"
-    "Int.div"
-    "Int.ofNat"
-    "Int.neg"
-    "Float.ofNat"
-    "Bool.not"
-    "Function.comp"
-    "OfScientific.ofScientific"
-    "Float.add"
-    "Float.mul"
-    "Float.sub"
-    "Float.div"
-    "String.append"
-    "String.length"
-    "String.toUpper"
-    "String.toLower"
-    "String.isPrefixOf"
-    "List.elem"
-    "List.all"
-    "List.any"
-    "String.toList"
-    "Char.toNat"
-    "Float.beq"
-    "Decidable.decide"
-    "Eq"
-    "BEq.beq"
-    "Prod.mk"
-    "Prod.fst"
-    "Prod.snd"
-    "List.foldl"
-    "List.take"
-    "List.drop"
-    "List.chunk"
-    "Stream.unfoldTake"
-    "Strm.range"
-    "Strm.smap"
-    "Strm.take"
-    "Strm.scan"
-    "LSeq.smap"
-    "LSeq.take"
-    "List.getD"
-    "List.range"
-    "List.takeWhile"
-    "List.dropWhile"
-    "List.head?"
-    "List.getLast?"
-    "List.tail"
-    "List.reverse"
-    "List.append"
-    "List.intersperse"
-    "List.flatMap"
-    "List.filterMap"
-    "List.mapIdx"
-    "List.scanl"
-    "List.eraseReps"
-    "AList.empty"
-    "AList.get"
-    "AList.put"
-    "Option.some"
-    "Option.none"
-    "Option.isSome"
-    "Option.isNone"
-    "Option.getD"
-    "Option.elim"
-    "Option.map"
-    "Option.bind"
-    "List.map"
-    "List.filter"
-    "List.lookup"
-    "Map.insert"
-    "Map.lookup"
-    "Map.empty"
-    "Map.group_by"
-    "Map.entries"
-    "Map.join"
-    "List.eraseDups"
-    "List.mergeSort"
-  ])
+(defn register-lowering!
+  "Register a Clojure lowering for a runtime-vocabulary head — Lean's @[implemented_by] for a compiled
+   op. `f` = (fn [env ca args names] → clj-form): ca = pre-compiled arg forms, args = raw Expr args.
+   The open extension point: a vocabulary or user adds a lowering WITHOUT editing builtin-lowerings,
+   and the head is auto-installed into ansatz's codegen-registry. Idempotent per head; returns head."
+  [head f]
+  (swap! lowering-table assoc head f)
+  (swap! a/codegen-registry assoc head lower)
+  head)
 
 (defn install!
-  "Register the runtime lowering for every vocabulary head (idempotent)."
+  "Point ansatz's codegen-registry at `lower` for every head in lowering-table (idempotent)."
   []
-  (doseq [h lowered-heads]
+  (doseq [h (keys @lowering-table)]
     (swap! a/codegen-registry assoc h lower)))
 
 (install!)
