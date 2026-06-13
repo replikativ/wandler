@@ -84,7 +84,7 @@
       (eval '(ansatz.core/theorem reMatchStr_plus [p :- RE, q :- RE, s :- String]
                (= Bool (or (reMatchStr p s) (reMatchStr q s)) (reMatchStr (RE.rplus p q) s))
                (simp "reMatchStr" "rmatch_plus"))))))
-;; Once `reMatchStr` is in the env, wandler.surface.edn's `:re` conforms node becomes PRECISE automatically
+;; Once `reMatchStr` is in the env, ansatz.surface.schema's `:re` conforms node becomes PRECISE automatically
 ;; (it env-gates on `reMatchStr` and resolves `re-conforms-leaf` below) — the #62/#63 composition:
 ;; a regex becomes a verified field refinement. No global hook; gated on env state (test-isolated).
 

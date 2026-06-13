@@ -292,7 +292,7 @@
 ;; ── runtime-rep alignment: run the engine over the kernel-native EDN `Value` rep, EDN in / EDN out ─
 ;; The engine and the codegen'd leaf fns must share ONE row representation. Codegen of a kernel term over
 ;; `Value` (vget/vint?/…) runs on the tagged-vector rep `[cidx field…]`, while callers hold keyword-maps.
-;; `run-edn` bridges them with the existing `edn->value` / `value->edn` converters (wandler.surface.edn): ingest
+;; `run-edn` bridges them with the existing `edn->value` / `value->edn` converters (ansatz.surface.data): ingest
 ;; each delta row (keyword-map → tagged Value), egress each result key back. A join pair `[a b]` of
 ;; Values egresses component-wise; a numeric aggregate (sum/count) passes through.
 (defn- edn-conv [s] (requiring-resolve (symbol "ansatz.surface.data" s)))

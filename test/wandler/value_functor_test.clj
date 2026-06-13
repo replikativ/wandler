@@ -4,10 +4,9 @@
    This closes the gap the precise lane (ansatz.malli/schema->type-expr) leaves: an UNTAGGED union
    [:or …] / [:enum …] is set-union over the value universe (semantic subtyping), modelled faithfully
    as a disjunctive conformance predicate — NOT a tagged Sum (which would model malli's :orn). So
-   :or/:enum, which THROW in the precise lane, get verified kernel-type images here.
-
-   (Recursive conformance — [:vector …]/nested maps — currently fails at WF termination in the conforms
-   compiler, a separate pre-existing gap; this functor covers it the moment that's fixed.)"
+   :or/:enum, which THROW in the precise lane, get verified kernel-type images here. Total over
+   scalars, collections, records, bounded refinements, unions/enums, AND recursive forms (vectors,
+   nested maps, self-referential registry trees)."
   (:require [clojure.test :refer [deftest is use-fixtures]]
             [ansatz.core :as a]
             [ansatz.malli :as am]
@@ -47,7 +46,14 @@
       (is (type-verifies? 'conf-or   [:or :int :string])   ":or  — union gap CLOSED")
       (is (type-verifies? 'conf-enum [:enum :a :b :c])     ":enum — enum gap CLOSED")
       (is (type-verifies? 'conf-bnd  [:int {:min 18}])     "bounded refinement")
-      (is (type-verifies? 'conf-map  [:map [:x :int] [:y :string]]) "flat record"))))
+      (is (type-verifies? 'conf-map  [:map [:x :int] [:y :string]]) "flat record")
+      ;; RECURSIVE forms (the conforms compiler recurses structurally over the Value cons-chain):
+      ;; these previously failed at WF termination — fixed by emitting Bool.and (keeping the
+      ;; recursive call structurally visible) instead of surface `and` (which buried it in an ite).
+      (is (type-verifies? 'conf-vec  [:vector :int])                "recursive: vector")
+      (is (type-verifies? 'conf-nest [:map [:x :int] [:items [:vector :int]]]) "recursive: nested vector in map")
+      (is (type-verifies? 'conf-tree [:schema {:registry {::n [:map [:v :int] [:kids [:vector [:ref ::n]]]]}}
+                                      [:ref ::n]])                  "recursive: self-referential tree"))))
 
 (deftest conformance-is-inhabitation
   ;; The one law, computational side: a value that conforms (γ v = true) is exactly an inhabitant of
