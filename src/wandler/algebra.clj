@@ -92,6 +92,42 @@
     (register-monoid! op-name {:clj clj-op :id id-literal :laws names})
     op-name))
 
+(defn prove-monoid!
+  "PROVE (not assert) that the VERIFIED op `op-name` is an associative monoid with identity
+   `id-form` (a surface literal, e.g. 0) over carrier `M-form` (a surface type, e.g. Nat),
+   runtime 2-arg op `clj-op`, fold init `id-literal`. Discharges the assoc + left/right-identity
+   laws via the tactic engine `[(simp \"op\") (all_goals (try (omega)))]` — which proves
+   arithmetic monoids and CORRECTLY FAILS on non-monoids (the kernel won't admit a false law).
+   Registers the monoid iff ALL three proofs succeed (the PROOFS are the licence — kernel-checked,
+   not trusted). Returns true if proven+registered, false otherwise (then the op simply folds
+   sequentially — no false licence). The kernel-up path: prove where we can."
+  [op-name M-form id-form clj-op id-literal]
+  (let [op (symbol op-name)
+        stack (list (list 'simp op-name) (list 'all_goals (list 'try (list 'omega))))
+        prove (fn [nm params prop]
+                (try (a/prove-theorem nm params prop stack) true (catch Throwable _ false)))
+        an (str op-name "_assoc") ln (str op-name "_zero_add") rn (str op-name "_add_zero")
+        ok (and (prove (symbol an) (vector 'a :- M-form 'b :- M-form 'c :- M-form)
+                       (list '= M-form (list op (list op 'a 'b) 'c) (list op 'a (list op 'b 'c))))
+                (prove (symbol ln) (vector 'a :- M-form) (list '= M-form (list op id-form 'a) 'a))
+                (prove (symbol rn) (vector 'a :- M-form) (list '= M-form (list op 'a id-form) 'a)))]
+    (if ok
+      (do (register-monoid! op-name {:clj clj-op :id id-literal :laws [an ln rn]}) true)
+      (do (println "⚠ defmonoid:" op-name "— could not PROVE the monoid laws; folds sequentially"
+                   "(declare ^{:laws {:assoc true}} on an a/foreign to ASSERT them instead)")
+          false))))
+
+(defmacro defmonoid
+  "Define a VERIFIED op and try to PROVE it is an associative monoid (identity via `:identity`),
+   feeding the proven laws to the planner so a fold over it auto-parallelizes. The proofs are
+   kernel-checked — if the op isn't actually a monoid the proof fails and it folds sequentially
+   (never a false licence). The verified counterpart of `(w/foreign ^{:laws …})`'s assertions.
+     (w/defmonoid mysum [a :- Nat, b :- Nat] Nat (Nat.add a b) :identity 0)"
+  [fn-name params ret-type body & {:keys [identity] :or {identity 0}}]
+  `(let [v# (a/defn ~fn-name ~params ~ret-type ~body)]
+     (prove-monoid! ~(str fn-name) '~ret-type '~identity '~fn-name ~identity)
+     v#))
+
 (defmacro foreign
   "Declare a trusted FOREIGN function (a/foreign) and lift any algebraic laws from its
    name metadata `^{:laws {…}}` into the planner. Currently understood: a monoid via

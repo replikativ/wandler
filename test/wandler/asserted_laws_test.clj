@@ -42,3 +42,31 @@
         (is (not (re-find #"apfoldl" cf))
             "foreign op with NO declared laws is NOT parallelized (no licence) — correct")))
     (println "asserted-laws: no env, skipping")))
+
+(deftest verified-monoid-laws-are-proven
+  (if-let [kenv @test-env/init-full-env]
+    (do
+      (reset! a/ansatz-env kenv)
+      (w/install!)
+      ;; a VERIFIED op: defmonoid PROVES its monoid laws (kernel-checked, not trusted)
+      (binding [a/*verbose* false]
+        (eval '(wandler.algebra/defmonoid psum2 [a :- Nat, b :- Nat] Nat (Nat.add a b) :identity 0))
+        (eval '(ansatz.core/defn ptot2 [xs :- (List Nat)] Nat (reduce psum2 0 xs))))
+      ;; the laws are PROVEN theorems (not axioms)
+      (let [ci (kenv/lookup (a/env) (name/from-string "psum2_assoc"))]
+        (is (some? ci) "assoc law present")
+        (is (not (.isAxiom ci)) "assoc is PROVEN (a real theorem), not a trusted axiom"))
+      ;; and the fold auto-parallelizes off the proven laws
+      (let [cf (pr-str (a/ansatz->clj (a/env)
+                          (.value (kenv/lookup (a/env) (name/from-string "ptot2"))) []))]
+        (is (re-find #"apfoldl" cf) "fold over proven monoid auto-parallelizes"))
+      (is (= 15 (long ((resolve 'ptot2) '(1 2 3 4 5)))))
+      ;; a NON-monoid (Nat.sub): the proof must FAIL → not registered → sequential
+      (binding [a/*verbose* false]
+        (eval '(wandler.algebra/defmonoid psub2 [a :- Nat, b :- Nat] Nat (Nat.sub a b) :identity 0))
+        (eval '(ansatz.core/defn stot2 [xs :- (List Nat)] Nat (reduce psub2 0 xs))))
+      (let [cf (pr-str (a/ansatz->clj (a/env)
+                          (.value (kenv/lookup (a/env) (name/from-string "stot2"))) []))]
+        (is (not (re-find #"apfoldl" cf))
+            "non-monoid (Nat.sub) couldn't be PROVEN a monoid → not parallelized — correct & safe")))
+    (println "verified-monoid: no env, skipping")))
