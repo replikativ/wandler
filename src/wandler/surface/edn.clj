@@ -819,6 +819,41 @@
       (e/app* (const0 "vget") (vkey-expr est (second args)) v)
       (api/elab est (list (second args) (first args))))))
 
+(defn- to-int-operand
+  "Coerce a comparison operand to `Int`: a Value via vint-val (0 off-int), a Nat via
+   Int.ofNat, an Int as-is; default assumes Value."
+  [est x]
+  (case (head-name (api/arg-type est x))
+    "Nat"   (e/app (const0 "Int.ofNat") x)
+    "Int"   x
+    (e/app (const0 "vint-val") x)))
+
+(defn- to-value-operand
+  "Coerce a comparison operand to `Value` (for structural veq): a literal wraps in its
+   Value ctor, a Value stays."
+  [est x]
+  (case (head-name (api/arg-type est x))
+    "Value"  x
+    "String" (e/app (const0 "Value.vstr") x)
+    "Nat"    (e/app (const0 "Value.vint") (e/app (const0 "Int.ofNat") x))
+    "Int"    (e/app (const0 "Value.vint") x)
+    "Bool"   (e/app (const0 "Value.vbool") x)
+    x))
+
+(defn- value-cmp-handler
+  "Type-directed comparison over a dynamic-EDN Value (registered via the comparison seam):
+   `<`/`<=` compare the int payloads (Int via vint-val), `==` is structural veq with the
+   other operand coerced to a Value."
+  [est rel a0 b0]
+  (case rel
+    (:lt :le) (let [ai (to-int-operand est a0) bi (to-int-operand est b0)
+                    propc (if (= rel :lt) "Int.lt" "Int.le")
+                    decc  (if (= rel :lt) "Int.decLt" "Int.decLe")]
+                (e/app* (const0 "Decidable.decide")
+                        (e/app* (const0 propc) ai bi)
+                        (e/app* (const0 decc) ai bi)))
+    :eq (e/app* (const0 "veq") (to-value-operand est a0) (to-value-operand est b0))))
+
 (defn install-surface!
   "Register native-Clojure-over-Value surface elaborators (get / int?/map?/string?/… +
    keyword access `(:k v)` via the type-directed keyword-access seam). Idempotent;
@@ -831,6 +866,7 @@
   (api/register-keyword-access! "Value"
     (fn [_est kw v-expr]
       (e/app* (const0 "vget") (e/app (const0 "Value.vkw") (e/lit-str (kw-str kw))) v-expr)))
+  (api/register-comparison! "Value" value-cmp-handler)
   (doseq [[sym vpred] surface-preds]
     (a/register-term-elaborator! sym (vpred-elaborator sym vpred)))
   :installed)
