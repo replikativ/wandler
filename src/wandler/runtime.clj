@@ -363,83 +363,13 @@
   (let [[head args] (e/get-app-fn-args expr)
         h (name/->string (e/const-name head))
         ca (mapv #(a/ansatz->clj env % names) args)]
+    ;; Built-ins ansatz lowers NATIVELY (dite, WellFounded.Nat.fix, HAdd…HPow, Nat.add/mul/div/pow/
+    ;; succ/blt/ble/beq, Bool.true/false, Nat.zero, ite, List.cons/nil/length, Subtype.val/mk,
+    ;; SizeOf.sizeOf) are NOT handled here: ansatz's builtin-app table fires BEFORE this codegen-registry
+    ;; seam, so any copy would be dead code. `lower` owns wandler's vocabulary (Int/Float/String/List/
+    ;; Map/Option/Stream/… ops) plus the few built-ins needed in VALUE position (Float.*, OfScientific)
+    ;; that ansatz's builtin-VALUE table doesn't cover.
     (case h
-            ;; dite α cond dec then-fn else-fn → (if bool-cond then else)
-            ;; then-fn = λ h => body, else-fn = λ h => body (h is proof, erased at runtime)
-            "dite"
-            (let [;; args: [α, cond, dec-inst, then-fn, else-fn]
-                  then-fn (nth args 3)   ;; Ansatz lambda: λ h => then-body
-                  else-fn (nth args 4)   ;; Ansatz lambda: λ h => else-body
-                  ;; Peel lambda, compile body (the h arg is a proof — not used at runtime)
-                  then-body (if (e/lam? then-fn)
-                              (a/ansatz->clj env (e/lam-body then-fn) (conj names "_h"))
-                              (nth ca 3))
-                  else-body (if (e/lam? else-fn)
-                              (a/ansatz->clj env (e/lam-body else-fn) (conj names "_h"))
-                              (nth ca 4))
-                  ;; Build runtime condition from the Decidable instance.
-                  ;; Decidable.decide returns Bool; or for Nat.decEq a b, use ==
-                  dec-expr (nth args 2) ;; Ansatz expr for Decidable instance
-                  [dec-head dec-args] (e/get-app-fn-args dec-expr)
-                  bool-cond (if (and (e/const? dec-head)
-                                     (= "Nat.decEq" (name/->string (e/const-name dec-head))))
-                              ;; Nat.decEq a b → (== a b) at runtime
-                              (list '== (a/ansatz->clj env (nth dec-args 0) names)
-                                    (a/ansatz->clj env (nth dec-args 1) names))
-                              ;; Generic: compile the decidable instance (may not work for all cases)
-                              (nth ca 2))]
-              (list 'if bool-cond then-body else-body))
-            ;; WellFounded.Nat.fix α motive measure F x → letfn recursive call
-            ;; F = λ x (λ IH body) — compile body with IH→self-call, dropping proof args
-            "WellFounded.Nat.fix"
-            (if (= 5 (count ca))
-              ;; Full application: WF.Nat.fix α motive measure F x
-              (let [f-expr (nth args 3) ;; F as Ansatz Expr
-                    x-arg (nth ca 4)    ;; compiled x
-                    self-sym (gensym "wf_")
-                    ;; F = λ x. λ IH. body
-                    ;; Peel two lambdas
-                    f-body-1 (when (e/lam? f-expr) (e/lam-body f-expr))
-                    f-body-2 (when (and f-body-1 (e/lam? f-body-1)) (e/lam-body f-body-1))
-                    x-name (when (e/lam? f-expr) (or (e/lam-name f-expr) "x"))
-                    ih-name (when (and f-body-1 (e/lam? f-body-1))
-                              (or (e/lam-name f-body-1) "IH"))
-                    compiled-body (when f-body-2
-                                    (a/ansatz->clj env f-body-2
-                                                 (conj names x-name ih-name)))
-                    ;; Replace IH calls: (IH arg proof) → (self arg)
-                    ;; In compiled form, IH is a symbol. Calls look like ((IH arg) proof).
-                    ;; We need to replace (IH-sym arg proof) patterns with (self arg).
-                    ih-sym (symbol ih-name)
-                    replace-ih (fn replace-ih [form]
-                                 (cond
-                                   ;; ((IH y) proof) → (self y)
-                                   (and (seq? form) (= 2 (count form))
-                                        (seq? (first form)) (= 2 (count (first form)))
-                                        (= ih-sym (ffirst form)))
-                                   (list self-sym (second (first form)))
-                                   (seq? form) (apply list (map replace-ih form))
-                                   (vector? form) (mapv replace-ih form)
-                                   :else form))
-                    final-body (replace-ih compiled-body)]
-                (list 'letfn [(list self-sym [(symbol x-name)] final-body)]
-                      (list self-sym x-arg)))
-              ;; Partial application (shouldn't happen normally)
-              (list 'apply (a/ansatz->clj env head names) ca))
-            "HAdd.hAdd" (list '+ (nth ca 4) (nth ca 5))
-            "HMul.hMul" (list '* (nth ca 4) (nth ca 5))
-            ;; HSub: Nat truncates at 0 (Nat.sub semantics); Int/Float are SIGNED.
-            ;; Decide from the element type arg (args[0]).
-            "HSub.hSub" (let [tn (let [[th _] (e/get-app-fn-args (nth args 0))]
-                                   (when (e/const? th) (name/->string (e/const-name th))))]
-                          (if (= tn "Nat")
-                            (list 'max 0 (list '- (nth ca 4) (nth ca 5)))
-                            (list '- (nth ca 4) (nth ca 5))))
-            "HDiv.hDiv" (list 'quot (nth ca 4) (nth ca 5))
-            "HPow.hPow" (list 'long (list 'Math/pow (nth ca 4) (nth ca 5)))
-            "Nat.add" (nary-op '+ ca)
-            "Nat.mul" (nary-op '* ca)
-            "Nat.div" (list 'quot (nth ca 0) (nth ca 1))
             ;; Int arithmetic → Clojure long ops (signed). Int.ofNat is a no-op at
             ;; runtime (both are JVM long). The Int64 trust decision applies.
             "Int.add" (nary-op '+ ca)
@@ -449,17 +379,12 @@
             "Int.ofNat" (nth ca 0)
             "Int.neg" (list '- (nth ca 0))
             "Float.ofNat" (list 'double (nth ca 0))
-            "Nat.pow" (list 'long (list 'Math/pow (nth ca 0) (nth ca 1)))
-            "Nat.succ" (list 'inc (nth ca 0))
-            "Bool.true" true
-            "Bool.false" false
             "Bool.not" (list 'not (nth ca 0))
             ;; Function.comp α β γ f g [x] → (comp f g) or (f (g x)). Produced by
             ;; map∘map fusion (List.map_map rewrites to map (f ∘ g)).
             "Function.comp" (if (>= (count ca) 6)
                               (list (nth ca 3) (list (nth ca 4) (nth ca 5)))
                               (list 'clojure.core/comp (nth ca 3) (nth ca 4)))
-            "Nat.zero" 0
             ;; Float literal: OfScientific.ofScientific Float inst m s e → m × 10^±e.
             ;; (args: α inst mantissa exponentSign decimalExponent) — type/inst erase.
             "OfScientific.ofScientific"
@@ -502,7 +427,6 @@
                 ("Int.le" "Float.le" "Nat.le") (list '<= (a/ansatz->clj env (nth pa 0) names) (a/ansatz->clj env (nth pa 1) names))
                 "Eq" (list 'clojure.core/= (a/ansatz->clj env (nth pa 1) names) (a/ansatz->clj env (nth pa 2) names))
                 (nth ca 1)))
-            "ite" (list 'if (nth ca 1) (nth ca 3) (nth ca 4))
             ;; Eq as a runtime condition (e.g. the `p x = true` guard in a fused
             ;; foldl_filter step): Bool equalities collapse to the bool itself.
             "Eq" (let [rhs-head (first (e/get-app-fn-args (nth args 2)))
@@ -511,10 +435,6 @@
                      "Bool.true" (nth ca 1)
                      "Bool.false" (list 'not (nth ca 1))
                      (list 'clojure.core/= (nth ca 1) (nth ca 2))))
-            ;; Nat comparison → Clojure primitives (arity-tolerant for eta-reduced partials)
-            "Nat.blt" (nary-op '< ca)
-            "Nat.ble" (nary-op '<= ca)
-            "Nat.beq" (nary-op '== ca)
             ;; BEq equality: BEq.beq α inst a b → (= a b) (type/instance erased).
             "BEq.beq" (list 'clojure.core/= (nth ca 2) (nth ca 3))
             ;; Prod projections: Prod.mk compiles to a [fst snd] vector, so fst/snd
@@ -524,10 +444,6 @@
             "Prod.mk"  (eta-saturate ca 4 (fn [f] (list 'clojure.core/vector (nth f 2) (nth f 3))))
             "Prod.fst" (eta-saturate ca 3 (fn [f] (list 'clojure.core/nth (nth f 2) 0)))
             "Prod.snd" (eta-saturate ca 3 (fn [f] (list 'clojure.core/nth (nth f 2) 1)))
-            ;; List operations → Clojure persistent list
-            "List.cons" (list 'clojure.core/cons (nth ca 1) (nth ca 2))
-            "List.nil" nil
-            "List.length" (list 'count (nth ca 1))
             ;; List.sum α addInst zero coll → (reduce + 0 coll). The Add/Zero instances
             ;; erase; + is correct for the Nat/Int carriers the factorization laws emit.
             "List.sum" (list 'clojure.core/reduce '+ 0 (nth ca 3))
