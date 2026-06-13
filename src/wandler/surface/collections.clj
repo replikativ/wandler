@@ -146,8 +146,11 @@
                     (re-find #"Unknown constant" (str (ex-message ex))))
              (throw (ex-info (str "`" f-form "` is not a registered surface verb and not a kernel "
                                   "constant — it cannot be passed as a function value in a verified "
-                                  "body. See (wandler.core/vocabulary) / docs/SURFACE.md for the "
-                                  "verb vocabulary, or pass an inline (fn [x] …).")
+                                  "body. Options: (1) pass an inline (fn [x] …); (2) use a vocabulary "
+                                  "verb — see (wandler.core/vocabulary) / docs/SURFACE.md; or "
+                                  "(3) declare it as a TRUSTED FOREIGN fn and use that — "
+                                  "(a/foreign " f-form " [x :- <T>] <U> " f-form ") — the pipeline "
+                                  "structure still verifies + optimizes; only `" f-form "` is trusted.")
                              {:kind :unknown-fn-value :form f-form} ex))
              (throw ex))))))
 
