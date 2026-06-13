@@ -265,7 +265,9 @@
    <e>` (asserts assoc + identity → the canonical `Std.Associative` instance), plus `:comm true`
    and/or `:idem true` (asserts the matching `Std.Commutative`/`Std.IdempotentOp` instances).
      (w/foreign ^{:laws {:assoc true :identity 0}} mysum [a :- Nat, b :- Nat] Nat (fn [a b] (+ a b)))
-   Properties the user asserts are the trust boundary; everything else is exactly a/foreign."
+   Properties the user asserts are the trust boundary; everything else is exactly a/foreign.
+   (The exec/streaming engine has a separate runtime-resolution counterpart for black-box leaves —
+   `wandler.exec.mode/register-foreign!` — same 'trusted fn at a kernel type' idea, different layer.)"
   [fn-name params ret-type impl]
   (let [laws (:laws (meta fn-name))
         nm   (vary-meta fn-name dissoc :laws)

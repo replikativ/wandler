@@ -275,7 +275,13 @@
   "Admit a black-box Clojure fn `f` of kernel type `dom → cod` as a TYPED AXIOM (opaque, trusted — the
    boundary is named and typed, the body unverified) and register its runtime. After this, a pipeline may
    use `sym` as a leaf: the structure AROUND it stays certified (the ∂ laws are payload-independent), the
-   leaf is `:trusted` (sound for incremental iff `f` is pure). `env-atom` is e.g. `ansatz.core/ansatz-env`."
+   leaf is `:trusted` (sound for incremental iff `f` is pure). `env-atom` is e.g. `ansatz.core/ansatz-env`.
+
+   This is the EXEC-LAYER counterpart of the DSL `a/foreign` / `wandler.algebra/foreign` macros: same
+   idea (a trusted black-box fn at a kernel type), different layer. The macros DEFINE a foreign fn in a
+   surface program (and `w/foreign` additionally lifts ^{:laws …} into the algebra registry); this
+   registers the runtime closure into `foreign-registry` so `codegen-fn` can RESOLVE the axiom leaf to
+   its executable when running an incremental view."
   [env-atom sym dom cod f]
   (let [nm (name/from-string (str sym))]
     (when-not (kenv/lookup @env-atom nm)
