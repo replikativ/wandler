@@ -88,6 +88,17 @@
           eqs (map (fn [l] (list '== g l)) (sort-by str f-form))
           body (reduce (fn [acc e] (list 'Bool.or e acc)) (last eqs) (rest (reverse eqs)))]
       (compile-fn est (list 'fn [g] body) param-types))
+    ;; fn-value combinators, reified as inline fns (Layer-2 intercepts: the runtime
+    ;; meaning of comp/partial is function construction, so rebuild the function):
+    ;; (comp f g …) — rightmost applies first; (partial f a …) — prepend the args.
+    (and (seq? f-form) (= 'comp (first f-form)) (seq (rest f-form)))
+    (let [g (gensym "c")]
+      (compile-fn est (list 'fn [g]
+                            (reduce (fn [acc f] (list f acc)) g (reverse (rest f-form))))
+                  param-types))
+    (and (seq? f-form) (= 'partial (first f-form)) (seq (rest f-form)))
+    (let [g (gensym "p")]
+      (compile-fn est (list 'fn [g] (concat (rest f-form) [g])) param-types))
     ;; keyword-as-function: (map :k xs) ≡ (map (fn [x] (:k x)) xs) — the ubiquitous projection
     ;; idiom. Rewrite to an inline untyped fn; the records/Value `(:k x)` elaborator does the
     ;; field access, and the param type is injected from param-types like any anonymous fn.
@@ -107,10 +118,27 @@
     (and (inline-fn? f-form) (not (some #{:-} (second f-form))))
     ;; untyped params: inject the expected KERNEL types into the binder vector — the
     ;; elaborator's Expr passthrough makes splicing Exprs into surface forms legal
-    ;; (quotation with term holes)
-    (api/elab est (list 'lam
-                        (vec (mapcat (fn [p ty] [p ty]) (second f-form) param-types))
-                        (nth f-form 2)))
+    ;; (quotation with term holes). Sequential PAIR destructuring `[[a b]]` over a
+    ;; Prod param is rewritten at the binder (first/second) — clojure.core/destructure
+    ;; would emit nil-defaulted nths, which have no kernel meaning here.
+    (let [params (second f-form)
+          body (nth f-form 2)
+          [params body]
+          (reduce (fn [[ps b] p]
+                    (cond
+                      (symbol? p) [(conj ps p) b]
+                      (and (vector? p) (= 2 (count p)) (every? symbol? p))
+                      (let [g (gensym "pr")]
+                        [(conj ps g)
+                         (list 'let [(first p) (list 'first g) (second p) (list 'second g)] b)])
+                      :else (throw (ex-info (str "unsupported destructuring binder " (pr-str p)
+                                                 " — only [a b] pair destructuring over Prod is"
+                                                 " supported in verified bodies")
+                                            {:binder p}))))
+                  [[] body] params)]
+      (api/elab est (list 'lam
+                          (vec (mapcat (fn [p ty] [p ty]) params param-types))
+                          body)))
     :else
     (try (api/elab est f-form)
          (catch Exception ex
@@ -492,6 +520,12 @@
   ;; (dec x) → Nat.sub x 1 (truncated Nat subtraction, the kernel denotation)
   (e/app* (e/const' (nm "Nat.sub") []) (api/elab est (first args)) (e/lit-nat 1)))
 
+(defn- nat2-elaborator
+  "A 2-arg Nat op (Nat.div / Nat.max / Nat.min …) as a surface verb."
+  [const-name]
+  (fn [est args]
+    (e/app* (e/const' (nm const-name) []) (api/elab est (first args)) (api/elab est (second args)))))
+
 (defn- mod-elaborator [est args]
   ;; (mod a b) → Nat.mod a b. Nat only: Clojure's floored mod and Lean's Nat.mod
   ;; agree on naturals (incl. Nat.mod n 0 = n at the lowering); Int needs the
@@ -537,6 +571,9 @@
   (api/register-term-elaborator! 'sequence sequence-elaborator)
   (api/register-term-elaborator! 'eduction eduction-elaborator)
   (api/register-term-elaborator! 'mod mod-elaborator)
+  (api/register-term-elaborator! 'quot (nat2-elaborator "Nat.div"))
+  (api/register-term-elaborator! 'max (nat2-elaborator "Nat.max"))
+  (api/register-term-elaborator! 'min (nat2-elaborator "Nat.min"))
   ;; parity predicates: pure form rewrites onto mod + the type-directed ==
   (api/register-elaborator! 'even? (fn [args] (list '== (list 'mod (first args) 2) 0)))
   (api/register-elaborator! 'odd?  (fn [args] (list '== (list 'mod (first args) 2) 1))))

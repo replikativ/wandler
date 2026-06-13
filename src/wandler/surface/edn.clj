@@ -820,10 +820,17 @@
       (api/elab est (list (second args) (first args))))))
 
 (defn install-surface!
-  "Register native-Clojure-over-Value surface elaborators (get / int?/map?/string?/… ). Idempotent;
-   safe to call after `install-core!`. Keyword access `(:k v)` needs no registration (core)."
+  "Register native-Clojure-over-Value surface elaborators (get / int?/map?/string?/… +
+   keyword access `(:k v)` via the type-directed keyword-access seam). Idempotent;
+   safe to call after `install-core!`."
   []
   (a/register-term-elaborator! 'get get-elaborator)
+  ;; (:k v) over a Value receiver → (vget (Value.vkw "k") v) — full keyword incl. namespace,
+  ;; matching edn->value's key encoding. Registered structures keep native projection;
+  ;; this only fires for Value-typed receivers (the seam dispatches on the type head).
+  (api/register-keyword-access! "Value"
+    (fn [_est kw v-expr]
+      (e/app* (const0 "vget") (e/app (const0 "Value.vkw") (e/lit-str (kw-str kw))) v-expr)))
   (doseq [[sym vpred] surface-preds]
     (a/register-term-elaborator! sym (vpred-elaborator sym vpred)))
   :installed)
