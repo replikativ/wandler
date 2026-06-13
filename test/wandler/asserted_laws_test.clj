@@ -70,3 +70,31 @@
         (is (not (re-find #"apfoldl" cf))
             "non-monoid (Nat.sub) couldn't be PROVEN a monoid → not parallelized — correct & safe")))
     (println "verified-monoid: no env, skipping")))
+
+(deftest properties-grounded-in-std-typeclasses
+  ;; The re-grounding: an op's algebraic properties are the canonical Lean proof-carrying
+  ;; typeclasses (`Std.Associative`/`Std.Commutative`/`Std.IdempotentOp`). The licence gate
+  ;; keys on proof-presence; `install!` materializes the canonical instances for interop.
+  (if-let [kenv @test-env/init-full-env]
+    (do
+      (reset! a/ansatz-env kenv)
+      (w/install!)
+      ;; (1) the seed Init monoids are licensed on a fresh env, AND install materialized their
+      ;;     canonical Std.Associative / Std.Commutative instances (citeable by List.foldl_assoc)
+      (is (= '+ (alg/monoid-licence (a/env) "Nat.add" 0)) "Nat.add monoid licence fires")
+      (is (true? (alg/associative? (a/env) "Nat.add")) "Nat.add associative")
+      (is (true? (alg/commutative? (a/env) "Nat.add")) "Nat.add commutative")
+      (is (some? (kenv/lookup (a/env) (name/from-string "instStd.Associative_Nat.add")))
+          "canonical Std.Associative instance materialized")
+      (is (some? (kenv/lookup (a/env) (name/from-string "instStd.Commutative_Nat.add")))
+          "canonical Std.Commutative instance materialized")
+      ;; (2) a foreign op may ASSERT commutativity + idempotence → the matching Std instances,
+      ;;     and the predicates report them (the reorder / dedup licences)
+      (binding [a/*verbose* false]
+        (eval '(wandler.algebra/foreign ^{:laws {:comm true :idem true}} fmax2
+                 [a :- Nat, b :- Nat] Nat (fn [a b] (max a b)))))
+      (is (true? (alg/commutative? (a/env) "fmax2")) "asserted commutativity reported")
+      (is (true? (alg/idempotent?  (a/env) "fmax2")) "asserted idempotence reported")
+      (is (some? (kenv/lookup (a/env) (name/from-string "instStd.IdempotentOp_fmax2")))
+          "canonical Std.IdempotentOp instance built from the asserted law"))
+    (println "properties-grounded: no env, skipping")))

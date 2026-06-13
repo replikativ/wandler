@@ -21,6 +21,7 @@
             [wandler.surface.records :as rec]
             [wandler.surface.relational :as rel]
             [wandler.kmap :as kmap]
+            [wandler.algebra :as algebra]
             [wandler.runtime :as rt]
             [wandler.optimize :as opt]))
 
@@ -95,6 +96,7 @@
   []
   (install-registries!)
   (kmap/install!)
+  (algebra/install!)
   :installed)
 
 (install-registries!)
