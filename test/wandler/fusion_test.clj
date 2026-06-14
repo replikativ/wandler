@@ -48,14 +48,21 @@
     #(mapv (fn [x] (* x x)) (filterv (fn [x] (< 2 x)) %)) xs 1]])
 
 ;; record (malli def-record) pipelines — field projections must fuse like any other map/filter
-(def ^:private ORD [{:cid 1 :amount 50} {:cid 2 :amount 70} {:cid 1 :amount 30}])
+(def ^:private ORD [{:cid 1 :amount 50 :tier 2} {:cid 2 :amount 70 :tier 1} {:cid 1 :amount 30 :tier 2}])
 (def ^:private rec-cases
   [['fz-rec-mr '[os :- (List Order)] 'Nat
     '(reduce + 0 (map (fn [o] (:amount o)) os))
     #(reduce + 0 (map :amount %)) ORD 1]
    ['fz-rec-fmr '[os :- (List Order)] 'Nat
     '(reduce + 0 (map (fn [o] (:amount o)) (filter (fn [o] (< 40 (:amount o))) os)))
-    #(reduce + 0 (map :amount (filter (fn [o] (< 40 (:amount o))) %))) ORD 1]])
+    #(reduce + 0 (map :amount (filter (fn [o] (< 40 (:amount o))) %))) ORD 1]
+   ;; realistic 4-stage: enrich (assoc) → keep premium → project → sum, all over malli records → ONE pass
+   ['fz-rec-enrich '[os :- (List Order)] 'Nat
+    '(reduce + 0 (map (fn [o] (:amount o))
+                   (filter (fn [o] (< 1 (:tier o)))
+                     (map (fn [o] (assoc o :amount (+ 10 (:amount o)))) os))))
+    #(reduce + 0 (map :amount (filter (fn [o] (< 1 (:tier o)))
+                                (map (fn [o] (assoc o :amount (+ 10 (:amount o)))) %)))) ORD 1]])
 
 (defn- cmp [got want] (if (or (sequential? got) (sequential? want)) (= (seq got) (seq want)) (= got want)))
 
@@ -77,7 +84,7 @@
 (deftest record-field-pipelines-fuse
   (if-let [kenv @test-env/init-full-env]
     (do (reset! a/ansatz-env kenv) (w/install!)
-        (wrec/def-record Order [:map [:cid [:and :int [:>= 0]]] [:amount [:and :int [:>= 0]]]])
+        (wrec/def-record Order [:map [:cid [:and :int [:>= 0]]] [:amount [:and :int [:>= 0]]] [:tier [:and :int [:>= 0]]]])
         (doseq [[n params ret body truth input max-pa] rec-cases]
           (run-case n params ret body truth input max-pa)))
     (is true "skipped — no Init env")))
