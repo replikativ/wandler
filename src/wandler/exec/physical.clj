@@ -63,13 +63,41 @@
         {:classes (vec (cons cls acc)) :chunkable? (chunkable? plan)}
         (recur (:input p) (cons cls acc))))))
 
+;; ── optional chunked-array backend seam ──────────────────────────────────────────────────────────
+;; The clojure realization of a chunked-array fold IS the existing apfoldl/amapl eager path (already
+;; certified + parallel for monoid folds), so we don't reimplement it. The distinct value of :array is
+;; the UNBOXED (raster, per-chunk SIMD/GPU) and COLUMNAR (stratum, OLAP) per-chunk kernels — those plug
+;; in here as optional detect-and-lower backends, with eager as the equal-result Clojure fallback. Same
+;; pattern as the datahike/stratum LIFT bridge (register-engine!), now for EXECUTION.
+
+(defonce ^:private array-backends (atom []))
+
+(defn register-array-backend!
+  "Register an optional chunked-array execution backend: a fn (env plan names) → a Clojure form that
+   runs the plan as a chunked-array kernel, or nil to decline. Tried in registration order; first
+   non-nil wins. raster (unboxed per-chunk) / stratum (columnar) register here. Returns the count."
+  [f] (count (swap! array-backends conj f)))
+
+(defn clear-array-backends! [] (reset! array-backends []) nil)
+
+(defn array-form
+  "Run the registered array backends over a CHUNKABLE plan — first non-nil form wins; nil if none
+   apply (the caller falls back to the eager/apfoldl Clojure realization, which is result-equal)."
+  [env plan names]
+  (when (chunkable? plan)
+    (some (fn [f] (f env plan names)) @array-backends)))
+
 (defn physical-route
   "Choose a physical backend tag for a batch `plan`. Default :eager (unchanged current behavior).
-   :transduce when explicitly requested AND the plan is a linear producing pipeline. (The :array tag —
-   the chunked-array realization — lands with its backend; chunkable?/classify already gate it. Cost +
-   boundedness will make the choice automatic; for now the non-default tags are opt-in via `:requested`.)"
+   :transduce when requested AND the plan is a linear producing pipeline; :array when requested AND the
+   plan is chunkable (a map/filter/fold chain — the chunked-array realization, served by a registered
+   array backend or the eager fallback). Cost + boundedness will make the choice automatic; for now the
+   non-default tags are opt-in via `:requested`."
   [plan & {:keys [requested]}]
-  (if (and (= requested :transduce) (transducible? plan)) :transduce :eager))
+  (cond
+    (and (= requested :array)     (chunkable? plan))    :array
+    (and (= requested :transduce) (transducible? plan)) :transduce
+    :else :eager))
 
 (defn- xf-comp [xfs]
   (cond (empty? xfs) nil, (= 1 (count xfs)) (first xfs), :else (apply list 'clojure.core/comp xfs)))

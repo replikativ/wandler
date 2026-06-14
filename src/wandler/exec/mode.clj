@@ -379,6 +379,21 @@
       ;; curry outermost-first, matching batch-run's nested lambdas
       (eval (reduce (fn [inner nm] (list 'clojure.core/fn [(symbol nm)] inner)) tform (reverse names))))))
 
+(defn- batch-run-array
+  "Run a chunkable batch plan via a registered chunked-array backend (raster/stratum); nil if no backend
+   applies (the caller falls back to the eager/apfoldl realization, which is result-equal)."
+  [env term lctx]
+  (let [opt ((requiring-resolve 'wandler.optimize/optimize-cost) env term :lctx lctx)
+        t   (:term opt)
+        ids (sort > (keys lctx))
+        lam (reduce (fn [body fid]
+                      (e/lam (or (:name (lctx fid)) (str "s" fid)) (:type (lctx fid)) (e/abstract1 body fid) :default))
+                    t ids)
+        [names body] (loop [x lam, ns []] (if (e/lam? x) (recur (e/lam-body x) (conj ns (e/lam-name x))) [ns x]))
+        form (phys/array-form env (plan/term->plan body) names)]
+    (when form
+      (eval (reduce (fn [inner nm] (list 'clojure.core/fn [(symbol nm)] inner)) form (reverse names))))))
+
 (defn execute
   "THE dispatcher (cohesion audit item 1): the source TYPES pick the lowering — this is
    the one entry point behind 'the type picks the mode'. Given an elaborated
@@ -426,10 +441,14 @@
       ;; batch runnable — one front door. The physical realization (:eager vs :transduce) is a
       ;; POST-optimize selector over the plan; :eager (batch-run) is the unchanged default, :transduce
       ;; emits a native Clojure transducer pipeline (opt-in via :physical until boundedness automates it).
-      (let [want   (phys/physical-route pl :requested physical)
-            tr     (when (= want :transduce) (try (batch-run-transduce env term lctx) (catch Throwable _ nil)))
-            brun   (or tr (try (batch-run env term lctx) (catch Throwable _ nil)))
-            phys-tag (if tr :transduce :eager)]
+      (let [want     (phys/physical-route pl :requested physical)
+            run'     (try (case want
+                            :array     (batch-run-array env term lctx)      ; raster/stratum, else nil
+                            :transduce (batch-run-transduce env term lctx)  ; native Clojure xforms
+                            nil)
+                          (catch Throwable _ nil))
+            brun     (or run' (try (batch-run env term lctx) (catch Throwable _ nil)))  ; eager fallback
+            phys-tag (if run' want :eager)]
         (cond-> {:mode pm :route (route pm) :plan pl :physical phys-tag
                  :certificate (format "mode %s  ⟶  %s / %s  (%s)"
                                 (select-keys pm [:diff :sched :clock]) (name (route pm)) (name phys-tag)

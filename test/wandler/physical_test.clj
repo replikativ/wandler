@@ -62,3 +62,28 @@
       ;; both realizations compute the same verified pipeline
       (is (= [1 4 9] (vec ((:run tr) [1 2 3]))) "transducer backend runs correctly")
       (is (= [1 4 9] (vec ((:run eg) [1 2 3]))) "eager backend runs correctly (unchanged)"))))
+
+(deftest array-backend-seam
+  ;; :array routes to a registered chunked-array backend (raster/stratum plug in here); with none, it
+  ;; falls back to the eager/apfoldl realization — result-equal. (Toy backend reuses the transducer
+  ;; emission as a stand-in to exercise the seam.)
+  (when (ready?)
+    (reset! a/ansatz-env @test-env/init-full-env)
+    ((requiring-resolve 'wandler.kmap/install!))
+    ((requiring-resolve 'wandler.laws.relational/install!))
+    ((requiring-resolve 'wandler.surface.collections/install!))
+    (let [natT    (e/const' (nm "Nat") [])
+          listNat (e/app (e/const' (nm "List") [z]) natT)
+          xs      (e/fvar 1)
+          sq      (e/lam "x" natT (e/app* (e/const' (nm "Nat.mul") []) (e/bvar 0) (e/bvar 0)) :default)
+          term    (e/app* (e/const' (nm "List.map") [z z]) natT natT sq xs)
+          elab    {:term term :lctx {1 {:name "xs" :type listNat}}}]
+      (phys/clear-array-backends!)
+      (let [r (m/execute (a/env) elab :physical :array)]
+        (is (= :eager (:physical r)) "no array backend registered → eager fallback (result-equal)")
+        (is (= [1 4 9] (vec ((:run r) [1 2 3])))))
+      (phys/register-array-backend! (fn [env plan names] (phys/plan->transducer env plan names)))
+      (let [r (m/execute (a/env) elab :physical :array)]
+        (is (= :array (:physical r)) "a registered array backend serves the :array tag")
+        (is (= [1 4 9] (vec ((:run r) [1 2 3])))))
+      (phys/clear-array-backends!))))
