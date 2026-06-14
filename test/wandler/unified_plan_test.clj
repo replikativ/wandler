@@ -121,3 +121,26 @@
           (is (not= (:selectivity p-w1) (:selectivity p-w2)) "the plan re-adapts to the drifted window")))
       (testing "the materialized source plans from exact sizes, not a sample"
         (is (nil? (:selectivity p-mat)) "no stream sample → no measured profile (inductive/exact path)")))))
+
+;; #4 — raster's Map→Reduce lesson, certified: a SCALAR sink (count/sum) over (map f …) must never
+;; materialize the intermediate list. This falls out of the existing foldl_map fusion once the sink is
+;; folded in — the terminal op drives the whole loop to fuse (whole-stage-codegen toward the sink).
+(deftest sink-driven-fusion
+  (if-not (ready?)
+    (is true "skipped — no full kernel env")
+    (let [N (e/const' (nm "Nat") [])
+          listN (e/app (e/const' (nm "List") [z]) N)
+          source (e/fvar 5004)
+          lctx {5004 {:name "src" :type listN}}
+          g (e/lam "x" N (e/app (e/const' (nm "Nat.succ") []) (e/bvar 0)) :default)   ; λx. x+1
+          mapped (e/app* (e/const' (nm "List.map") [z z]) N N g source)               ; map (+1) src
+          mentions-map? (fn [t] (boolean (re-find #"List\.map" (ansatz.kernel.expr/->string t))))
+          p-count (plan/unified-plan (a/env) mapped :lctx lctx :elem-type N :sink {:kind :count} :sizes {5004 100})
+          p-sum   (plan/unified-plan (a/env) mapped :lctx lctx :elem-type N
+                                     :sink {:kind :sum :value-type N} :sizes {5004 100})]
+      (testing "a scalar sink over (map f) fuses the map away — no intermediate list materialized"
+        (is (mentions-map? mapped) "the naive pipeline builds the mapped list")
+        (is (:verified? p-count))
+        (is (not (mentions-map? (:term p-count))) "count over (map f) → fused, intermediate dropped")
+        (is (:verified? p-sum))
+        (is (not (mentions-map? (:term p-sum)))  "sum over (map f) → fused, intermediate dropped")))))
