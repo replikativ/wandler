@@ -19,6 +19,12 @@
   ;; Optional live spindel FRP substrate for the async/JIT path (ansatz.bridge.spindel).
   :spindel {:extra-deps {org.replikativ/spindel {:local/root "../spindel"}}}
 
+  ;; Optional stratum in-memory SIMD columnar engine for the reducer-offload backend
+  ;; (wandler.backend.stratum). We require stratum.query (NOT stratum.api), whose load graph is
+  ;; parquet/hadoop-free, so the heavy import deps stay out. Needs the JDK Vector API module.
+  :stratum {:extra-deps {org.replikativ/stratum {:local/root "../stratum"}}
+            :jvm-opts ["--enable-native-access=ALL-UNNAMED" "--add-modules=jdk.incubator.vector"]}
+
   ;; Optional live datahike engine for the bridge boundary property tests.
   :datahike {:extra-deps {org.replikativ/datahike {:local/root "../datahike"}}}
 

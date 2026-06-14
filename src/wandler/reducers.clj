@@ -1223,6 +1223,18 @@
                             :from (:name value-spec)}}
     :metadata {:derived-from value-spec}}))
 
+;; ── Optional reducer-offload seam ────────────────────────────────────────────
+;; A registered backend (e.g. wandler.backend.stratum) may execute a group-by/
+;; aggregate faster on a columnar SIMD engine when the workload justifies it. The
+;; backend receives the full call and returns a result map, or nil to DECLINE
+;; (→ the eager path runs, result-equal). Empty registry = zero overhead, identical
+;; behavior. The verified monoid spec is the equivalence certificate (same trust
+;; model as the engine bridges).
+(defonce ^{:doc "Optional (fn [pipeline value-spec key-f value-f coll opts] -> result-map | nil)."}
+  offload-backend (atom nil))
+(defn register-offload! [f] (reset! offload-backend f) :registered)
+(defn clear-offload! [] (reset! offload-backend nil) :cleared)
+
 (defn group-by
   "Lawful parallel grouping.
 
@@ -1231,11 +1243,13 @@
   ([pipeline value-spec key-f value-f coll]
    (group-by pipeline value-spec key-f value-f coll {}))
   ([pipeline value-spec key-f value-f coll opts]
-   (fold-map pipeline
-             (group-monoid value-spec)
-             (fn [x] {(key-f x) (value-f x)})
-             coll
-             opts)))
+   (or (when-let [f @offload-backend]
+         (f pipeline value-spec key-f value-f coll opts))
+       (fold-map pipeline
+                 (group-monoid value-spec)
+                 (fn [x] {(key-f x) (value-f x)})
+                 coll
+                 opts))))
 
 (defn group-by-seq
   "Sequential grouping using a transient map accumulator."
