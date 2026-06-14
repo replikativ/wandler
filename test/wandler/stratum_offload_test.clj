@@ -17,7 +17,8 @@
 
 ;; a CUSTOM monoid OUTSIDE stratum's closed built-in agg set (no :bit-or kernel): bitwise-OR, identity 0
 (def bit-or-monoid (r/monoid-spec {:name :nat/bit-or :unit-fn (constantly 0) :combine bit-or
-                                   :laws {:assoc 'Nat.lor_assoc :left-identity 'Nat.zero_lor :right-identity 'Nat.lor_zero}}))
+                                   :laws {:assoc 'Nat.lor_assoc :left-identity 'Nat.zero_lor :right-identity 'Nat.lor_zero}
+                                   :metadata {:stratum/prim-op 'clojure.core/bit-or}}))   ; Layer A primitive callback
 
 (def ^:private force {:offload/force? true})   ; bypass the cost-gate so correctness tests hit stratum
 
@@ -96,4 +97,24 @@
               (is (= eres ores) "open-monoid 2M/100k result agrees")
               (println (format "  group-by+bitOR (OPEN monoid), 2M rows / %d groups: eager %.0f ms · stratum parallel %.0f ms (%.2f×)"
                                groups te to (/ te (max 0.01 to)))))))
+
+        ;; ── Layer A: primitive (boxing-free) callback vs general Object accumulators — measured on the
+        ;; FOLD IN ISOLATION (codes/values pre-built once). End-to-end this win is masked by the shared
+        ;; dict-encode/materialization boundary (~200ms), which is the real bottleneck and the target of
+        ;; the next sub-step (native-column fusion). Here we measure what the callback actually changes. ──
+        (let [gfp   (requiring-resolve 'stratum.query.custom-agg/grouped-fold-prim-long)
+              gfo   (requiring-resolve 'stratum.query.custom-agg/grouped-fold)
+              n 2000000 groups 100000 t 8
+              codes (long-array (map #(long (mod % groups)) (range n)))
+              lvals (long-array (map #(long (bit-shift-left 1 (mod % 20))) (range n)))
+              ovals (object-array lvals)
+              lbo   (reify java.util.function.LongBinaryOperator (applyAsLong [_ a b] (bit-or a b)))
+              time! (fn [f] (let [s (System/nanoTime)] (dotimes [_ 8] (f)) (/ (- (System/nanoTime) s) 8e6)))
+              prim  #(gfp codes lvals groups 0 lbo t)
+              obj   #(gfo codes ovals groups {:unit (constantly 0) :combine bit-or :threads t})]
+          (dotimes [_ 3] (prim) (obj))
+          (is (= (vec (prim)) (vec (obj))) "primitive long[] fold == Object fold")
+          (let [tp (time! prim) tob (time! obj)]
+            (println (format "  grouped-fold bitOR, 2M/%d (FOLD only): Object accs %.0f ms · primitive callback %.0f ms (%.2f×)"
+                             groups tob tp (/ tob (max 0.01 tp))))))
         (finally (unregister!))))))

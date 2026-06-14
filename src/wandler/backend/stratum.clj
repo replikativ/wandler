@@ -100,6 +100,16 @@
   (and (:combine spec) (:unit-fn spec)
        (every? #(contains? (:laws spec) %) [:assoc :left-identity :right-identity])))
 
+(defn- prim-combine
+  "A boxing-free `LongBinaryOperator` for the monoid's combine, when the spec metadata names a primitive
+   op symbol under `:stratum/prim-op` (e.g. 'clojure.core/bit-or). With both args primitive long, Clojure
+   inlines the op (LOR/LADD/…) — no boxing — so stratum's primitive grouped-fold can scatter at near-
+   built-in speed. nil → the general Object path. Built once per spec."
+  [value-spec]
+  (when-let [op (get-in value-spec [:metadata :stratum/prim-op])]
+    (eval `(reify java.util.function.LongBinaryOperator
+             (applyAsLong [_# a# b#] (~op a# b#))))))
+
 (defn offload-custom-group
   "Offload a group-by with an ARBITRARY (open) lawful monoid to stratum's `grouped-fold` primitive — for
    aggregates OUTSIDE stratum's closed built-in set. Any associative `combine` rides stratum's dense-code
@@ -117,15 +127,28 @@
         (let [k (.get keys i)]
           (aset codes i (long (or (.get code k)
                                   (let [c (.size decode)] (.put code k c) (.add decode k) c))))))
-      (let [g            (.size decode)
-            varr         (.toArray vals)
-            grouped-fold (requiring-resolve 'stratum.query.custom-agg/grouped-fold)
-            ^objects res (grouped-fold codes varr g {:unit (:unit-fn value-spec)
-                                                     :combine (:combine value-spec)
-                                                     :threads threads})]
-        (persistent!
-         (reduce (fn [m c] (assoc! m (.get decode (int c)) (aget res (int c))))
-                 (transient {}) (range g)))))))
+      (let [g   (.size decode)
+            lbo (prim-combine value-spec)
+            long-vals? (and lbo (loop [i 0] (cond (= i n) true
+                                                  (instance? Long (.get vals i)) (recur (inc i))
+                                                  :else false)))
+            decode! (fn [^objects res]
+                      (persistent! (reduce (fn [m c] (assoc! m (.get decode (int c)) (aget res (int c))))
+                                           (transient {}) (range g))))]
+        (if long-vals?
+          ;; Layer A — primitive boxing-free path (LongBinaryOperator over long[] accumulators)
+          (let [varr (long-array n)
+                _    (dotimes [i n] (aset varr i (long (.get vals i))))
+                gfp  (requiring-resolve 'stratum.query.custom-agg/grouped-fold-prim-long)
+                ^longs res (gfp codes varr g (long ((:unit-fn value-spec))) lbo threads)]
+            (persistent! (reduce (fn [m c] (assoc! m (.get decode (int c)) (aget res (int c))))
+                                 (transient {}) (range g))))
+          ;; general Object path (arbitrary accumulators)
+          (let [varr (.toArray vals)
+                gf   (requiring-resolve 'stratum.query.custom-agg/grouped-fold)]
+            (decode! (gf codes varr g {:unit (:unit-fn value-spec)
+                                       :combine (:combine value-spec)
+                                       :threads threads}))))))))
 
 ;; ── group-by + aggregate offload (the transparent reducer hook) ──────────────────────────────────
 (defn offload-group-by
