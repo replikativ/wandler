@@ -48,3 +48,23 @@
       ;; the swap was to a no-more-expensive plan (the planner only adopts cost-improving rewrites)
       (is (<= (double (cost/pipeline-cost (:term r) {})) (double (cost/pipeline-cost term {})))
           "the swapped operator is not more expensive than the original"))))
+
+(deftest self-driving-jit-loop-measures-replans-swaps-stays-correct
+  (if-not @test-env/init-full-env
+    (is true "skipped — no Init env")
+    (let [N (c "Nat") listN (e/app (e/const' (nm/from-string "List") [z]) N)
+          p   (e/lam "x" N (e/app* (c "Nat.blt") (e/lit-nat 2) (e/bvar 0)) :default)
+          sq  (e/lam "x" N (e/app* (c "Nat.mul") (e/bvar 0) (e/bvar 0)) :default)
+          ;; per-window kernel: Σ x² over (filter (>2) window) — starts NAIVE (filter→map→fold), the loop
+          ;; re-plans it to the fused single pass and hot-swaps mid-stream.
+          term (e/app* (e/const' (nm/from-string "List.foldl") [z z]) N N (c "Nat.add") (c "Nat.zero")
+                       (e/app* (e/const' (nm/from-string "List.map") [z z]) N N sq
+                               (e/app* (e/const' (nm/from-string "List.filter") [z]) N p (e/fvar 1))))
+          windows [[1 2 3 4] [5 6 7 8] [9 10 11 12] [13 14 15 16]]
+          truth   (fn [w] (long (reduce + 0 (map #(* % %) (filter #(< 2 %) w)))))
+          out (jit/jit-stream (a/env) term {1 {:name "w" :type listN}} 1 windows :warmup 1)]
+      (is (= (mapv truth windows) (mapv long (:results out)))
+          "every window — pre-swap (naive) AND post-swap (auto-re-planned) — = clojure.core ground truth")
+      (is (= 1 (:swaps out)) "the loop measured, re-planned, and hot-swapped once (after warmup)")
+      (is (< (:cost-after out) (:cost-before out))
+          "the auto-selected plan is cheaper than the naive starting operator"))))
