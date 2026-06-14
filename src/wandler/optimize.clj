@@ -15,7 +15,8 @@
             [ansatz.kernel.tc :as tc]
             [wandler.optimize.certify :as cert]
             [wandler.optimize.cost :as cost]
-            [wandler.optimize.physical :as phys])
+            [wandler.optimize.physical :as phys]
+            [wandler.optimize.cse :as cse])
   (:import [ansatz.kernel Env]))
 
 ;; ── re-exports (the pre-split public API) ────────────────────────────────────
@@ -233,6 +234,21 @@
                   ;; each adopted step kernel-certified; helper unfolds inline named steps
                   (optimize-cost env+ e :lctx lctx :use-egraph? *use-egraph*
                                  :extra-lemmas (concat extra-lemmas unfold-names)))
+            ;; SHARED-SUBTREE PLANNING (CSE) — POST-fusion: fusion inlines cheap shared subterms
+            ;; (filter/map fuse away), so what remains shared is a BARRIER the planner should compute
+            ;; once (a join / sort / group-by / engine read used by ≥2 consumers). Hoist it into a
+            ;; `let`; the certificate is Eq.refl (zeta defeq). Runs after fusion so simp's zeta can't
+            ;; re-inline it. Composes (fuse ∘ cse) proofs by Eq.trans.
+            res (if-not (:verified? res) res
+                  (loop [r res, guard 0]
+                    (let [c (when (< guard 8) (cse/try-cse env+ (:term r) :lctx lctx))]
+                      (if (and c (:verified? c))
+                        (recur {:term (:term c)
+                                :proof (phys/compose-trans env+ lctx e (:term r) (:term c) (:proof r) (:proof c))
+                                :verified? true :changed? true
+                                :rewrites (conj (vec (:rewrites r)) :cse)}
+                               (inc guard))
+                        r))))
             ;; keep iff verified + changed; AND when helpers were inlined, only if the
             ;; honest SOAC cost strictly DROPPED — so inlining that doesn't fuse (would
             ;; just duplicate code) is reverted to the compact original.
