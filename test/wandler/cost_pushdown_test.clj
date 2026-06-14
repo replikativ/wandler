@@ -30,3 +30,16 @@
 (deftest declines-when-nothing-recognizes
   (phys/register-cost-backend! (backend :raster false 1.0))
   (is (nil? (phys/choose-cost-form nil :plan nil 1000.0)) "no recognizing backend → nil"))
+
+(deftest push-down-is-workload-size-sensitive
+  ;; an engine with a SETUP cost (raster: fixed box/fork/dispatch overhead + low per-element term):
+  ;; cost = setup + eager/speedup. The decision FLIPS with workload size — declined on a small input
+  ;; (setup not amortized), chosen on a large one. eager-cost is the size proxy (∝ input cardinality).
+  (let [setup 3000.0 speedup 3.5
+        simd {:name :raster :lower (fn [_ _ _] '(:simd))
+              :cost (fn [_plan eager] (+ setup (/ (double eager) speedup)))}]
+    (phys/register-cost-backend! simd)
+    (is (nil? (phys/choose-cost-form nil :plan nil 2000.0))
+        "SMALL workload (eager 2000): raster cost 3571 > 2000 → declined, run eager")
+    (is (= :raster (:backend (phys/choose-cost-form nil :plan nil 100000.0)))
+        "LARGE workload (eager 100000): raster cost 31571 < 100000 → chosen")))

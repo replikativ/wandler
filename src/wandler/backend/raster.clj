@@ -112,12 +112,15 @@
         :else nil))))
 
 ;; raster's advertised cost for a recognized Float reduction: a SIMD/parallel kernel over a double[].
-;; Measured ~4× over single-thread C2 on compute-heavy kernels (bandwidth-bound on cheap ones), so it
-;; advertises ~eager/3.5 — the planner's choose-cost-form picks it iff that beats the eager Clojure cost
-;; (so a tiny/bounded source where eager is already cheap is NOT pushed to raster). This is the engine
-;; advertising its cost instead of the planner assuming a recognized shape always wins.
+;; A FIXED setup (box→double[] copy + thread fork + kernel dispatch) PLUS a low per-element term
+;; (measured ~4× over single-thread C2 on compute-heavy kernels). So cost = setup + eager/speedup —
+;; which makes the decision WORKLOAD-SIZE-SENSITIVE: choose-cost-form picks raster only when the eager
+;; cost (∝ input size) is large enough to amortize the setup, i.e. above a crossover size. A tiny /
+;; bounded source stays in Clojure; a large one goes to raster. (The eager cost is size-aware exactly
+;; when batch-run-array is given the real source size — a measured size for a stream is the JIT path.)
 (def ^:private raster-speedup 3.5)
-(defn- raster-cost [_plan eager-cost] (/ (double eager-cost) raster-speedup))
+(def ^:private raster-setup 3000.0)   ; ~element-equivalents of fixed overhead; the crossover knob
+(defn- raster-cost [_plan eager-cost] (+ raster-setup (/ (double eager-cost) raster-speedup)))
 
 (defn register!
   "Register the raster backend as a COST-BASED execution backend (#76 / COST_MODEL_REDESIGN B2): it
