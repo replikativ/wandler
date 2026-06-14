@@ -19,6 +19,7 @@
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.string :as str]
             [ansatz.core :as a]
+            [wandler.core :as wc]
             [wandler.kmap :as km]
             [wandler.laws.relational :as rl]
             [wandler.surface.malli :as am]
@@ -34,6 +35,7 @@
 (defn- setup [f]
   (when-let [kenv @test-env/init-full-env]
     (reset! a/ansatz-env kenv)
+    (wc/install!)        ; SEAM 3: runtime codegen-registry — so the codegen'd plans execute standalone
     (km/install!)
     (rl/install!))
   (f))
