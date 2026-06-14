@@ -117,4 +117,21 @@
           (let [tp (time! prim) tob (time! obj)]
             (println (format "  grouped-fold bitOR, 2M/%d (FOLD only): Object accs %.0f ms · primitive callback %.0f ms (%.2f×)"
                              groups tob tp (/ tob (max 0.01 tp))))))
+        ;; ── Layer A.2: columnar custom monoid + FUSED filter over native columns (no materialization) ──
+        (let [ocgc (requiring-resolve 'wandler.backend.stratum/offload-custom-group-columns)
+              n 200000 G 5000
+              codes (long-array (map #(long (mod % G)) (range n)))
+              vls   (long-array (map #(long (bit-shift-left 1 (mod % 20))) (range n)))
+              pcol  (long-array (map #(long (mod % 100)) (range n)))
+              ;; reference: eager filter (pcol<50) then group-by bit-OR
+              ref (persistent! (reduce (fn [m i]
+                                         (if (< (aget pcol i) 50)
+                                           (let [k (aget codes i)]
+                                             (assoc! m k (bit-or (long (get m k 0)) (aget vls i))))
+                                           m))
+                                       (transient {}) (range n)))
+              ^longs res (ocgc codes vls G bit-or-monoid {:where [[pcol 0 50]] :threads 4})
+              ;; compare on ref's keys (groups with no matching rows hold the identity 0 in res)
+              got (into {} (map (fn [c] [(long c) (aget res (int c))])) (keys ref))]
+          (is (= ref got) "A.2 fused columnar (filter + bit-OR) == eager filter+group"))
         (finally (unregister!))))))

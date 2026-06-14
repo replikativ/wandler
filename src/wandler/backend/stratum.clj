@@ -200,6 +200,38 @@
          (reduce (fn [m row] (assoc! m (gdecode (:g row)) (vfn (:sum row))))
                  (transient {}) res))))))
 
+(defn- range-pred
+  "Build a fused-filter IntPredicate ANDing range checks [lo,hi) over native long[] predicate columns.
+   nil when there's nothing to filter. Primitive (no boxing) — evaluated inline in the single fused pass."
+  ^java.util.function.IntPredicate [where]
+  (when (seq where)
+    (let [cols (object-array (map first where))
+          los  (long-array (map second where))
+          his  (long-array (map #(nth % 2) where))
+          m    (count where)]
+      (reify java.util.function.IntPredicate
+        (test [_ i]
+          (loop [k 0]
+            (if (= k m)
+              true
+              (let [^longs c (aget cols k) v (aget c i)]
+                (if (and (>= v (aget los k)) (< v (aget his k))) (recur (inc k)) false)))))))))
+
+(defn offload-custom-group-columns
+  "Layer A.2 — COLUMNAR custom-monoid grouped aggregate with a FUSED filter, over NATIVE long[] columns
+   (the bulk-numeric entry: no row-shaped materialization). `key-codes` = dense group codes 0..G-1, `vals`
+   = the value column, `value-spec` = a lawful monoid carrying a `:stratum/prim-op` (a primitive long
+   combine). `:where` = [[pred-col lo hi] ...] range filters fused into the SINGLE pass. Returns a long[]
+   indexed by group code (the caller owns code↔key). Eliminating the materialized filtered intermediate is
+   the fusion win (~3×+ over filter-then-fold); the monoid's associativity licenses the parallel merge.
+   This is the path the integration should prefer when bulk numeric columns are already in hand."
+  [^longs key-codes ^longs vals n-groups value-spec & [{:keys [where threads] :or {threads default-threads}}]]
+  (let [lbo (prim-combine value-spec)]
+    (when (nil? lbo)
+      (throw (ex-info "columnar custom path needs a :stratum/prim-op long combine" {:spec (:name value-spec)})))
+    ((requiring-resolve 'stratum.query.custom-agg/grouped-fold-filtered-long)
+     key-codes vals (range-pred where) n-groups (long ((:unit-fn value-spec))) lbo threads)))
+
 (defn register!
   "Register the stratum reducer-offload into wandler.reducers' offload seam. After this, an offloadable
    high-cardinality `group-by`/`frequencies`/`sum-by` runs on stratum; everything else (low cardinality,
