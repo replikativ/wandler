@@ -79,4 +79,17 @@
       (testing "every certified plan executes to the naive answer"
         (is (= 5   (long (run (:term p-count)))) "count = #join pairs")
         (is (= 360 (long (run (:term p-sum))))   "sum = Σ amount")
-        (is (= 5   (count (run (:term p-vec))))  "vector = the 5 join pairs (order preserved)")))))
+        (is (= 5   (count (run (:term p-vec))))  "vector = the 5 join pairs (order preserved)"))
+
+      (testing "#1 order-invariance derived from a COMMUTATIVITY certificate, not a hardcoded set"
+        ;; a sum whose monoid is NOT commutative (order matters) must be treated as order-preserving —
+        ;; even though it's a fold. The hardcoded {count sum group set} would wrongly reorder it.
+        (let [p-noncomm (plan/unified-plan (a/env) join :lctx lctx :elem-type PJ
+                                           :sink {:kind :sum :value-fn amount :value-type N
+                                                  :commutative? false} :sizes sz)]
+          (is (plan/order-invariant? {:kind :sum}) "default sum monoid (Nat.add) is commutative")
+          (is (plan/order-invariant? {:kind :sum :monoid {:laws {:comm 'Nat.add_comm}}}) "explicit comm proof")
+          (is (not (plan/order-invariant? {:kind :sum :commutative? false})) "non-comm sum → order-matters")
+          (is (not (plan/order-invariant? {:kind :concat})) "concat/append → order-sensitive")
+          (is (not (:order-invariant? p-noncomm)))
+          (is (empty? (:rewrites p-noncomm)) "non-commutative sink → no order-destroying rewrite attempted"))))))
