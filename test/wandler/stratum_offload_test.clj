@@ -1,61 +1,76 @@
 (ns wandler.stratum-offload-test
   "OPTIONAL stratum reducer-offload demo (run under :stratum — `clj -M:stratum:test`). Gated at runtime
-   so the base suite never loads stratum. Demonstrates Integration 2: a group-by/aggregate REDUCER not
-   written as a query is transparently offloaded to stratum's in-memory SIMD engine, CORRECT (== eager,
-   the monoid spec is the certificate) AND faster on large numeric-key data. The base wandler suite
-   (clj -M:test) never requires this — stratum stays fully optional."
+   so the base suite never loads stratum. Integration 2 (tiers 1+2): a group-by/aggregate (and equi-
+   join+aggregate) REDUCER not written as a query is transparently offloaded to stratum's in-memory SIMD
+   engine, CORRECT (== eager; the monoid spec is the certificate), cost-gated, and faster on large
+   high-cardinality data. The base wandler suite (clj -M:test) never requires this."
   (:require [clojure.test :refer [deftest is]]
             [wandler.reducers :as r]))
 
 (defn- stratum? [] (try (require 'wandler.backend.stratum) true (catch Throwable _ false)))
 
+;; local non-sum monoids (no such specs in the library yet) to exercise the min/max agg mapping
+(def nat-max (r/monoid-spec {:name :nat/max :unit-fn (constantly 0) :combine max
+                             :laws {:assoc 'Nat.max_assoc :left-identity 'Nat.zero_max :right-identity 'Nat.max_zero}}))
+(def nat-min (r/monoid-spec {:name :nat/min :unit-fn (constantly Long/MAX_VALUE) :combine min
+                             :laws {:assoc 'Nat.min_assoc :left-identity 'Nat.max_min :right-identity 'Nat.min_max}}))
+
+(def ^:private force {:offload/force? true})   ; bypass the cost-gate so correctness tests hit stratum
+
 (deftest stratum-reducer-offload
   (if-not (stratum?)
     (do (println "SKIP stratum-offload-test: stratum not on classpath (run with -M:stratum:test)") (is true))
     (let [register!   (requiring-resolve 'wandler.backend.stratum/register!)
-          unregister! (requiring-resolve 'wandler.backend.stratum/unregister!)]
+          unregister! (requiring-resolve 'wandler.backend.stratum/unregister!)
+          offload     (requiring-resolve 'wandler.backend.stratum/offload-group-by)
+          joinsum     (requiring-resolve 'wandler.backend.stratum/offload-join-group-sum)
+          diff        (fn [spec kf vf data]                  ; eager vs forced-offload, must agree
+                        (unregister!)
+                        (let [eager (r/group-by nil spec kf vf data)]
+                          (register!)
+                          (let [offl (r/group-by nil spec kf vf data force)] [eager offl])))]
       (try
-        ;; ── correctness: offload result == eager result (the differential certificate check) ──
-        ;; numeric keys (stratum groups them with SIMD directly)
-        (let [data (mapv (fn [i] {:dept (long (mod i 7)) :salary (long (mod i 100))}) (range 5000))]
-          (unregister!)
-          (let [eager (r/group-by nil r/int-add :dept :salary data)]
-            (register!)
-            (let [offl (r/group-by nil r/int-add :dept :salary data)]
-              (is (= eager offl) "stratum offload (numeric keys) == eager group-by+sum"))))
-        ;; arbitrary (keyword) keys — dictionary-encoded, proving generality of key-f
-        (let [data (mapv (fn [i] {:region ([:north :south :east :west] (mod i 4))
-                                  :amt (long (mod i 50))}) (range 5000))]
-          (unregister!)
-          (let [eager (r/group-by nil r/int-add :region :amt data)]
-            (register!)
-            (let [offl (r/group-by nil r/int-add :region :amt data)]
-              (is (= eager offl) "stratum offload (keyword keys, dict-encoded) == eager"))))
-        ;; frequencies = sum-of-ones falls out of the same path
+        ;; ── correctness: offload == eager across aggregates + key kinds (the certificate check) ──
+        (let [data (mapv (fn [i] {:dept (long (mod i 7)) :sal (long (mod i 100))}) (range 5000))
+              [e o] (diff r/int-add :dept :sal data)] (is (= e o) "sum, numeric keys"))
+        (let [data (mapv (fn [i] {:region ([:north :south :east :west] (mod i 4)) :amt (long (mod i 50))}) (range 5000))
+              [e o] (diff r/int-add :region :amt data)] (is (= e o) "sum, keyword keys (dict-encoded)"))
         (let [data (mapv (fn [i] {:k (long (mod i 13))}) (range 5000))]
-          (unregister!)
-          (let [eager (r/frequencies nil r/nat-add :k data)]
-            (register!)
-            (let [offl (r/frequencies nil r/nat-add :k data)]
-              (is (= eager offl) "stratum offload of frequencies == eager"))))
+          (unregister!) (let [e (r/frequencies nil r/nat-add :k data)]
+                          (register!) (is (= e (r/frequencies nil r/nat-add :k data force)) "frequencies = sum-of-ones")))
+        (let [data (mapv (fn [i] {:dept (long (mod i 7)) :sal (long (mod (* i 31) 1000))}) (range 5000))
+              [e o] (diff nat-max :dept :sal data)] (is (= e o) "MAX per group"))
+        (let [data (mapv (fn [i] {:dept (long (mod i 7)) :sal (long (mod (* i 31) 1000))}) (range 5000))
+              [e o] (diff nat-min :dept :sal data)] (is (= e o) "MIN per group"))
 
-        ;; ── value: HIGH-CARDINALITY group-by+sum, where it matters. wandler's eager group-by merges
-        ;; PERSISTENT maps, which is slow at many groups; the offload (fast dict-encode + stratum SIMD
-        ;; group) wins. (At LOW cardinality the columnarization boundary dominates and it's ~1×; and a
-        ;; hand-coded mutable loop over already-columnar data can still beat stratum — so the cost model
-        ;; must route by cardinality. This test pins the regime where offload helps.)
-        (let [n     2000000
-              groups 100000
+        ;; ── cost-gate: low cardinality DECLINES (→ eager), high cardinality offloads ──
+        (unregister!)
+        (let [low  (mapv (fn [i] {:d (long (mod i 8)) :v (long i)}) (range 5000))
+              high (mapv (fn [i] {:d (long (mod i 50000)) :v (long i)}) (range 200000))]
+          (is (nil? (offload nil r/int-add :d :v low {})) "cost-gate DECLINES low-cardinality/small data")
+          (is (map? (offload nil r/int-add :d :v high {})) "cost-gate ACCEPTS high-cardinality large data"))
+
+        ;; ── equi-join + group + sum (stratum builds the in-memory join index) ──
+        (let [facts (mapv (fn [i] {:cust (long (mod i 1000)) :amt (long (mod i 100))}) (range 20000))
+              dim   (mapv (fn [c] {:cust (long c) :region ([:n :s :e :w] (mod c 4))}) (range 1000))
+              ;; eager join+group+sum reference
+              c->r  (into {} (map (juxt :cust :region)) dim)
+              eager (persistent! (reduce (fn [m x] (let [g (c->r (:cust x))]
+                                                     (assoc! m g (+ (long (get m g 0)) (:amt x)))))
+                                         (transient {}) facts))
+              offl  (joinsum facts dim :cust :cust :region :amt)]
+          (is (= eager offl) "equi-join + group-by region + sum amt == eager"))
+
+        ;; ── value: high-cardinality group-by+sum, eager vs offload ──
+        (let [n 2000000 groups 100000
               dvec  (vec (map (fn [i] {:dept (long (mod i groups)) :salary (long (mod i 1000))}) (range n)))
-              time! (fn [f] (let [s (System/nanoTime)] (dotimes [_ 5] (f)) (/ (- (System/nanoTime) s) 5e6)))]
-          (let [call #(r/group-by nil r/int-add :dept :salary dvec)]
-            (unregister!)                                            ; measure TRUE eager
-            (dotimes [_ 2] (call))
-            (let [eager-res (call) te (time! call)]
-              (register!)                                            ; now measure offload
-              (dotimes [_ 2] (call))
-              (let [offl-res (call) to (time! call)]
-                (is (= eager-res offl-res) "2M-row / 100k-group result agrees")
-                (println (format "  group-by+sum over 2M rows (%d groups): eager %.0f ms · stratum offload %.0f ms (%.2f×)"
-                                 groups te to (/ te (max 0.01 to))))))))
+              time! (fn [f] (let [s (System/nanoTime)] (dotimes [_ 5] (f)) (/ (- (System/nanoTime) s) 5e6)))
+              call  #(r/group-by nil r/int-add :dept :salary dvec force)]
+          (unregister!) (dotimes [_ 2] (r/group-by nil r/int-add :dept :salary dvec))
+          (let [eres (r/group-by nil r/int-add :dept :salary dvec) te (time! #(r/group-by nil r/int-add :dept :salary dvec))]
+            (register!) (dotimes [_ 2] (call))
+            (let [ores (call) to (time! call)]
+              (is (= eres ores) "2M-row / 100k-group result agrees")
+              (println (format "  group-by+sum, 2M rows / %d groups: eager %.0f ms · stratum %.0f ms (%.2f×)"
+                               groups te to (/ te (max 0.01 to)))))))
         (finally (unregister!))))))
