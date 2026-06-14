@@ -76,14 +76,23 @@
     ;; :vector :materialize :concat :limit … — order-preserving / order-sensitive
     false))
 
-;; ── source-nature oracle dispatch ─────────────────────────────────────────────────────────────────
+;; ── source-nature oracle dispatch — the inductive⇄coinductive seam ────────────────────────────────
 (defn- resolve-oracle
-  "Pick the cardinality oracle. `sources` = {fvar-id → {:nature … :size … :selectivity …}}. Materialized
-   sources contribute exact sizes (the engine estimate). Explicit :sizes/:selectivity override. (Stream
-   sampling is the next slice — it would replace :selectivity with a forked-window profile.)"
-  [sources sizes selectivity]
-  {:sizes (or sizes (not-empty (into {} (keep (fn [[id d]] (when-let [n (:size d)] [id n])) sources))))
-   :selectivity selectivity})
+  "Pick the cardinality oracle per source NATURE — this is where the inductive and coinductive views meet:
+     :materialized → exact `:size` (the engine's estimate) feeds `:sizes` — the finite, plan-it-directly
+                     inductive view (a datahike/stratum table: we know what's in memory).
+     :stream       → a forked WINDOW `:sample` is MEASURED for the pipeline's predicate pass-rates
+                     (`wandler.core/profile-selectivity`) → `:selectivity` — the coinductive view: we can't
+                     enumerate an infinite stream, so we plan from a representative window assuming a
+                     (locally) stationary distribution; a fresh sample after drift re-measures and replans.
+   Both feed the SAME certified `optimize-cost`; only the PROVENANCE of the statistics differs. Explicit
+   `:sizes`/`:selectivity` override either."
+  [env term sources sizes selectivity]
+  (let [stream-sample (some (fn [[_ d]] (when (= :stream (:nature d)) (:sample d))) sources)]
+    {:sizes (or sizes (not-empty (into {} (keep (fn [[id d]] (when-let [n (:size d)] [id n])) sources))))
+     :selectivity (or selectivity
+                      (when stream-sample
+                        ((requiring-resolve 'wandler.core/profile-selectivity) env term stream-sample)))}))
 
 (defn unified-plan
   "Plan a list-producing pipeline `term` (element type `:elem-type`) end-to-end for a `:sink`, with sources
@@ -94,7 +103,7 @@
   [env term & {:keys [lctx elem-type sink sources sizes selectivity memory-budget ndv]
                :or {sink {:kind :vector}}}]
   (let [wrapped (fold-sink term elem-type sink)
-        {osz :sizes osel :selectivity} (resolve-oracle (or sources {}) sizes selectivity)
+        {osz :sizes osel :selectivity} (resolve-oracle env wrapped (or sources {}) sizes selectivity)
         oi? (order-invariant? sink)
         ;; fast path: don't even attempt order-destroying rewrites for an order-preserving sink — they
         ;; could never certify as Eq anyway (the certificate is the real backstop; this just saves work).
@@ -104,4 +113,5 @@
            :sink (:kind sink)
            :wrapped wrapped
            :order-invariant? oi?
+           :selectivity osel              ; the oracle's profile (measured for a :stream source)
            :route (get-in r [:physical :strategy]))))

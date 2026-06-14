@@ -93,3 +93,31 @@
           (is (not (plan/order-invariant? {:kind :concat})) "concat/append → order-sensitive")
           (is (not (:order-invariant? p-noncomm)))
           (is (empty? (:rewrites p-noncomm)) "non-commutative sink → no order-destroying rewrite attempted"))))))
+
+;; #6 — the inductive⇄coinductive unification: ONE unified-plan entry plans both a materialized source
+;; (exact size, datahike/stratum-style) and a live STREAM (a forked window sample → measured selectivity,
+;; re-measured under drift). Both feed the same certified optimize-cost.
+(deftest coinductive-oracle-stream-sampling
+  (if-not (ready?)
+    (is true "skipped — no full kernel env")
+    (let [N (e/const' (nm "Nat") [])
+          listN (e/app (e/const' (nm "List") [z]) N)
+          source (e/fvar 5003)
+          lctx {5003 {:name "src" :type listN}}
+          p (e/lam "x" N (e/app* (e/const' (nm "Nat.blt") []) (e/lit-nat 50) (e/bvar 0)) :default)  ; x > 50
+          filt (e/app* (e/const' (nm "List.filter") [z]) N p source)                                 ; filter (>50) src
+          plan-with (fn [src] (plan/unified-plan (a/env) filt :lctx lctx :elem-type N
+                                                 :sink {:kind :count} :sources {5003 src}))
+          p-mat (plan-with {:nature :materialized :size 1000})            ; inductive: exact size
+          p-w1  (plan-with {:nature :stream :sample [10 20 30 40 45]})    ; coinductive window 1: none > 50
+          p-w2  (plan-with {:nature :stream :sample [60 70 80 90 99]})]   ; window 2 (drift): all > 50
+      (testing "one entry plans both source natures; every plan certified ≡ naive"
+        (is (:verified? p-mat)) (is (:verified? p-w1)) (is (:verified? p-w2)))
+      (testing "the coinductive oracle MEASURES the stream window's selectivity; drift re-measures"
+        (let [k (first (keys (:selectivity p-w1)))]
+          (is (some? k) "the filter predicate was measured against the window sample")
+          (is (< (double (get (:selectivity p-w1) k)) 0.5) "window 1 (none>50) → low selectivity")
+          (is (> (double (get (:selectivity p-w2) k)) 0.5) "window 2 (all>50) → high (the distribution drifted)")
+          (is (not= (:selectivity p-w1) (:selectivity p-w2)) "the plan re-adapts to the drifted window")))
+      (testing "the materialized source plans from exact sizes, not a sample"
+        (is (nil? (:selectivity p-mat)) "no stream sample → no measured profile (inductive/exact path)")))))
