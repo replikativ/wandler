@@ -133,19 +133,6 @@
 ;; which propagates cardinality through the pipeline. Heuristic, so it only
 ;; affects search QUALITY — every adopted rewrite is still kernel-certified.
 
-(def ^:private soac-info
-  "Per SOAC head: 0-based index of the DRIVING input list, a :kind describing how
-   it transforms cardinality, the :pred index (filters) and :rhs list (joins)."
-  {"List.map"       {:list 3 :kind :map}
-   "List.filter"    {:list 2 :kind :filter :pred 1}
-   "List.foldl"     {:list 4 :kind :fold}
-   "List.foldr"     {:list 4 :kind :fold}
-   "List.length"    {:list 1 :kind :fold}   ; count consumer — the order-invariant boundary
-   "List.flatMap"   {:list 3 :kind :expand}
-   "List.eraseDups" {:list 2 :kind :dedup}
-   "List.mergeSort" {:list 1 :kind :sort}
-   "Map.group_by"   {:list 4 :kind :group}
-   "Map.join"       {:list 6 :kind :join :rhs 7}})
 
 
 (def ^:private join-build-weight
@@ -213,6 +200,34 @@
     [@per-el @one-time]))
 
 
+;; ── per-op COST DESCRIPTORS (the framework seam) ─────────────────────────────
+;; Each SOAC head → {:list <driving-input arg idx>, :tf <transform>}. The walk descends the :list
+;; input, then `:tf` computes this op's [size time mem] from that input profile + the op's args +
+;; a context. Declarative: adding an op (incl. a stratum/raster/datahike engine kernel) is a data
+;; entry. `:tf` signature = (ctx in-profile args benv walk) → [size time mem], where ctx carries
+;; {:base :fanout :sel :ndv} and `walk` lets a binary op (join) recurse its rhs.
+;; (Roadmap COST_MODEL_REDESIGN §4: :list and output-list? derive from the kernel SIGNATURE — a
+;; cheap return-type read — rather than this hand-keyed name table; the transforms stay.)
+(def ^:private op-cost
+  {"List.map"       {:list 3 :tf (fn [_   [in cin mn] _ _ _] [in (+ cin in) mn])}                ; streaming
+   "List.filter"    {:list 2 :tf (fn [ctx [in cin mn] args _ _]
+                                   (let [pred (nth args 1)
+                                         [per-el one-time] (predicate-extra-cost pred (:base ctx))]
+                                     [(* in (double ((:sel ctx) pred))) (+ cin in (* in per-el) one-time) mn]))}
+   "List.foldl"     {:list 4 :tf (fn [_   [in cin mn] _ _ _] [1.0 (+ cin in) mn])}               ; scalar acc
+   "List.foldr"     {:list 4 :tf (fn [_   [in cin mn] _ _ _] [1.0 (+ cin in) mn])}
+   "List.length"    {:list 1 :tf (fn [_   [in cin mn] _ _ _] [1.0 (+ cin in) mn])}               ; count boundary
+   "List.flatMap"   {:list 3 :tf (fn [ctx [in cin mn] _ _ _] [(* in (:fanout ctx)) (+ cin in) mn])}
+   "List.eraseDups" {:list 2 :tf (fn [_   [in cin mn] _ _ _] [(* in 0.7) (+ cin in) mn])}
+   "List.mergeSort" {:list 1 :tf (fn [_   [in cin mn] _ _ _] [in (+ cin (* in (Math/log (max 2.0 in)))) (max mn in)])}
+   "Map.group_by"   {:list 4 :tf (fn [_   [in cin mn] _ _ _] [in (+ cin in) (max mn in)])}
+   "Map.join"       {:list 6 :tf (fn [ctx [in cin mn] args benv walk]
+                                   (let [[r cr mr] (walk (nth args 7) benv)        ; rhs (build) side
+                                         out (if (:ndv ctx) (max 1.0 (/ (* in r) (double (:ndv ctx))))
+                                                            (* (min in r) (:fanout ctx)))]
+                                     [out (+ cin cr in (* join-build-weight r)) (max mn mr r)]))}})
+
+
 (defn pipeline-resources
   "RESOURCE PROFILE of a SOAC pipeline `term`: {:size <output cardinality> :time <elements
    processed> :memory <peak working set>}. :time is the cardinality-propagation cost (datahike-style,
@@ -235,37 +250,31 @@
    (let [sel (cond (fn? selectivity) selectivity
                    (map? selectivity) (fn [p] (or (get selectivity (e/->string p)) (pred-selectivity p)))
                    :else pred-selectivity)
-         size-of (fn [e] (or (when (and sizes (e/fvar? e)) (get sizes (e/fvar-id e))) base))]
-     (letfn [(walk [e]                          ; → [size time mem]   (mem = peak working set)
-               (let [[h args] (e/get-app-fn-args e)
-                     info (when (e/const? h) (soac-info (name/->string (e/const-name h))))]
-                 (if (and info (> (count args) (long (:list info))))
-                   (let [[in cin min*] (walk (nth args (long (:list info))))]
-                     (case (:kind info)
-                       :map    [in (+ cin in) min*]                          ; streaming: no extra mem
-                       :filter (let [pred (nth args (long (:pred info)))
-                                     [per-el one-time] (predicate-extra-cost pred base)]
-                                 [(* in (double (sel pred))) (+ cin in (* in per-el) one-time) min*])
-                       :fold   [1.0 (+ cin in) min*]                          ; scalar acc: O(1)
-                       :expand [(* in fanout) (+ cin in) min*]
-                       :dedup  [(* in 0.7) (+ cin in) min*]
-                       :sort   [in (+ cin (* in (Math/log (max 2.0 in)))) (max min* in)]  ; in-mem sort buffer
-                       :group  [in (+ cin in) (max min* in)]                  ; holds the grouped structure
-                       :join   (let [[r cr mr] (walk (nth args (long (:rhs info))))
-                                     ;; OUTPUT cardinality. With :ndv → datahike's per-key fan-out
-                                     ;; |L|·|R|/ndv (estimate.cljc); else the coarse min(|L|,|R|)·fanout.
-                                     out (if ndv (max 1.0 (/ (* in r) (double ndv)))
-                                                 (* (min in r) fanout))]
-                                 ;; OUTPUT order-invariant. TIME = probe driver `in` + BUILD the
-                                 ;; INDEXED side `r` at join-build-weight (the only order-dependent
-                                 ;; term → index the smaller side, Map.join_comm). MEMORY = the
-                                 ;; build-side index footprint `r` (the thing a hoist materializes;
-                                 ;; O(|keys|) once pre-aggregated). The memory-aware planner hoists
-                                 ;; iff r ≤ budget, else spills.
-                                 [out (+ cin cr in (* join-build-weight r)) (max min* mr r)])
-                       [in cin min*]))
-                   [(size-of e) 0.0 0.0])))]
-       (let [[s t m] (walk term)] {:size s :time t :memory m})))))
+         size-of (fn [e] (or (when (and sizes (e/fvar? e)) (get sizes (e/fvar-id e))) base))
+         ctx {:base base :fanout fanout :sel sel :ndv ndv}]
+     ;; `benv` = sizes of let-bound vars (de-Bruijn, innermost first), so a shared subexpression's
+     ;; size flows into its `let` body and is paid for ONCE — the only new state. A λ is a function
+     ;; value, returned as a unit leaf and NOT descended (the consuming op accounts per-element):
+     ;; this preserves the invariant that SOAC step-λs keep zero cost, so factorization gates hold.
+     (letfn [(walk [e benv]                     ; → [size time mem]   (mem = peak working set)
+               (cond
+                 (e/bvar? e)  [(let [i (e/bvar-idx e)] (if (< i (count benv)) (nth benv i) base)) 0.0 0.0]
+                 (e/lam? e)   [1.0 0.0 0.0]
+                 (e/let? e)   (let [[sv tv mv] (walk (e/let-value e) benv)
+                                    [sb tb mb] (walk (e/let-body e) (cons sv benv))]
+                                [sb (+ tv tb) (max mv mb)])        ; value paid ONCE → CSE is cheaper
+                 (e/app? e)
+                 (let [[h args] (e/get-app-fn-args e)
+                       desc (when (e/const? h) (op-cost (name/->string (e/const-name h))))]
+                   (if (and desc (> (count args) (long (:list desc))))
+                     ((:tf desc) ctx (walk (nth args (long (:list desc))) benv) args benv walk)
+                     ;; non-SOAC app = a TREE node (Nat.add, Prod.mk, …): output size unchanged
+                     ;; (`base`), but TIME sums the branches and MEM is their peak. Non-data args
+                     ;; (types, scalars, λ) recurse to time 0, so only real pipeline branches add cost.
+                     (let [ps (map #(walk % benv) args)]
+                       [(size-of e) (reduce + 0.0 (map second ps)) (reduce max 0.0 (map #(nth % 2) ps))])))
+                 :else [(size-of e) 0.0 0.0]))]   ; fvar / const / lit
+       (let [[s t m] (walk term [])] {:size s :time t :memory m})))))
 
 
 (defn pipeline-cost

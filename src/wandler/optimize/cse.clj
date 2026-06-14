@@ -124,8 +124,11 @@
                    result (e/let' "cse" Ts s body')
                    proof  (e/app* (e/const' (name/from-string "Eq.refl") [u]) Tt term)
                    res    {:term result :proof proof :changed? true :rw :cse}]
-               ;; No cost gate: a shared BARRIER is always cheaper computed once, and pipeline-cost
-               ;; mis-prices `let`. Soundness is the only gate (rfl certificate via verified-rewrite?).
-               (when (cert/verified-rewrite? env term res :lctx lctx)
+               ;; COST gate (now meaningful — the model is tree/let-aware, so the `let` pays the
+               ;; shared subterm ONCE while the dup form pays it per occurrence): adopt iff the
+               ;; shared plan is not more expensive. Soundness is the rfl certificate (verified-rewrite?).
+               (when (and (<= (cost/pipeline-cost result {:selectivity selectivity :sizes sizes})
+                              (cost/pipeline-cost term {:selectivity selectivity :sizes sizes}))
+                          (cert/verified-rewrite? env term res :lctx lctx))
                  (assoc res :verified? true)))))))
      (ranked-shares term))))
