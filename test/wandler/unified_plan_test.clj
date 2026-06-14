@@ -10,6 +10,8 @@
   (:require [clojure.test :refer [deftest is testing]]
             [ansatz.core :as a]
             [wandler.plan :as plan]
+            [wandler.optimize :as opt]
+            [wandler.optimize.cost :as cost]
             [wandler.core :as wc]
             [wandler.kmap :as km]
             [wandler.laws.relational :as rl]
@@ -163,3 +165,24 @@
         (is (:verified? p-lim) "limit plan certified ≡ naive")
         (is (not (:order-invariant? p-lim)) "limit keeps the first n → order-sensitive, reorder forbidden")
         (is (= [11 21] (vec (run (:term p-lim)))) "first 2 of (map +1 [10 20 30 40 50])")))))
+
+;; #7 — evaluation: the consumer-aware win, ATTRIBUTED via ablation on the SAME query. Plan count(join)
+;; twice — reorder ALLOWED (sink known order-invariant) vs FORBIDDEN (order-blind) — and measure the cost
+;; delta. Same answer either way (certified ≡ naive); the delta is exactly what knowing the consumer buys.
+(deftest evaluation-ablation
+  (if-not (ready?)
+    (is true "skipped — no full kernel env")
+    (let [{:keys [join PJ] :as D} (build) lctx (:lctx D) sz {5001 1000 5002 1000}
+          aware (plan/unified-plan (a/env) join :lctx lctx :elem-type PJ :sink {:kind :count} :sizes sz)
+          ;; ablation: the SAME count query, but order-blind (pretend we don't know count ignores order)
+          blind (opt/optimize-cost (a/env) (:wrapped aware) :lctx lctx :sizes sz :skip-reorder? true)]
+      (testing "knowing the sink is order-invariant unlocks a strictly cheaper certified plan"
+        (is (:verified? aware)) (is (:verified? blind))
+        (is (some? (:route aware)) "consumer-aware → aggregation-through-join fired")
+        ;; the optimizer gates on CARDINALITY (pipeline-cost), not op-count: the factored plan processes
+        ;; O(|xs|+|ys|) not O(|xs|·|ys|), so its cardinality cost is far lower.
+        (let [ca (double (cost/pipeline-cost (:term aware) {:sizes sz}))
+              cb (double (cost/pipeline-cost (:term blind) {:sizes sz}))]
+          (is (< ca cb) "consumer-aware (factored) plan has strictly lower cardinality cost")
+          (println (format "  #7 ABLATION — count(join), 1k×1k cardinality cost: consumer-aware %.0f vs order-blind %.0f (%.1f×)"
+                           ca cb (/ cb (max 1.0 ca)))))))))
