@@ -42,13 +42,19 @@ bounded, all certified by the same monoid proof:
   `apfoldl`. No deps; the equal-result fallback.
 - **raster** (optional, numerical, `wandler.backend.raster` under the `:raster` alias): per-chunk →
   raster `deftm`/`par` → SOAC-fused SIMD/GPU. Whole-array is "one chunk". Detect-and-lower adapter
-  (registers into the `:array` seam); falls back to clojure/eager when absent. v1 lowers the canonical
-  Float reductions (`Σxs`→`par/sum`, `Σx²`→`par/dot-product`) and is CORRECT, but PERF FINDING: these
-  cheap memory-bound reductions do NOT beat C2-auto-vectorized Clojure `areduce` over a `double[]`
-  (~1.1× kernel-only) and LOSE once the `List→double[]` boundary is paid (~0.6×). Raster's real edge is
-  COMPUTE-heavy custom kernels (the general `deftm`+`compile-aot` path), parallelism, GPU, and
-  array-NATIVE data (no conversion) — so the cost model must only route to raster when the workload
-  justifies it. Packaging caveat: raster 0.1.3's git deps (pattern/typedclojure) don't survive the
+  (registers into the `:array` seam); falls back to clojure/eager when absent. Two recognition tiers:
+  - **ready-made ops** — the canonical reductions (`Σxs`→`par/sum`, `Σx²`→`par/dot-product`). CORRECT,
+    but PERF FINDING: these cheap memory-bound reductions do NOT beat C2-auto-vectorized Clojure
+    `areduce` over a `double[]` (~1.1× kernel-only) and LOSE once the `List→double[]` boundary is paid
+    (~0.4–0.6×). The cost model must NOT route cheap reductions here.
+  - **general `deftm`+`compile-aot`** (BUILT) — any inlinable Float λ `foldl(+,0, map(λx.<Float expr>, xs))`
+    has its per-element body inlined into a raster `deftm` `reduce!` over a `double[]` and AOT-compiled
+    (SOAC-fused SIMD + morsel parallelism), compiled once at routing time. This is where raster actually
+    wins: a COMPUTE-bound kernel (e.g. `Σ x^16` over 2M doubles) runs **clojure single-thread 10.4ms vs
+    raster deftm 2.8ms = 3.73×**. So the win scales with compute intensity per element, not array size.
+
+  Raster's real edge is therefore COMPUTE-heavy custom kernels, parallelism, GPU, and array-NATIVE data
+  (no conversion). Packaging caveat: raster 0.1.3's git deps (pattern/typedclojure) don't survive the
   Maven pom boundary, so the `:raster` alias replicates them consumer-side (upstream fix = publish them).
 - **stratum** (optional, columnar/OLAP): emit columns `{:type :data array}` to stratum's planner, OR
   `idx-scan` stratum chunks into our verified kernel. Both directions share the chunk shape, because

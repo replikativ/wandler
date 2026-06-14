@@ -4,6 +4,7 @@
    raster's unboxed SIMD kernel, correct AND faster than boxed Clojure reduce. The base wandler suite
    (clj -M:test) never requires this — raster stays fully optional."
   (:require [clojure.test :refer [deftest is]]
+            [ansatz.kernel.env :as env]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]))
 
@@ -53,3 +54,41 @@
                            t-karr t-krast (/ t-karr (max 0.01 t-krast))))
           (println (format "  Σx² from a boxed list (incl. List→double[] boundary): clojure reduce %.1f ms · raster %.1f ms (%.2f×)"
                            t-bbox t-bsq (/ t-bbox (max 0.01 t-bsq)))))))))
+
+(deftest raster-general-deftm-kernel
+  "The GENERAL deftm path: a compute-heavy Float λ (Σ x^16) inlined into a raster deftm+compile-aot SIMD
+   kernel — where raster ACTUALLY wins (compute-bound, not memory-bound). Demonstrates the value: a
+   verified per-element kernel lowered to a fused SIMD/parallel loop, correct AND ~4× over single-thread."
+  (if-not (raster?)
+    (do (println "SKIP raster-general-deftm: raster not on classpath (run with -M:raster:test)") (is true))
+    (let [raf   (requiring-resolve 'wandler.backend.raster/raster-array-form)
+          floatT (e/const' (nm "Float") [])
+          fmul   (e/const' (nm "Float.mul") [])
+          fadd   (e/const' (nm "Float.add") [])
+          ;; pow: x^n as nested binary Float.mul (n-1 muls), no float literals needed
+          pow    (fn [n] (reduce (fn [acc _] (e/app* fmul (e/bvar 0) acc)) (e/bvar 0) (range (dec n))))
+          k16    (e/lam "x" floatT (pow 16) :default)                       ; λx. x^16  (15 muls)
+          src    {:op :source :term (e/bvar 0)}
+          sum16  {:op :foldl :fn fadd :init nil :input {:op :map :fn k16 :input src}}  ; Σ x^16
+          env    (env/empty-env)
+          form   (raf env sum16 ["xs"])]
+      (is (some? form) "raster recognizes Σ x^16 → general deftm kernel")
+      (let [f      (eval (list 'clojure.core/fn '[xs] form))
+            small  (mapv double (range 1 5))                                ; 1^16+2^16+3^16+4^16
+            expect (reduce + (map #(Math/pow % 16) small))]
+        (is (< (Math/abs (- (f small) expect)) 1.0)
+            (str "Σ x^16 over 1..4 = " expect))
+        ;; value demo: the compiled raster kernel vs single-thread Clojure over the SAME double[]
+        (let [n   2000000
+              da  (double-array (map #(/ (double %) (double n)) (range n)))
+              pc  (fn ^double [^double a] (reduce (fn [^double acc _] (* a acc)) a (range 15)))
+              cl  (fn [^doubles x] (areduce x i acc 0.0 (+ acc (pc (aget x i)))))
+              kf  ((requiring-resolve 'wandler.backend.raster/compile-sum-kernel)
+                   ((requiring-resolve 'ansatz.codegen/ansatz->clj) env (e/lam-body k16) ["a"]))]
+          (dotimes [_ 5] (cl da) (kf da))
+          (let [time! (fn [g] (let [s (System/nanoTime)] (dotimes [_ 10] (g)) (/ (- (System/nanoTime) s) 1e7)))
+                tc (time! #(cl da))
+                tr (time! #(kf da))]
+            (is (< (Math/abs (- (cl da) (kf da))) 1e-6) "raster deftm kernel matches Clojure on 2M doubles")
+            (println (format "  Σ x^16 over 2M doubles (COMPUTE-bound, double[] in): clojure single-thread %.1f ms · raster deftm SIMD %.1f ms (%.2f×)"
+                             tc tr (/ tc (max 0.01 tr))))))))))
