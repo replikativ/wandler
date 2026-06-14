@@ -93,13 +93,49 @@
                                   (let [c (.size decode)] (.put code k c) (.add decode k) c))))))
         [arr (fn [c] (.get decode (int c)))]))))
 
+;; ── open-monoid path: ANY lawful monoid via stratum's grouped-fold (tier 3) ──────────────────────
+(def ^:private default-threads (max 1 (.. Runtime getRuntime availableProcessors)))
+
+(defn- lawful-monoid? [spec]
+  (and (:combine spec) (:unit-fn spec)
+       (every? #(contains? (:laws spec) %) [:assoc :left-identity :right-identity])))
+
+(defn offload-custom-group
+  "Offload a group-by with an ARBITRARY (open) lawful monoid to stratum's `grouped-fold` primitive — for
+   aggregates OUTSIDE stratum's closed built-in set. Any associative `combine` rides stratum's dense-code
+   grouping + parallel partition/merge; the monoid's ASSOCIATIVITY is the parallel-merge certificate.
+   Returns `{key -> merged-acc}` (== the eager reducer; the left-identity law makes the unit-start fold
+   agree with eager's first-value-seed). Threads default to the core count; the win is at high cardinality
+   where eager's persistent-map grouping is slow + single-threaded."
+  [value-spec key-f value-f coll & [{:keys [threads] :or {threads default-threads}}]]
+  (let [keys (ArrayList.) vals (ArrayList.)]
+    (doseq [x coll] (.add keys (key-f x)) (.add vals (value-f x)))
+    (let [n     (.size keys)
+          codes (long-array n)
+          code  (HashMap.) decode (ArrayList.)]
+      (dotimes [i n]
+        (let [k (.get keys i)]
+          (aset codes i (long (or (.get code k)
+                                  (let [c (.size decode)] (.put code k c) (.add decode k) c))))))
+      (let [g            (.size decode)
+            varr         (.toArray vals)
+            grouped-fold (requiring-resolve 'stratum.query.custom-agg/grouped-fold)
+            ^objects res (grouped-fold codes varr g {:unit (:unit-fn value-spec)
+                                                     :combine (:combine value-spec)
+                                                     :threads threads})]
+        (persistent!
+         (reduce (fn [m c] (assoc! m (.get decode (int c)) (aget res (int c))))
+                 (transient {}) (range g)))))))
+
 ;; ── group-by + aggregate offload (the transparent reducer hook) ──────────────────────────────────
 (defn offload-group-by
   "Try `(group-by value-spec key-f value-f coll)` on stratum. Returns `{key -> agg}` (== the eager
-   reducer) or nil to DECLINE (unrecognized agg / non-trivial pipeline / cost-gate says not worth it)."
+   reducer) or nil to DECLINE (non-trivial pipeline / cost-gate says not worth it). A built-in agg
+   (sum/min/max) takes stratum's SIMD `q/q` path; any OTHER lawful monoid takes the open-monoid
+   `grouped-fold` path (tier 3), unless disabled with `:offload/custom? false`."
   [pipeline value-spec key-f value-f coll opts]
-  (when-let [agg (and (empty-pipeline? pipeline) (seqable? coll) (agg-of value-spec opts))]
-    (when (should-offload? coll key-f opts)
+  (when (and (empty-pipeline? pipeline) (seqable? coll) (should-offload? coll key-f opts))
+    (if-let [agg (agg-of value-spec opts)]
       (let [keys (ArrayList.) vals (ArrayList.)]
         (doseq [x coll] (.add keys (key-f x)) (.add vals (value-f x)))
         (let [[karr decode]   (key-codec keys)
@@ -108,7 +144,9 @@
               vfn  (if integral? long identity)]
           (persistent!
            (reduce (fn [m row] (assoc! m (decode (:k row)) (vfn (get row agg))))
-                   (transient {}) res)))))))
+                   (transient {}) res))))
+      (when (and (lawful-monoid? value-spec) (not (false? (:offload/custom? opts))))
+        (offload-custom-group value-spec key-f value-f coll {:threads (or (:threads opts) default-threads)})))))
 
 ;; ── equi-join + group + sum offload (stratum builds the in-memory join index) ────────────────────
 (defn offload-join-group-sum

@@ -15,6 +15,10 @@
 (def nat-min (r/monoid-spec {:name :nat/min :unit-fn (constantly Long/MAX_VALUE) :combine min
                              :laws {:assoc 'Nat.min_assoc :left-identity 'Nat.max_min :right-identity 'Nat.min_max}}))
 
+;; a CUSTOM monoid OUTSIDE stratum's closed built-in agg set (no :bit-or kernel): bitwise-OR, identity 0
+(def bit-or-monoid (r/monoid-spec {:name :nat/bit-or :unit-fn (constantly 0) :combine bit-or
+                                   :laws {:assoc 'Nat.lor_assoc :left-identity 'Nat.zero_lor :right-identity 'Nat.lor_zero}}))
+
 (def ^:private force {:offload/force? true})   ; bypass the cost-gate so correctness tests hit stratum
 
 (deftest stratum-reducer-offload
@@ -50,6 +54,11 @@
           (is (nil? (offload nil r/int-add :d :v low {})) "cost-gate DECLINES low-cardinality/small data")
           (is (map? (offload nil r/int-add :d :v high {})) "cost-gate ACCEPTS high-cardinality large data"))
 
+        ;; ── tier 3: an OPEN monoid (bitwise-OR, not in stratum's closed agg set) rides stratum's
+        ;; grouped-fold — proving the substrate generalizes beyond the built-in aggregates ──
+        (let [data (mapv (fn [i] {:dept (long (mod i 7)) :flags (long (bit-shift-left 1 (mod i 5)))}) (range 5000))
+              [e o] (diff bit-or-monoid :dept :flags data)] (is (= e o) "OPEN monoid (bitwise-OR) via grouped-fold == eager"))
+
         ;; ── equi-join + group + sum (stratum builds the in-memory join index) ──
         (let [facts (mapv (fn [i] {:cust (long (mod i 1000)) :amt (long (mod i 100))}) (range 20000))
               dim   (mapv (fn [c] {:cust (long c) :region ([:n :s :e :w] (mod c 4))}) (range 1000))
@@ -72,5 +81,19 @@
             (let [ores (call) to (time! call)]
               (is (= eres ores) "2M-row / 100k-group result agrees")
               (println (format "  group-by+sum, 2M rows / %d groups: eager %.0f ms · stratum %.0f ms (%.2f×)"
+                               groups te to (/ te (max 0.01 to)))))))
+
+        ;; ── tier 3 value: OPEN monoid (bit-OR) at high cardinality, eager vs stratum PARALLEL fold ──
+        (let [n 2000000 groups 100000
+              dvec  (vec (map (fn [i] {:dept (long (mod i groups)) :flags (long (bit-shift-left 1 (mod i 20)))}) (range n)))
+              time! (fn [f] (let [s (System/nanoTime)] (dotimes [_ 5] (f)) (/ (- (System/nanoTime) s) 5e6)))
+              call  #(r/group-by nil bit-or-monoid :dept :flags dvec force)]
+          (unregister!) (dotimes [_ 2] (r/group-by nil bit-or-monoid :dept :flags dvec))
+          (let [eres (r/group-by nil bit-or-monoid :dept :flags dvec)
+                te   (time! #(r/group-by nil bit-or-monoid :dept :flags dvec))]
+            (register!) (dotimes [_ 2] (call))
+            (let [ores (call) to (time! call)]
+              (is (= eres ores) "open-monoid 2M/100k result agrees")
+              (println (format "  group-by+bitOR (OPEN monoid), 2M rows / %d groups: eager %.0f ms · stratum parallel %.0f ms (%.2f×)"
                                groups te to (/ te (max 0.01 to)))))))
         (finally (unregister!))))))
