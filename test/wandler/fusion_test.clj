@@ -40,6 +40,11 @@
    ['fz-reduce-mapcat '[xs :- (List Nat)] 'Nat
     '(reduce + 0 (mapcat (fn [x] [x x]) xs))
     #(reduce + 0 (mapcat (fn [x] [x x]) %)) xs 1]
+   ;; filter after mapcat — filter_flatMap pushes the filter into the flatMap body, unfolding
+   ;; List.filter's match aux; relies on ansatz.codegen unfolding match auxiliaries.
+   ['fz-mapcat-filter '[xs :- (List Nat)] '(List Nat)
+    '(into [] (comp (mapcat (fn [x] [x x])) (filter (fn [x] (< 2 x)))) xs)
+    #(into [] (comp (mapcat (fn [x] [x x])) (filter (fn [x] (< 2 x)))) %) xs 1]
    ['fz-transduce '[xs :- (List Nat)] 'Nat
     '(transduce (comp (filter (fn [x] (< 2 x))) (map (fn [x] (* x x)))) + 0 xs)
     #(transduce (comp (filter (fn [x] (< 2 x))) (map (fn [x] (* x x)))) + 0 %) xs 1]

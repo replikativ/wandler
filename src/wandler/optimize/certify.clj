@@ -28,15 +28,16 @@
      List.map_id         map id l              → l
      List.map_flatMap    map g (flatMap f l)   → flatMap (map g ∘ f) l
      List.flatMap_map    flatMap f (map g l)   → flatMap (f ∘ g) l
+     List.filter_flatMap    filter p (flatMap f l)     → flatMap (filter p ∘ f) l
      List.foldl_flatMap     foldl f i (flatMap g l)    → foldl (λa x. foldl f a (g x)) i l
      List.foldr_flatMap     foldr f i (flatMap g l)    → foldr (λx a. foldr f a (g x)) i l
      List.map_filterMap     map g (filterMap f l)      → filterMap (g <$> ∘ f) l
      List.filterMap_map     filterMap f (map g l)      → filterMap (f ∘ g) l
      List.filterMap_filterMap filterMap g (filterMap f l) → filterMap (f >=> g) l
-   (filter_flatMap / filterMap_flatMap are deliberately NOT included: pushing a filter
-   into a flatMap body whose fn returns a literal list lets simp unfold List.filter into
-   its `match_1` auxiliary, which has no codegen lowering. foldl/foldr_flatMap are safe —
-   the inner fold reduces to arithmetic, not a match auxiliary.)
+     List.filterMap_flatMap filterMap g (flatMap f l)  → flatMap (filterMap g ∘ f) l
+   (filter_flatMap pushes filter into a flatMap body whose fn may return a literal list, which
+   simp reduces by unfolding List.filter into its `match_1` auxiliary — ansatz.codegen now
+   unfolds match auxiliaries to the `.rec` path, so this codegens cleanly.)
    A `foldl` over `map g (filter p xs)` cascades foldl_map then foldl_filter into
    ONE foldl over xs (stream fusion). The flatMap (mapcat) and filterMap laws extend
    the SAME deforestation to mapcat-/filterMap-bearing pipelines (each LHS→RHS still
@@ -44,8 +45,8 @@
    map_filter REORDER rather than deforest — they live in the cost layer (could break
    confluence here). Init only."
   ["List.map_map" "List.filter_filter" "List.foldl_map" "List.foldl_filter" "List.map_id"
-   "List.map_flatMap" "List.flatMap_map" "List.foldl_flatMap" "List.foldr_flatMap"
-   "List.map_filterMap" "List.filterMap_map" "List.filterMap_filterMap"])
+   "List.map_flatMap" "List.flatMap_map" "List.filter_flatMap" "List.foldl_flatMap" "List.foldr_flatMap"
+   "List.map_filterMap" "List.filterMap_map" "List.filterMap_filterMap" "List.filterMap_flatMap"])
 
 
 (def string-lemmas
