@@ -22,6 +22,17 @@
   ;; Optional live datahike engine for the bridge boundary property tests.
   :datahike {:extra-deps {org.replikativ/datahike {:local/root "../datahike"}}}
 
+  ;; Optional raster numerical backend (unboxed per-chunk SIMD/GPU) for the :array physical tag
+  ;; (wandler.backend.raster). raster from Clojars; its pattern/typedclojure GIT deps don't survive the
+  ;; Maven pom boundary, so they're replicated here consumer-side. Needs the JDK Vector API module.
+  :raster {:extra-deps {org.replikativ/raster {:mvn/version "0.1.3"}
+                        pangloss/pattern {:git/url "https://github.com/replikativ/pattern"
+                                          :git/sha "7db8472e8c166c8a95705bf4f9ac9b12810766be"}
+                        org.typedclojure/typed.clj.checker {:git/url "https://github.com/whilo/typedclojure"
+                                                            :git/sha "5c6412026dea6a7cd24e1eb4f1b3408b350f7f4f"
+                                                            :deps/root "typed/clj.checker"}}
+           :jvm-opts ["--enable-native-access=ALL-UNNAMED" "--add-modules=jdk.incubator.vector"]}
+
   :repl {:extra-paths ["test"]
          :extra-deps {nrepl/nrepl {:mvn/version "1.3.0"}
                       cider/cider-nrepl {:mvn/version "0.50.2"}}

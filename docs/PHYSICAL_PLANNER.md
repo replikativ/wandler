@@ -40,9 +40,16 @@ bounded, all certified by the same monoid proof:
 
 - **clojure-chunked** (always available): partition → per-chunk unboxed op → reduce-merge. Generalizes
   `apfoldl`. No deps; the equal-result fallback.
-- **raster** (optional, numerical): each chunk → raster `deftm`/`par` → SOAC-fused SIMD/GPU. Whole-array
-  is "one chunk". Detect-and-lower adapter (same pattern as the datahike/stratum bridge); falls back to
-  clojure-chunked when raster is absent.
+- **raster** (optional, numerical, `wandler.backend.raster` under the `:raster` alias): per-chunk →
+  raster `deftm`/`par` → SOAC-fused SIMD/GPU. Whole-array is "one chunk". Detect-and-lower adapter
+  (registers into the `:array` seam); falls back to clojure/eager when absent. v1 lowers the canonical
+  Float reductions (`Σxs`→`par/sum`, `Σx²`→`par/dot-product`) and is CORRECT, but PERF FINDING: these
+  cheap memory-bound reductions do NOT beat C2-auto-vectorized Clojure `areduce` over a `double[]`
+  (~1.1× kernel-only) and LOSE once the `List→double[]` boundary is paid (~0.6×). Raster's real edge is
+  COMPUTE-heavy custom kernels (the general `deftm`+`compile-aot` path), parallelism, GPU, and
+  array-NATIVE data (no conversion) — so the cost model must only route to raster when the workload
+  justifies it. Packaging caveat: raster 0.1.3's git deps (pattern/typedclojure) don't survive the
+  Maven pom boundary, so the `:raster` alias replicates them consumer-side (upstream fix = publish them).
 - **stratum** (optional, columnar/OLAP): emit columns `{:type :data array}` to stratum's planner, OR
   `idx-scan` stratum chunks into our verified kernel. Both directions share the chunk shape, because
   stratum's per-chunk SIMD kernels are monoid-accumulating like ours.
