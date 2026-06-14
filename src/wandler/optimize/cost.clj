@@ -201,14 +201,22 @@
 
 
 ;; ── per-op COST DESCRIPTORS (the framework seam) ─────────────────────────────
-;; Each SOAC head → {:list <driving-input arg idx>, :tf <transform>}. The walk descends the :list
-;; input, then `:tf` computes this op's [size time mem] from that input profile + the op's args +
-;; a context. Declarative: adding an op (incl. a stratum/raster/datahike engine kernel) is a data
-;; entry. `:tf` signature = (ctx in-profile args benv walk) → [size time mem], where ctx carries
-;; {:base :fanout :sel :ndv} and `walk` lets a binary op (join) recurse its rhs.
-;; (Roadmap COST_MODEL_REDESIGN §4: :list and output-list? derive from the kernel SIGNATURE — a
+;; Each head → {:list <driving-input arg idx>, :tf <transform>}. The walk descends the :list input,
+;; then `:tf` computes this op's [size time mem] from that input profile + the op's args + a context.
+;; `:tf` signature = (ctx in-profile args benv walk) → [size time mem]; ctx carries {:base :fanout
+;; :sel :ndv}, and `walk` lets a binary op (join) recurse its rhs.
+;;
+;; This is the OP-COST side of the cost handshake (the per-source cardinality/selectivity side —
+;; datahike live :estimate, JIT profile-selectivity — flows in via pipeline-resources opts). The
+;; registry is OPEN: an engine (stratum fused-join, raster SIMD kernel, a datahike pushdown) declares
+;; how ITS op transforms cardinality/time/memory by `register-op-cost!` — the single declarative place
+;; engine costs live, mirroring the codegen / surface-elaborator registries. Adding an op = data.
+;; (Roadmap COST_MODEL_REDESIGN §4: :list and output-list? to derive from the kernel SIGNATURE — a
 ;; cheap return-type read — rather than this hand-keyed name table; the transforms stay.)
-(def ^:private op-cost
+(defonce ^{:doc "head (string) → cost descriptor {:list idx :tf (ctx in args benv walk)→[size time mem]}.
+   Seeded with the Init SOAC/relational ops; engines register their own via register-op-cost!."}
+  op-cost-registry
+  (atom
   {"List.map"       {:list 3 :tf (fn [_   [in cin mn] _ _ _] [in (+ cin in) mn])}                ; streaming
    "List.filter"    {:list 2 :tf (fn [ctx [in cin mn] args _ _]
                                    (let [pred (nth args 1)
@@ -225,7 +233,16 @@
                                    (let [[r cr mr] (walk (nth args 7) benv)        ; rhs (build) side
                                          out (if (:ndv ctx) (max 1.0 (/ (* in r) (double (:ndv ctx))))
                                                             (* (min in r) (:fanout ctx)))]
-                                     [out (+ cin cr in (* join-build-weight r)) (max mn mr r)]))}})
+                                     [out (+ cin cr in (* join-build-weight r)) (max mn mr r)]))}}))
+
+(defn register-op-cost!
+  "Register/override the cost descriptor for op `head` (string). `descriptor` is
+   {:list <driving-input arg idx> :tf (fn [ctx in-profile args benv walk] → [size time mem])}.
+   The seam an engine uses to declare how its operation transforms cardinality/time/memory — so the
+   planner can cost a plan that lowers to it. Idempotent; later registrations override. Returns head."
+  [head descriptor]
+  (swap! op-cost-registry assoc head descriptor)
+  head)
 
 
 (defn pipeline-resources
@@ -251,7 +268,8 @@
                    (map? selectivity) (fn [p] (or (get selectivity (e/->string p)) (pred-selectivity p)))
                    :else pred-selectivity)
          size-of (fn [e] (or (when (and sizes (e/fvar? e)) (get sizes (e/fvar-id e))) base))
-         ctx {:base base :fanout fanout :sel sel :ndv ndv}]
+         ctx {:base base :fanout fanout :sel sel :ndv ndv}
+         op-cost @op-cost-registry]
      ;; `benv` = sizes of let-bound vars (de-Bruijn, innermost first), so a shared subexpression's
      ;; size flows into its `let` body and is paid for ONCE — the only new state. A λ is a function
      ;; value, returned as a unit leaf and NOT descended (the consuming op accounts per-element):

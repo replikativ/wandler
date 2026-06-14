@@ -48,6 +48,17 @@
 (defn- approx= [a b] (< (Math/abs (- (double a) (double b))) 0.5))
 (defn- rprofile [t opts] (let [r (cost/pipeline-resources t opts)] [(:size r) (:time r) (:memory r)]))
 
+(deftest op-cost-registry-is-extensible
+  ;; the engine-op seam: an engine declares how ITS op transforms cost via register-op-cost!, and the
+  ;; planner's cost model uses it (a raster SIMD kernel registers ~base/4; stratum a fused join; etc.).
+  (let [t (e/app* (e/const' (nm/from-string "Test.engineScan") []) (c "Nat") (e/fvar 1))]
+    (is (= 0.0 (:time (cost/pipeline-resources t {}))) "unknown op → leaf, time 0")
+    (cost/register-op-cost! "Test.engineScan"
+      {:list 1 :tf (fn [_ [in cin mn] _ _ _] [in (+ cin (* 0.25 in)) mn])})
+    (try
+      (is (= 250.0 (:time (cost/pipeline-resources t {}))) "registered descriptor is used (base/4)")
+      (finally (swap! cost/op-cost-registry dissoc "Test.engineScan")))))
+
 (deftest cost-model-golden-snapshot
   (if-not @test-env/init-full-env
     (is true "skipped — no Init env")
