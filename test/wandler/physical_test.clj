@@ -87,3 +87,33 @@
         (is (= :array (:physical r)) "a registered array backend serves the :array tag")
         (is (= [1 4 9] (vec ((:run r) [1 2 3])))))
       (phys/clear-array-backends!))))
+
+(deftest cost-backend-push-down-is-cost-based
+  ;; B2: the executor consults choose-cost-form — a COST-backend serves the :array tag only when its
+  ;; advertised cost beats the eager Clojure cost; otherwise it declines and the eager realization runs.
+  ;; (Fake backend reuses the transducer emission as a result-equal stand-in — no raster dep.)
+  (when (ready?)
+    (reset! a/ansatz-env @test-env/init-full-env)
+    ((requiring-resolve 'wandler.kmap/install!))
+    ((requiring-resolve 'wandler.laws.relational/install!))
+    ((requiring-resolve 'wandler.surface.collections/install!))
+    (let [natT    (e/const' (nm "Nat") [])
+          listNat (e/app (e/const' (nm "List") [z]) natT)
+          xs      (e/fvar 1)
+          sq      (e/lam "x" natT (e/app* (e/const' (nm "Nat.mul") []) (e/bvar 0) (e/bvar 0)) :default)
+          term    (e/app* (e/const' (nm "List.map") [z z]) natT natT sq xs)
+          elab    {:term term :lctx {1 {:name "xs" :type listNat}}}
+          lower   (fn [env plan names] (phys/plan->transducer env plan names))]
+      (phys/clear-array-backends!) (phys/clear-cost-backends!)
+      ;; CHEAP engine (cost = eager/2) → chosen
+      (phys/register-cost-backend! {:name :fake :lower lower :cost (fn [_plan eager] (* 0.5 eager))})
+      (let [r (m/execute (a/env) elab :physical :array)]
+        (is (= :array (:physical r)) "a cost-backend cheaper than eager serves the :array tag")
+        (is (= [1 4 9] (vec ((:run r) [1 2 3])))))
+      ;; EXPENSIVE engine (cost = eager*2) → declines, eager runs (result-equal)
+      (phys/clear-cost-backends!)
+      (phys/register-cost-backend! {:name :fake :lower lower :cost (fn [_plan eager] (* 2.0 eager))})
+      (let [r (m/execute (a/env) elab :physical :array)]
+        (is (= :eager (:physical r)) "a cost-backend MORE expensive than eager is declined → eager")
+        (is (= [1 4 9] (vec ((:run r) [1 2 3])))))
+      (phys/clear-cost-backends!))))
