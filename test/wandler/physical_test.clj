@@ -26,6 +26,22 @@
     (is (= :eager     (phys/physical-route {:op :foldl :input src} :requested :transduce))) ; foldl → eager
     (is (= :eager     (phys/physical-route src :requested :transduce)))))           ; bare source → eager
 
+(deftest chunkability-classifier
+  ;; the chunked-array model (docs/PHYSICAL_PLANNER.md): map/filter/fold chains are chunkable (bounded
+  ;; per-chunk passes + monoid merge); join/group_by are cross-chunk (→ stratum/grace-hash); bare
+  ;; source has nothing to chunk.
+  (let [src   {:op :source :term nil}
+        mff   {:op :filter :input {:op :map :input {:op :foldl :input src}}}  ; filter∘map∘foldl
+        joinp {:op :map :input {:op :join :left src :right src}}
+        grp   {:op :group-by :input src}]
+    (is (phys/chunkable? mff)        "map/filter/fold chain is chunkable")
+    (is (not (phys/chunkable? joinp)) "a join in the chain is cross-chunk → not chunkable")
+    (is (not (phys/chunkable? grp))   "group_by is cross-chunk → not chunkable")
+    (is (not (phys/chunkable? src))   "bare source has nothing to chunk")
+    (is (= [:source :reduce :per-chunk :per-chunk] (:classes (phys/classify mff))) "per-op chunk classes (innermost-first)")
+    (is (true? (:chunkable? (phys/classify mff))))
+    (is (= :cross-chunk (first (:classes (phys/classify grp)))) "group_by classed cross-chunk")))
+
 (deftest transducer-backend-matches-eager
   (when (ready?)
     (reset! a/ansatz-env @test-env/init-full-env)
