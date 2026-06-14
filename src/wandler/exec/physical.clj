@@ -87,6 +87,39 @@
   (when (chunkable? plan)
     (some (fn [f] (f env plan names)) @array-backends)))
 
+;; ── cost-based physical push-down (B2 of COST_MODEL_REDESIGN — the engine-transparency seam) ──────
+;; `array-form` above fires the FIRST backend that recognizes the shape — no cost comparison. The
+;; cost-backend registry instead lets each engine ADVERTISE a cost for the shapes it handles, so the
+;; planner picks the cheapest lowering that actually beats the eager Clojure cost. This is what makes
+;; raster/stratum TRANSPARENT to the planner: their cost is consulted, not assumed. Every backend is
+;; result-equal (the kernel proof of the optimized plan is the certificate), so the choice is purely
+;; performance. An engine's :cost is naturally backed by its op-cost descriptor (register-op-cost!).
+(defonce ^:private cost-backends (atom []))
+
+(defn register-cost-backend!
+  "Register a COST-BASED execution backend: {:name kw, :lower (fn [env plan names] → clj-form | nil
+   if the shape isn't handled), :cost (fn [plan] → number, the engine's estimated cost for this plan)}.
+   The cost-aware successor to register-array-backend!. Returns the backend count."
+  [backend] (count (swap! cost-backends conj backend)))
+
+(defn clear-cost-backends! [] (reset! cost-backends []) nil)
+(defn cost-backends* [] @cost-backends)
+
+(defn choose-cost-form
+  "Cost-based physical push-down. Among registered cost-backends whose `:lower` RECOGNIZES `plan`
+   (returns non-nil), pick the cheapest by `:cost`; return it iff strictly cheaper than `eager-cost`
+   (the Clojure realization's pipeline-cost, computed by the caller from the plan's kernel term).
+   Returns {:backend :form :cost} or nil → eager fallback. The plan is the CERTIFIED kernel term;
+   whichever backend wins, the result is result-equal — this is a pure performance decision, so an
+   engine's clever lowering can be added freely (worst case: not chosen, never wrong)."
+  [env plan names eager-cost]
+  (let [cands (keep (fn [b] (when-let [form ((:lower b) env plan names)]
+                              {:backend (:name b) :form form :cost (double ((:cost b) plan))}))
+                    @cost-backends)]
+    (when (seq cands)
+      (let [best (apply min-key :cost cands)]
+        (when (< (:cost best) (double eager-cost)) best)))))
+
 (defn physical-route
   "Choose a physical backend tag for a batch `plan`. Default :eager (unchanged current behavior).
    :transduce when requested AND the plan is a linear producing pipeline; :array when requested AND the
