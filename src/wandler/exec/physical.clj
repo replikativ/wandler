@@ -98,8 +98,9 @@
 
 (defn register-cost-backend!
   "Register a COST-BASED execution backend: {:name kw, :lower (fn [env plan names] → clj-form | nil
-   if the shape isn't handled), :cost (fn [plan] → number, the engine's estimated cost for this plan)}.
-   The cost-aware successor to register-array-backend!. Returns the backend count."
+   if the shape isn't handled), :cost (fn [plan eager-cost] → number, the engine's estimated cost for
+   this plan; `eager-cost` is the Clojure realization's cost, so a backend can advertise relative, e.g.
+   a SIMD ≈ eager/4)}. The cost-aware successor to register-array-backend!. Returns the backend count."
   [backend] (count (swap! cost-backends conj backend)))
 
 (defn clear-cost-backends! [] (reset! cost-backends []) nil)
@@ -114,7 +115,7 @@
    engine's clever lowering can be added freely (worst case: not chosen, never wrong)."
   [env plan names eager-cost]
   (let [cands (keep (fn [b] (when-let [form ((:lower b) env plan names)]
-                              {:backend (:name b) :form form :cost (double ((:cost b) plan))}))
+                              {:backend (:name b) :form form :cost (double ((:cost b) plan eager-cost))}))
                     @cost-backends)]
     (when (seq cands)
       (let [best (apply min-key :cost cands)]

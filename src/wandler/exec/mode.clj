@@ -390,7 +390,13 @@
                       (e/lam (or (:name (lctx fid)) (str "s" fid)) (:type (lctx fid)) (e/abstract1 body fid) :default))
                     t ids)
         [names body] (loop [x lam, ns []] (if (e/lam? x) (recur (e/lam-body x) (conj ns (e/lam-name x))) [ns x]))
-        form (phys/array-form env (plan/term->plan body) names)]
+        plan (plan/term->plan body)
+        ;; COST-BASED push-down (B2): among engine backends that recognize this plan, choose the cheapest
+        ;; that beats the eager Clojure cost; else fall back to the legacy array-form (recognize-wins) and
+        ;; then to eager. Every backend is result-equal (the optimized plan is kernel-certified).
+        eager-cost ((requiring-resolve 'wandler.optimize.cost/pipeline-cost) body {})
+        form (or (:form (phys/choose-cost-form env plan names eager-cost))
+                 (phys/array-form env plan names))]
     (when form
       (eval (reduce (fn [inner nm] (list 'clojure.core/fn [(symbol nm)] inner)) form (reverse names))))))
 

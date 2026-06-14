@@ -11,7 +11,7 @@
 (use-fixtures :each (fn [f] (phys/clear-cost-backends!) (f) (phys/clear-cost-backends!)))
 
 (defn- backend [name lowers? cost]
-  {:name name :cost (fn [_plan] cost) :lower (fn [_env _plan _names] (when lowers? (list :lowered name)))})
+  {:name name :cost (fn [_plan _eager] cost) :lower (fn [_env _plan _names] (when lowers? (list :lowered name)))})
 
 (deftest picks-cheapest-recognizing-backend-that-beats-eager
   (phys/register-cost-backend! (backend :raster  true  250.0))

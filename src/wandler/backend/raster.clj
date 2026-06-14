@@ -111,11 +111,19 @@
 
         :else nil))))
 
+;; raster's advertised cost for a recognized Float reduction: a SIMD/parallel kernel over a double[].
+;; Measured ~4× over single-thread C2 on compute-heavy kernels (bandwidth-bound on cheap ones), so it
+;; advertises ~eager/3.5 — the planner's choose-cost-form picks it iff that beats the eager Clojure cost
+;; (so a tiny/bounded source where eager is already cheap is NOT pushed to raster). This is the engine
+;; advertising its cost instead of the planner assuming a recognized shape always wins.
+(def ^:private raster-speedup 3.5)
+(defn- raster-cost [_plan eager-cost] (/ (double eager-cost) raster-speedup))
+
 (defn register!
-  "Register the raster array backend into the :array physical seam. Clears first so re-registration is
-   idempotent. After this, `(mode/execute … :physical :array)` over a recognized Float reduction runs
-   on raster's SIMD kernel; other shapes fall back to the eager realization."
+  "Register the raster backend as a COST-BASED execution backend (#76 / COST_MODEL_REDESIGN B2): it
+   recognizes Float reductions and ADVERTISES its cost, so the planner's choose-cost-form pushes down
+   iff raster is actually cheaper than the eager Clojure realization. Idempotent (clears first)."
   []
-  (phys/clear-array-backends!)
-  (phys/register-array-backend! raster-array-form)
+  (phys/clear-cost-backends!)
+  (phys/register-cost-backend! {:name :raster :lower raster-array-form :cost raster-cost})
   :registered)
