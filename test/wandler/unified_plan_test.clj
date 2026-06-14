@@ -144,3 +144,22 @@
         (is (not (mentions-map? (:term p-count))) "count over (map f) → fused, intermediate dropped")
         (is (:verified? p-sum))
         (is (not (mentions-map? (:term p-sum)))  "sum over (map f) → fused, intermediate dropped")))))
+
+;; #5 — :limit / top-n sink (stratum's early-termination lesson). A :limit n sink folds to List.take n.
+;; It is ORDER-SENSITIVE (keeps the first n), so the certificate correctly forbids any reorder; and the
+;; take can fuse through a map (List.take_map) so only n elements are produced — early termination.
+(deftest limit-sink-early-termination
+  (if-not (ready?)
+    (is true "skipped — no full kernel env")
+    (let [N (e/const' (nm "Nat") [])
+          listN (e/app (e/const' (nm "List") [z]) N)
+          source (e/fvar 5005)
+          lctx {5005 {:name "src" :type listN}}
+          g (e/lam "x" N (e/app (e/const' (nm "Nat.succ") []) (e/bvar 0)) :default)
+          mapped (e/app* (e/const' (nm "List.map") [z z]) N N g source)
+          run (fn [t] ((eval (a/ansatz->clj (a/env) (e/lam "src" listN (e/abstract1 t 5005) :default) [])) [10 20 30 40 50]))
+          p-lim (plan/unified-plan (a/env) mapped :lctx lctx :elem-type N :sink {:kind :limit :n 2} :sizes {5005 1000})]
+      (testing ":limit is order-SENSITIVE (no reorder) and executes to the first n"
+        (is (:verified? p-lim) "limit plan certified ≡ naive")
+        (is (not (:order-invariant? p-lim)) "limit keeps the first n → order-sensitive, reorder forbidden")
+        (is (= [11 21] (vec (run (:term p-lim)))) "first 2 of (map +1 [10 20 30 40 50])")))))

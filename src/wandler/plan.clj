@@ -42,13 +42,19 @@
     (e/app* (e/const' (nm "List.foldl") [z z]) vt vt
             (e/const' (nm "Nat.add") []) (e/const' (nm "Nat.zero") []) vals)))
 
+(defn- limit-sink [term elem-type n]
+  ;; List.take n — keeps the FIRST n (order-sensitive); enables early termination (only n produced when
+  ;; the take fuses through a map via List.take_map / when the source is lazy).
+  (e/app* (e/const' (nm "List.take") [z]) elem-type (e/lit-nat n) term))
+
 (defn fold-sink
-  "Fold a sink descriptor `{:kind … :value-fn? :value-type?}` into a list-producing `term`
+  "Fold a sink descriptor `{:kind … :value-fn? :value-type? :n?}` into a list-producing `term`
    (element type `elem-type`). Returns the consumer-wrapped term the optimizer should plan."
   [term elem-type sink]
   (case (:kind sink)
     :count               (count-sink term elem-type)
     :sum                 (sum-sink term elem-type (:value-fn sink) (:value-type sink))
+    :limit               (limit-sink term elem-type (:n sink))
     (:vector :materialize nil) term))      ; identity — order preserved; order-destroying rewrites won't certify
 
 (defn commutative-monoid?
