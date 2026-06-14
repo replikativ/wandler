@@ -505,6 +505,9 @@
             "List.tail" (list 'clojure.core/rest (nth ca 1))
             "List.reverse" (list 'clojure.core/reverse (nth ca 1))
             "List.append" (list 'clojure.core/concat (nth ca 1) (nth ca 2))      ; args: α a b
+            ;; flatten (one level): List (List α) → List α. args: α coll. The flatMap
+            ;; fusion laws (map_flatMap/flatMap_map) can surface a bare flatten∘map.
+            "List.flatten" (list 'clojure.core/apply 'clojure.core/concat (nth ca 1))
             "List.intersperse" (list 'clojure.core/interpose (nth ca 1) (nth ca 2)) ; args: α sep coll
             ;; flatMap/filterMap (mapcat/keep) — args: α β f coll. filterMap's f returns
             ;; Option β (value-or-nil at runtime), exactly what clojure.core/keep wants.
