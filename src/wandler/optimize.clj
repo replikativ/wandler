@@ -34,6 +34,7 @@
 (def try-join-reorder phys/try-join-reorder)
 (def try-count-factor phys/try-count-factor)
 (def try-fold-factor phys/try-fold-factor)
+(def try-fold-factor* phys/try-fold-factor*)
 (def try-grace-hash phys/try-grace-hash)
 (def try-pre-agg-index phys/try-pre-agg-index)
 (def hoist-invariant-indices phys/hoist-invariant-indices)
@@ -117,7 +118,9 @@
         ;; reorder which side is indexed. Both reduce to length/sum over xs, then fuse normally.
         reorder (when-not skip-reorder?
                   (or (phys/try-count-factor env term :lctx lctx :selectivity selectivity :sizes sizes)
-                      (phys/try-fold-factor  env term :lctx lctx :selectivity selectivity :sizes sizes)
+                      ;; RECURSIVE FAQ variable elimination: factor EVERY join in a multi-way tree, not
+                      ;; just the outermost (iterate the proven single step to a fixpoint, composing proofs).
+                      (phys/try-fold-factor* env term :lctx lctx :selectivity selectivity :sizes sizes)
                       (phys/try-join-reorder env term :lctx lctx :selectivity selectivity :sizes sizes)))]
     (cond
       ;; pre-agg wins when its held index (O(distinct keys)) fits the budget — strictly better than the

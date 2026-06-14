@@ -142,6 +142,24 @@
             (e/app* (e/const' (name/from-string "Eq.trans") [u]) t a b c p1 p2))))
 
 
+(defn try-fold-factor*
+  "RECURSIVE FAQ variable elimination: iterate `try-fold-factor` to a fixpoint, eliminating EVERY join in
+   a multi-way join tree, not just the outermost. After the outer join factors, the result is again a
+   `foldl op e (… Map.join inner …)` whose inner join factors by the SAME proven law — so iterating the
+   single step performs full variable elimination (O(N^k) → O(N)). Composes the per-step Eq.trans proofs
+   into ONE certified rewrite (orig ≡ fully-factored); each step is independently `verified?`, so the
+   chain is certified by transitivity. Returns the composed rewrite (`:rw :fold-factor`), or nil if no
+   step fired. The single-join case is exactly one iteration, so this is a drop-in for `try-fold-factor`."
+  [^Env env term & {:keys [lctx selectivity sizes max-depth] :or {max-depth 8}}]
+  (loop [t term proof nil d 0]
+    (let [step (when (and (< d (long max-depth)) (cost/mentions-const? t "Map.join"))
+                 (try-fold-factor env t :lctx lctx :selectivity selectivity :sizes sizes))]
+      (if (and step (:verified? step))
+        (recur (:term step) (compose-trans env lctx term t (:term step) proof (:proof step)) (inc d))
+        (when (pos? d)
+          {:term t :proof proof :changed? true :rw :fold-factor :verified? true})))))
+
+
 (defn try-grace-hash
   "PHYSICAL grace-hash spill: when the join's build-side index would EXCEED the memory budget,
    evaluate `foldl op e (Map.join xs ys)` in budget-sized BLOCKS of the build side (O(block) peak
