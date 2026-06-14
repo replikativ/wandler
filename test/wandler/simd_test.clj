@@ -39,8 +39,21 @@
         (is deterministic "fell back to deterministic scalar")
         (is (= reason :assoc-not-proven) "refused because associativity isn't proven"))
 
-      ;; explicit opt-in overrides the refusal but flags the result non-deterministic
-      (let [{:keys [simd deterministic warning]} (simd-reduce col float-add {:reassociate-ok true})]
-        (is simd ":reassociate-ok ⇒ vectorized on demand")
-        (is (not deterministic) "...but flagged non-deterministic")
-        (is (some? warning) "...with an explicit warning")))))
+      ;; ── double[] end-to-end: the hazard made concrete ──
+      ;; crafted column where lane-reordering changes the float sum dramatically
+      (let [n 2000002
+            dcol (let [a (double-array n)] (aset a 0 1e20) (aset a (dec n) -1e20)
+                       (dotimes [i 2000000] (aset a (inc i) 1.0)) a)]
+        ;; default: Float.add refused → deterministic scalar (the correct left-fold answer, 0.0)
+        (let [{:keys [result simd deterministic reason]} (simd-reduce dcol float-add)]
+          (is (not simd) "Float.add over double[] ⇒ refused")
+          (is deterministic "⇒ deterministic scalar")
+          (is (= reason :assoc-not-proven))
+          (is (== 0.0 result) "scalar left-fold = 0.0 (the reproducible answer)")
+          ;; opt-in: fast SIMD (ColumnOps), flagged non-deterministic, and DEMONSTRABLY different
+          (let [{simd-res :result vsimd :simd vdet :deterministic vwarn :warning}
+                (simd-reduce dcol float-add {:reassociate-ok true})]
+            (is vsimd ":reassociate-ok ⇒ vectorized")
+            (is (not vdet) "...flagged non-deterministic")
+            (is (some? vwarn))
+            (is (not= simd-res result) "SIMD lane-reorder gives a DIFFERENT float sum — the hazard")))))))
