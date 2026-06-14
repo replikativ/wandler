@@ -226,9 +226,12 @@
      :base        source-list size (default 1000)
      :fanout      expand/join multiplicity (default 3)
      :selectivity (fn pred→rate) OR (map pred-string→rate) — measured-profile / refinement override.
-     :sizes       per-source {fvar-id→cardinality} (an engine's :estimate)."
+     :sizes       per-source {fvar-id→cardinality} (an engine's :estimate).
+     :ndv         distinct join-key values. When given, a join's OUTPUT cardinality uses datahike's
+                  per-key fan-out estimate |L|·|R|/ndv (estimate.cljc: attr-total/distinct-v) instead
+                  of the coarse min(|L|,|R|)·fanout default — the textbook equi-join selectivity."
   ([term] (pipeline-resources term {}))
-  ([term {:keys [base fanout selectivity sizes] :or {base 1000.0 fanout 3.0}}]
+  ([term {:keys [base fanout selectivity sizes ndv] :or {base 1000.0 fanout 3.0}}]
    (let [sel (cond (fn? selectivity) selectivity
                    (map? selectivity) (fn [p] (or (get selectivity (e/->string p)) (pred-selectivity p)))
                    :else pred-selectivity)
@@ -248,14 +251,18 @@
                        :dedup  [(* in 0.7) (+ cin in) min*]
                        :sort   [in (+ cin (* in (Math/log (max 2.0 in)))) (max min* in)]  ; in-mem sort buffer
                        :group  [in (+ cin in) (max min* in)]                  ; holds the grouped structure
-                       :join   (let [[r cr mr] (walk (nth args (long (:rhs info))))]
-                                 ;; OUTPUT order-invariant (min). TIME = probe driver `in` + BUILD the
+                       :join   (let [[r cr mr] (walk (nth args (long (:rhs info))))
+                                     ;; OUTPUT cardinality. With :ndv → datahike's per-key fan-out
+                                     ;; |L|·|R|/ndv (estimate.cljc); else the coarse min(|L|,|R|)·fanout.
+                                     out (if ndv (max 1.0 (/ (* in r) (double ndv)))
+                                                 (* (min in r) fanout))]
+                                 ;; OUTPUT order-invariant. TIME = probe driver `in` + BUILD the
                                  ;; INDEXED side `r` at join-build-weight (the only order-dependent
                                  ;; term → index the smaller side, Map.join_comm). MEMORY = the
                                  ;; build-side index footprint `r` (the thing a hoist materializes;
                                  ;; O(|keys|) once pre-aggregated). The memory-aware planner hoists
                                  ;; iff r ≤ budget, else spills.
-                                 [(* (min in r) fanout) (+ cin cr in (* join-build-weight r)) (max min* mr r)])
+                                 [out (+ cin cr in (* join-build-weight r)) (max min* mr r)])
                        [in cin min*]))
                    [(size-of e) 0.0 0.0])))]
        (let [[s t m] (walk term)] {:size s :time t :memory m})))))
