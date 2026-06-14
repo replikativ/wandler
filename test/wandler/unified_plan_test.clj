@@ -186,3 +186,27 @@
           (is (< ca cb) "consumer-aware (factored) plan has strictly lower cardinality cost")
           (println (format "  #7 ABLATION — count(join), 1k×1k cardinality cost: consumer-aware %.0f vs order-blind %.0f (%.1f×)"
                            ca cb (/ cb (max 1.0 ca)))))))))
+
+;; #2 (coherent inspectable IR) + #3 (a/defn connection). describe gives the structured source→sink view;
+;; and the consumer-aware path is the SAME optimize-cost that a/defn's optimize-body runs — so a relational
+;; a/defn whose body ends in a count/sum (consumer IN the body) is already consumer-aware; unified-plan
+;; generalizes that to EXTERNAL sinks declared on the query.
+(deftest describe-and-adefn-connection
+  (if-not (ready?)
+    (is true "skipped — no full kernel env")
+    (let [{:keys [join PJ] :as D} (build) lctx (:lctx D) sz {5001 1000 5002 1000}
+          sources {5001 {:nature :materialized :size 1000} 5002 {:nature :materialized :size 1000}}
+          p (plan/unified-plan (a/env) join :lctx lctx :elem-type PJ :sink {:kind :count} :sources sources :sizes sz)
+          d (plan/describe p sources)]
+      (testing "#2 describe: one inspectable source→sink view over the live lens (no field bolted on)"
+        (is (= {5001 :materialized 5002 :materialized} (:sources d)))
+        (is (= :count (:sink d)))
+        (is (:order-invariant? d))
+        (is (some? (:plan d)) "the optimized term reads back through the plan lens")
+        (is (true? (:verified? d))))
+      (testing "#3 a/defn connection: the count consumer in-body factors via the SAME optimize-cost"
+        ;; (:wrapped p) = count(join) is exactly the shape an a/defn body `(count (join …))` produces;
+        ;; optimize-body calls optimize-cost, so a/defn inherits this consumer-aware factoring in-body.
+        (let [via-body (opt/optimize-cost (a/env) (:wrapped p) :lctx lctx :sizes sz)]
+          (is (:verified? via-body))
+          (is (some? (get-in via-body [:physical :strategy])) "in-body count consumer → factored, like unified-plan"))))))

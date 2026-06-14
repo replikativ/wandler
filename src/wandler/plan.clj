@@ -19,9 +19,18 @@
    This is the seam that ties the inductive (datahike/stratum, finite/exact) and coinductive (live
    streams, sampled/stationary) views together under one certified search."
   (:require [wandler.optimize :as opt]
+            [wandler.optimize.plan :as oplan]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.level :as lvl]))
+
+;; ── on the IR (coherence) ─────────────────────────────────────────────────────────────────────────
+;; There is ONE relational IR: the plan LENS (wandler.optimize.plan, term↔plan), under which the kernel
+;; term is the single source of truth. We do NOT add a `:sink` field to it — the consumer lives IN the
+;; term (we `fold-sink` it in), which is exactly the lens's discipline and is what lets verified-rewrite?
+;; gate consumer-appropriate rewrites for free. The SOURCE descriptors live beside the term (in lctx /
+;; the :sources arg), keyed by fvar id. (The older `wandler.reducers.plan` Plan record — a producer→
+;; transforms→consumer SOAC vertical — remains the separate `verified`/`refine` path; it is not this IR.)
 
 (def ^:private z lvl/zero)
 (defn- nm [s] (name/from-string s))
@@ -121,3 +130,18 @@
            :order-invariant? oi?
            :selectivity osel              ; the oracle's profile (measured for a :stream source)
            :route (get-in r [:physical :strategy]))))
+
+(defn describe
+  "A structured, inspectable account of an end-to-end plan: the SOURCE natures, the SINK (with its
+   order-invariance), the relational plan TREE (the lens read of the optimized term), the rewrites
+   adopted, the chosen physical route, and whether it is certified ≡ naive. Ties the source→sink view
+   into one queryable shape without bolting fields onto the lens."
+  [{:keys [term sink order-invariant? rewrites route cost verified?] :as r} sources]
+  {:sources    (into {} (map (fn [[id d]] [id (:nature d)])) (or sources {}))
+   :sink       sink
+   :order-invariant? order-invariant?
+   :plan       (oplan/term->plan term)        ; the lens read of the optimized term
+   :rewrites   (vec rewrites)
+   :route      route
+   :cost       cost
+   :verified?  verified?})
