@@ -4,7 +4,7 @@
  ;; the execution modes, and the inference layer. Depends on `ansatz` (the Lean4-in-Clojure DSL).
  ;; ansatz from Clojars (the public pin). For side-by-side development use:
  ;;   org.replikativ/ansatz {:local/root "../ansatz"}
- :deps {org.replikativ/ansatz {:mvn/version "0.1.54"}
+ :deps {org.replikativ/ansatz {:mvn/version "0.1.55"}
         metosin/malli {:mvn/version "0.16.4"}}
  :aliases
  {:test {:extra-paths ["test"]
