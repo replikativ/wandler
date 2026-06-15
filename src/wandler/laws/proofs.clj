@@ -1316,3 +1316,80 @@
                       factorEq congrEq)
         ps (basic/exact ps proof)]
     [goal (when (proof/solved? ps) (extract/extract ps))]))
+
+;; ── List.sum_map_mul_const (loop-invariant distributive law) ──────────────────
+;; foldl (+) 0 (map (λx. f x * c) xs)  =  (foldl (+) 0 (map f xs)) * c   (c is x-free).
+;; The certificate for loop-invariant code motion / 1-variable elimination: a multiplicative
+;; factor that does not depend on the fold variable distributes OUT of the sum (the measured
+;; O(|xs|·|c-cost|) → O(|xs|) hoist). Proved via the accumulator-GENERALIZED lemma
+;;   G : ∀ a, foldl (+) (a*c) (map (λx. f x*c) xs) = (foldl (+) a (map f xs)) * c
+;; which inducts cleanly (cons closes by Nat.add_mul + the ∀a IH, no foldl_add_init needed);
+;; the a=0 instance + Nat.zero_mul gives the headline form.
+(defn- smc-fvidH [ps n]
+  (reduce (fn [best [id d]] (if (and (= n (:name d)) (or (nil? best) (> (long id) (long best)))) id best))
+          nil (:lctx (proof/current-goal ps))))
+(defn- smc-mul [x y] (e/app* (e/const' (nm "Nat.mul") []) x y))
+(defn- smc-add [x y] (e/app* (e/const' (nm "Nat.add") []) x y))
+(defn- smc-eqN [x y] (e/app* (e/const' (nm "Eq") [L1]) (gh-natT) x y))
+(defn- smc-mapN [f l] (e/app* (e/const' (nm "List.map") [z z]) (gh-natT) (gh-natT) f l))
+(defn- smc-foldlN [init l] (e/app* (e/const' (nm "List.foldl") [z z]) (gh-natT) (gh-natT) (e/const' (nm "Nat.add") []) init l))
+(defn- smc-arrowNN [] (e/forall' "_" (gh-natT) (gh-natT) :default))
+(defn- smc-step [f c] (e/lam "x" (gh-natT) (smc-mul (e/app f (e/bvar 0)) c) :default))
+
+(defn prove-sum-map-mul-const []
+  (let [;; ── G : the accumulator-generalized lemma ──
+        gf1 (e/fvar 1) c1 (e/fvar 2) xs1 (e/fvar 3) a1 (e/fvar 4)
+        stepG (smc-step gf1 c1)
+        conclG (smc-eqN (smc-foldlN (smc-mul a1 c1) (smc-mapN stepG xs1))
+                        (smc-mul (smc-foldlN a1 (smc-mapN gf1 xs1)) c1))
+        goalG (-> conclG
+                  (#(e/forall' "a"  (gh-natT) (e/abstract1 % 4) :default))
+                  (#(e/forall' "xs" (listOf (gh-natT)) (e/abstract1 % 3) :default))
+                  (#(e/forall' "c"  (gh-natT) (e/abstract1 % 2) :default))
+                  (#(e/forall' "f"  (smc-arrowNN) (e/abstract1 % 1) :default)))
+        [ps _] (proof/start-proof (a/env) goalG)
+        ps (basic/intros ps ["f" "c" "xs"])
+        ps (basic/induction ps (fvid ps "xs"))
+        ps (reduce
+            (fn [ps gid]
+              (let [psg (focus ps gid)
+                    cg  (proof/current-goal psg)
+                    cons? (some (fn [[_ d]] (= "tail" (:name d))) (:lctx cg))
+                    psg (basic/intros psg ["a"])]
+                (if cons?
+                  (let [a (gf psg "a") c (gf psg "c") f (gf psg "f") head (gf psg "head")
+                        psg (simp/simp psg ['List.map_cons 'List.foldl_cons])
+                        addmul (e/app* (e/const' (nm "Nat.add_mul") []) a (e/app f head) c)
+                        sym (e/app* (e/const' (nm "Eq.symm") [L1]) (gh-natT)
+                                    (smc-mul (smc-add a (e/app f head)) c)
+                                    (smc-add (smc-mul a c) (smc-mul (e/app f head) c)) addmul)
+                        psg (basic/rewrite psg sym)
+                        ih  (e/fvar (or (smc-fvidH psg "ih_tail'") (smc-fvidH psg "ih_tail") (smc-fvidH psg "ih")))]
+                    (basic/exact psg (e/app ih (smc-add a (e/app f head)))))
+                  (simp/simp psg ['List.map_nil 'List.foldl_nil]))))
+            ps (vec (:goals ps)))
+        pfG (when (proof/solved? ps) (extract/extract ps))
+        ;; ── corollary at a=0 : the headline form ──
+        f (e/fvar 1) c (e/fvar 2) xs (e/fvar 3)
+        step (smc-step f c)
+        zeroN (e/const' (nm "Nat.zero") [])
+        lhs0 (smc-foldlN zeroN (smc-mapN step xs))
+        rhs0 (smc-mul (smc-foldlN zeroN (smc-mapN f xs)) c)
+        goal0 (-> (smc-eqN lhs0 rhs0)
+                  (#(e/forall' "xs" (listOf (gh-natT)) (e/abstract1 % 3) :default))
+                  (#(e/forall' "c"  (gh-natT) (e/abstract1 % 2) :default))
+                  (#(e/forall' "f"  (smc-arrowNN) (e/abstract1 % 1) :default)))
+        pf0 (when pfG
+              (let [ginst (e/app* pfG f c xs zeroN)
+                    zm (e/app* (e/const' (nm "Nat.zero_mul") []) c)
+                    zmsym (e/app* (e/const' (nm "Eq.symm") [L1]) (gh-natT) (smc-mul zeroN c) zeroN zm)
+                    motive (e/lam "i" (gh-natT) (smc-foldlN (e/bvar 0) (smc-mapN step xs)) :default)
+                    coer (e/app* (e/const' (nm "congrArg") [(lvl/succ z) (lvl/succ z)]) (gh-natT) (gh-natT)
+                                 zeroN (smc-mul zeroN c) motive zmsym)
+                    body (e/app* (e/const' (nm "Eq.trans") [L1]) (gh-natT)
+                                 lhs0 (smc-foldlN (smc-mul zeroN c) (smc-mapN step xs)) rhs0 coer ginst)]
+                (-> body
+                    (#(e/lam "xs" (listOf (gh-natT)) (e/abstract1 % 3) :default))
+                    (#(e/lam "c"  (gh-natT) (e/abstract1 % 2) :default))
+                    (#(e/lam "f"  (smc-arrowNN) (e/abstract1 % 1) :default)))))]
+    [goal0 pf0]))

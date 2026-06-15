@@ -746,6 +746,9 @@
           (thm! "List.foldl_congr"        (rp/prove-foldl-congr))
           ;; THE pre-aggregated (FAQ) join index for separable SUM aggregates — O(distinct keys).
           (thm! "Map.foldl_join_sum_factor" (rp/prove-foldl-join-sum-factor))
+          ;; loop-invariant distributive law (1-variable elimination): a multiplicative x-free factor
+          ;; distributes out of the sum — the certificate for hoisting an invariant fold out of a map.
+          (thm! "List.sum_map_mul_const"  (rp/prove-sum-map-mul-const))
           (reset! cache @acc)))))
 
 (defn install!

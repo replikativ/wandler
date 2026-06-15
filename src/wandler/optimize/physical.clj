@@ -329,8 +329,82 @@
                 term' tagged)))))
 
 
+;; ---- loop-invariant distributive hoist (1-variable elimination) ----------------
+;; foldl(+) 0 (map (λx. f x * c) xs)  →  (foldl(+) 0 (map f xs)) * c   when c is x-free.
+;; Certified by `List.sum_map_mul_const`. This is the base case of FAQ variable elimination:
+;; a multiplicative factor independent of the fold variable distributes OUT of the sum, so an
+;; expensive invariant `c` (e.g. a nested fold over another stream) is computed ONCE rather than
+;; per element — the measured O(|xs|·cost c) → O(|xs| + cost c) hoist.
+
+(defn- cn? [e s] (and (e/const? e) (= s (name/->string (e/const-name e)))))
+
+(def ^:private soac-heads
+  #{"List.foldl" "List.foldr" "List.map" "List.filter" "List.flatMap"
+    "List.filterMap" "List.foldlIdx" "Map.join" "Map.group_by" "List.range"})
+
+(defn- expr-children [e]
+  (case (e/tag e)
+    :app    [(e/app-fn e) (e/app-arg e)]
+    :lam    [(e/lam-type e) (e/lam-body e)]
+    :forall [(e/forall-type e) (e/forall-body e)]
+    :let    [(e/let-type e) (e/let-value e) (e/let-body e)]
+    :mdata  [(e/mdata-expr e)]
+    :proj   [(e/proj-struct e)]
+    []))
+
+(defn- any-node? [e pred]
+  (or (pred e) (boolean (some #(any-node? % pred) (expr-children e)))))
+
+(defn- contains-soac? [e] (any-node? e #(and (e/const? %) (soac-heads (name/->string (e/const-name %))))))
+(defn- contains-fvar? [e id] (any-node? e #(and (e/fvar? %) (= (long id) (e/fvar-id %)))))
+
+(defn- match-sum-map-mul
+  "term = foldl Nat Nat Nat.add Nat.zero (map Nat Nat (λx. Nat.mul P C) xs) with C free of the
+   map binder and P depending on it. Returns {:f (λx.P) :c C :xs xs} (f, c, xs in the outer ctx)
+   or nil. Opens the binder with a fresh fvar so instantiate1 handles all de Bruijn shifting."
+  [term]
+  (let [[h args] (e/get-app-fn-args term)]
+    (when (and (cn? h "List.foldl") (= 5 (count args))
+               (cn? (nth args 0) "Nat") (cn? (nth args 1) "Nat")
+               (cn? (nth args 2) "Nat.add") (cn? (nth args 3) "Nat.zero"))
+      (let [[mh margs] (e/get-app-fn-args (nth args 4))]
+        (when (and (cn? mh "List.map") (= 4 (count margs))
+                   (cn? (nth margs 0) "Nat") (cn? (nth margs 1) "Nat") (e/lam? (nth margs 2)))
+          (let [step (nth margs 2) xs (nth margs 3)
+                K 990000017
+                body ((requiring-resolve 'ansatz.kernel.expr/instantiate1) (e/lam-body step) (e/fvar K))
+                [bh bargs] (e/get-app-fn-args body)]
+            (when (and (cn? bh "Nat.mul") (= 2 (count bargs)))
+              (let [P (nth bargs 0) C (nth bargs 1)]
+                (when (and (not (contains-fvar? C K)) (contains-fvar? P K))
+                  {:f (e/lam "x" (e/const' (name/from-string "Nat") []) (e/abstract1 P K) :default)
+                   :c C :xs xs})))))))))
+
+(defn try-hoist-invariant
+  "Cost-driven LOOP-INVARIANT HOIST (1-variable FAQ elimination). If `term` =
+   foldl(+) 0 (map (λx. f x * c) xs) with `c` x-free AND `c` loop-shaped (contains a SOAC, so the
+   per-row recompute is the cost that matters), rewrite to (foldl(+) 0 (map f xs)) * c — the
+   invariant is evaluated ONCE. Certified by `List.sum_map_mul_const`; adopt iff it strict-certifies.
+   The worth-it gate is LOCAL (c contains a SOAC) rather than the global cost model, which keeps SOAC
+   step-λs uncounted (the factorization gates depend on that). Returns {:term :proof :verified?
+   :changed? :rw} or nil."
+  [^Env env term & {:keys [lctx selectivity sizes] :as _opts}]
+  (when-let [{:keys [f c xs]} (match-sum-map-mul term)]
+    (when (contains-soac? c)
+      (let [natC (e/const' (name/from-string "Nat") [])
+            add0 (fn [l] (e/app* (e/const' (name/from-string "List.foldl") [lvl/zero lvl/zero]) natC natC
+                                 (e/const' (name/from-string "Nat.add") []) (e/const' (name/from-string "Nat.zero") []) l))
+            mapf (e/app* (e/const' (name/from-string "List.map") [lvl/zero lvl/zero]) natC natC f xs)
+            rhs  (e/app* (e/const' (name/from-string "Nat.mul") []) (add0 mapf) c)
+            cert (e/app* (e/const' (name/from-string "List.sum_map_mul_const") []) f c xs)
+            res  {:term rhs :proof cert :changed? true :rw :hoist-invariant}]
+        (when (cert/verified-rewrite? env term res :lctx lctx)
+          (assoc res :verified? true))))))
+
+
 (def rewrite-descriptions
   {:fold-factor  "aggregation pushed THROUGH the join (the |L|·|R| product is never materialized)"
+   :hoist-invariant "loop-INVARIANT factor hoisted OUT of the sum (computed once, not per row)"
    :count-factor "count pushed through the join"
    :join-reorder "join REORDERED to index the smaller side"
    :hoist-index  "in-memory HASH join — index built once, hoisted out of the row loop"

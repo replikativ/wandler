@@ -122,7 +122,10 @@
                       ;; RECURSIVE FAQ variable elimination: factor EVERY join in a multi-way tree, not
                       ;; just the outermost (iterate the proven single step to a fixpoint, composing proofs).
                       (phys/try-fold-factor* env term :lctx lctx :selectivity selectivity :sizes sizes)
-                      (phys/try-join-reorder env term :lctx lctx :selectivity selectivity :sizes sizes)))]
+                      (phys/try-join-reorder env term :lctx lctx :selectivity selectivity :sizes sizes)
+                      ;; 1-variable FAQ elimination: hoist a loop-invariant multiplicative factor out of
+                      ;; a sum (the measured nested-fold quadratic → linear). Certified by sum_map_mul_const.
+                      (phys/try-hoist-invariant env term :lctx lctx :selectivity selectivity :sizes sizes)))]
     (cond
       ;; pre-agg wins when its held index (O(distinct keys)) fits the budget — strictly better than the
       ;; raw factor (O(|ys|) buckets) for separable sums. Else fall through to grace-hash / factor.
