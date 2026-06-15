@@ -1482,3 +1482,63 @@
                   (simp/simp psg ['List.foldl_nil 'Nat.add_zero]))))
             ps (vec (:goals ps)))]
     [goal (when (proof/solved? ps) (extract/extract ps))]))
+
+;; ── List.sum_map_const_mul (left-invariant mirror of sum_map_mul_const) ────────────
+;; foldl(+) 0 (map (λx. c * f x) xs)  =  c * (foldl(+) 0 (map f xs)).  The invariant on the
+;; LEFT of the product. Same accumulator-generalized shape; cons closes by Nat.mul_add (left
+;; distributivity) and the a=0 corollary by Nat.mul_zero.
+(defn- smc-step-left [c f] (e/lam "x" (gh-natT) (smc-mul c (e/app f (e/bvar 0))) :default))
+
+(defn prove-sum-map-const-mul []
+  (let [gf1 (e/fvar 1) c1 (e/fvar 2) xs1 (e/fvar 3) a1 (e/fvar 4)
+        stepG (smc-step-left c1 gf1)
+        conclG (smc-eqN (smc-foldlN (smc-mul c1 a1) (smc-mapN stepG xs1))
+                        (smc-mul c1 (smc-foldlN a1 (smc-mapN gf1 xs1))))
+        goalG (-> conclG
+                  (#(e/forall' "a"  (gh-natT) (e/abstract1 % 4) :default))
+                  (#(e/forall' "xs" (listOf (gh-natT)) (e/abstract1 % 3) :default))
+                  (#(e/forall' "c"  (gh-natT) (e/abstract1 % 2) :default))
+                  (#(e/forall' "f"  (smc-arrowNN) (e/abstract1 % 1) :default)))
+        [ps _] (proof/start-proof (a/env) goalG)
+        ps (basic/intros ps ["f" "c" "xs"])
+        ps (basic/induction ps (fvid ps "xs"))
+        ps (reduce
+            (fn [ps gid]
+              (let [psg (focus ps gid)
+                    cons? (some (fn [[_ d]] (= "tail" (:name d))) (:lctx (proof/current-goal psg)))
+                    psg (basic/intros psg ["a"])]
+                (if cons?
+                  (let [a (gf psg "a") c (gf psg "c") f (gf psg "f") head (gf psg "head")
+                        psg (simp/simp psg ['List.map_cons 'List.foldl_cons])
+                        muladd (e/app* (e/const' (nm "Nat.mul_add") []) c a (e/app f head))
+                        sym (e/app* (e/const' (nm "Eq.symm") [L1]) (gh-natT)
+                                    (smc-mul c (smc-add a (e/app f head)))
+                                    (smc-add (smc-mul c a) (smc-mul c (e/app f head))) muladd)
+                        psg (basic/rewrite psg sym)
+                        ih (e/fvar (or (smc-fvidH psg "ih_tail'") (smc-fvidH psg "ih_tail") (smc-fvidH psg "ih")))]
+                    (basic/exact psg (e/app ih (smc-add a (e/app f head)))))
+                  (simp/simp psg ['List.map_nil 'List.foldl_nil]))))
+            ps (vec (:goals ps)))
+        pfG (when (proof/solved? ps) (extract/extract ps))
+        f (e/fvar 1) c (e/fvar 2) xs (e/fvar 3)
+        step (smc-step-left c f) zeroN (e/const' (nm "Nat.zero") [])
+        lhs0 (smc-foldlN zeroN (smc-mapN step xs))
+        rhs0 (smc-mul c (smc-foldlN zeroN (smc-mapN f xs)))
+        goal0 (-> (smc-eqN lhs0 rhs0)
+                  (#(e/forall' "xs" (listOf (gh-natT)) (e/abstract1 % 3) :default))
+                  (#(e/forall' "c"  (gh-natT) (e/abstract1 % 2) :default))
+                  (#(e/forall' "f"  (smc-arrowNN) (e/abstract1 % 1) :default)))
+        pf0 (when pfG
+              (let [ginst (e/app* pfG f c xs zeroN)
+                    mz (e/app* (e/const' (nm "Nat.mul_zero") []) c)
+                    mzsym (e/app* (e/const' (nm "Eq.symm") [L1]) (gh-natT) (smc-mul c zeroN) zeroN mz)
+                    motive (e/lam "i" (gh-natT) (smc-foldlN (e/bvar 0) (smc-mapN step xs)) :default)
+                    coer (e/app* (e/const' (nm "congrArg") [(lvl/succ z) (lvl/succ z)]) (gh-natT) (gh-natT)
+                                 zeroN (smc-mul c zeroN) motive mzsym)
+                    body (e/app* (e/const' (nm "Eq.trans") [L1]) (gh-natT)
+                                 lhs0 (smc-foldlN (smc-mul c zeroN) (smc-mapN step xs)) rhs0 coer ginst)]
+                (-> body
+                    (#(e/lam "xs" (listOf (gh-natT)) (e/abstract1 % 3) :default))
+                    (#(e/lam "c"  (gh-natT) (e/abstract1 % 2) :default))
+                    (#(e/lam "f"  (smc-arrowNN) (e/abstract1 % 1) :default)))))]
+    [goal0 pf0]))

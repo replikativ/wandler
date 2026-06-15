@@ -749,6 +749,8 @@
           ;; loop-invariant distributive law (1-variable elimination): a multiplicative x-free factor
           ;; distributes out of the sum — the certificate for hoisting an invariant fold out of a map.
           (thm! "List.sum_map_mul_const"  (rp/prove-sum-map-mul-const))
+          ;; left-invariant mirror (c * f x): the optimizer matches both multiplication orders.
+          (thm! "List.sum_map_const_mul"  (rp/prove-sum-map-const-mul))
           ;; sum-semiring LINEARITY: the additive structure for FAQ elimination (∑ distributes over +,
           ;; ∑ of zeros = 0, fold init extracts). The e-graph composes these for sum-product rewriting.
           (thm! "List.sum_map_add_distrib" (rp/prove-sum-map-add-distrib))

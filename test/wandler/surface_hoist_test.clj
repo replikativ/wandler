@@ -45,6 +45,24 @@
         (is (= (long (truth xs ys)) (long (f xs ys)))
             (str "hoisted cross == clojure.core on " (mapv count [xs ys])))))))
 
+(deftest left-invariant-and-count-hoist
+  (when @ready
+    ;; invariant on the LEFT of the product: c * f x  (was a dead-law coverage gap, review C5)
+    (binding [a/*verbose* false]
+      (eval '(ansatz.core/defn cross-left [xs :- (List Nat), ys :- (List Nat)] Nat
+               (reduce + 0 (mapv (fn [x] (* (reduce + 0 ys) x)) xs))))
+      ;; the invariant is a COUNT (List.length), not a sum
+      (eval '(ansatz.core/defn cross-count [xs :- (List Nat), ys :- (List Nat)] Nat
+               (reduce + 0 (mapv (fn [x] (* x (count ys))) xs)))))
+    (is (= [:hoist-invariant] (vec (:rewrites (w/explain 'cross-left)))) "left-invariant c * f x hoists")
+    (is (= [:hoist-invariant] (vec (:rewrites (w/explain 'cross-count)))) "count invariant hoists")
+    (let [fl (deref (resolve 'cross-left)) fc (deref (resolve 'cross-count))
+          tl (fn [xs ys] (reduce + 0 (map #(* (reduce + 0 ys) %) xs)))
+          tc (fn [xs ys] (reduce + 0 (map #(* % (count ys)) xs)))]
+      (doseq [[xs ys] [[[1 2 3] [10 20]] [[] [1 2]] [(vec (range 40)) (vec (range 25))]]]
+        (is (= (long (tl xs ys)) (long (fl xs ys))) (str "left == truth on " (mapv count [xs ys])))
+        (is (= (long (tc xs ys)) (long (fc xs ys))) (str "count == truth on " (mapv count [xs ys])))))))
+
 (deftest naive-path-still-correct
   (when @ready
     ;; with the optimizer OFF, the same surface compiles to the naive (quadratic) plan — still correct.
