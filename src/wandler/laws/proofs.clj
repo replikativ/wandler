@@ -1393,3 +1393,92 @@
                     (#(e/lam "c"  (gh-natT) (e/abstract1 % 2) :default))
                     (#(e/lam "f"  (smc-arrowNN) (e/abstract1 % 1) :default)))))]
     [goal0 pf0]))
+
+;; ── sum-semiring LINEARITY laws (the additive structure for FAQ elimination) ──────
+;; These are the building blocks the optimizer / e-graph composes for sum-product
+;; rewriting: ∑ distributes over +, ∑ of zeros is 0, and a fold's init extracts.
+(defn- smc-zero [] (e/const' (nm "Nat.zero") []))
+
+;; List.sum_map_add_distrib : ∀ f g xs a b,
+;;   foldl(+) (a+b) (map (λx. f x + g x) xs) = (foldl(+) a (map f xs)) + (foldl(+) b (map g xs))
+;; Accumulator-generalized (clean induction); cons closes by Nat.add_add_add_comm + the ∀a∀b IH.
+(defn prove-sum-map-add-distrib []
+  (let [f (e/fvar 1) g (e/fvar 2) xs (e/fvar 3) a (e/fvar 4) b (e/fvar 5)
+        step (e/lam "x" (gh-natT) (smc-add (e/app f (e/bvar 0)) (e/app g (e/bvar 0))) :default)
+        concl (smc-eqN (smc-foldlN (smc-add a b) (smc-mapN step xs))
+                       (smc-add (smc-foldlN a (smc-mapN f xs)) (smc-foldlN b (smc-mapN g xs))))
+        goal (-> concl
+                 (#(e/forall' "b" (gh-natT) (e/abstract1 % 5) :default))
+                 (#(e/forall' "a" (gh-natT) (e/abstract1 % 4) :default))
+                 (#(e/forall' "xs" (listOf (gh-natT)) (e/abstract1 % 3) :default))
+                 (#(e/forall' "g" (smc-arrowNN) (e/abstract1 % 2) :default))
+                 (#(e/forall' "f" (smc-arrowNN) (e/abstract1 % 1) :default)))
+        [ps _] (proof/start-proof (a/env) goal)
+        ps (basic/intros ps ["f" "g" "xs"])
+        ps (basic/induction ps (fvid ps "xs"))
+        ps (reduce
+            (fn [ps gid]
+              (let [psg (focus ps gid)
+                    cons? (some (fn [[_ d]] (= "tail" (:name d))) (:lctx (proof/current-goal psg)))
+                    psg (basic/intros psg ["a" "b"])]
+                (if cons?
+                  (let [a (gf psg "a") b (gf psg "b") f (gf psg "f") g (gf psg "g") head (gf psg "head")
+                        psg (simp/simp psg ['List.map_cons 'List.foldl_cons])
+                        fh (e/app f head) gh (e/app g head)
+                        arith (e/app* (e/const' (nm "Nat.add_add_add_comm") []) a b fh gh)
+                        psg (basic/rewrite psg arith)
+                        ih (e/fvar (or (smc-fvidH psg "ih_tail'") (smc-fvidH psg "ih_tail") (smc-fvidH psg "ih")))]
+                    (basic/exact psg (e/app* ih (smc-add a fh) (smc-add b gh))))
+                  (simp/simp psg ['List.map_nil 'List.foldl_nil]))))
+            ps (vec (:goals ps)))]
+    [goal (when (proof/solved? ps) (extract/extract ps))]))
+
+;; List.sum_map_zero : ∀ ys acc, foldl(+) acc (map (λ_. 0) ys) = acc
+(defn prove-sum-map-zero []
+  (let [ys (e/fvar 1) acc (e/fvar 2)
+        zstep (e/lam "y" (gh-natT) (smc-zero) :default)
+        goal (-> (smc-eqN (smc-foldlN acc (smc-mapN zstep ys)) acc)
+                 (#(e/forall' "acc" (gh-natT) (e/abstract1 % 2) :default))
+                 (#(e/forall' "ys" (listOf (gh-natT)) (e/abstract1 % 1) :default)))
+        [ps _] (proof/start-proof (a/env) goal)
+        ps (basic/intros ps ["ys"])
+        ps (basic/induction ps (fvid ps "ys"))
+        ps (reduce
+            (fn [ps gid]
+              (let [psg (focus ps gid)
+                    cons? (some (fn [[_ d]] (= "tail" (:name d))) (:lctx (proof/current-goal psg)))
+                    psg (basic/intros psg ["acc"])]
+                (if cons?
+                  (let [acc (gf psg "acc")
+                        psg (simp/simp psg ['List.map_cons 'List.foldl_cons 'Nat.add_zero])
+                        ih (e/fvar (or (smc-fvidH psg "ih_tail'") (smc-fvidH psg "ih_tail") (smc-fvidH psg "ih")))]
+                    (basic/exact psg (e/app ih acc)))
+                  (simp/simp psg ['List.map_nil 'List.foldl_nil]))))
+            ps (vec (:goals ps)))]
+    [goal (when (proof/solved? ps) (extract/extract ps))]))
+
+;; List.foldl_add_pull : ∀ L acc, foldl(+) acc L = acc + foldl(+) 0 L  (bare-form init extraction)
+(defn prove-foldl-add-pull []
+  (let [L (e/fvar 1) acc (e/fvar 2)
+        goal (-> (smc-eqN (smc-foldlN acc L) (smc-add acc (smc-foldlN (smc-zero) L)))
+                 (#(e/forall' "acc" (gh-natT) (e/abstract1 % 2) :default))
+                 (#(e/forall' "L" (listOf (gh-natT)) (e/abstract1 % 1) :default)))
+        [ps _] (proof/start-proof (a/env) goal)
+        ps (basic/intros ps ["L"])
+        ps (basic/induction ps (fvid ps "L"))
+        grind (requiring-resolve 'ansatz.tactic.grind/grind)
+        ps (reduce
+            (fn [ps gid]
+              (let [psg (focus ps gid)
+                    cons? (some (fn [[_ d]] (= "tail" (:name d))) (:lctx (proof/current-goal psg)))
+                    psg (basic/intros psg ["acc"])]
+                (if cons?
+                  (let [acc (gf psg "acc") head (gf psg "head") zeroN (smc-zero)
+                        psg (simp/simp psg ['List.foldl_cons])
+                        ih (e/fvar (or (smc-fvidH psg "ih_tail'") (smc-fvidH psg "ih_tail") (smc-fvidH psg "ih")))
+                        psg (basic/rewrite psg (e/app ih (smc-add acc head)))
+                        psg (basic/rewrite psg (e/app ih (smc-add zeroN head)))]
+                    (grind psg []))
+                  (simp/simp psg ['List.foldl_nil 'Nat.add_zero]))))
+            ps (vec (:goals ps)))]
+    [goal (when (proof/solved? ps) (extract/extract ps))]))
