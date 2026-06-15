@@ -338,6 +338,19 @@
 
 (defn- cn? [e s] (and (e/const? e) (= s (name/->string (e/const-name e)))))
 
+(defn- nat-zero?
+  "True for every spelling of the Nat additive identity 0: the raw `Nat.zero` constructor, a bare
+   `lit-nat 0` (what `reduce + 0` elaborates to), and `@OfNat.ofNat Nat 0 _` — all def-eq but
+   syntactically distinct (the #73 boundary-normalization issue). The matcher is syntactic, so it
+   accepts any of them; a false positive (a non-zero init that happens to print \"0\") cannot pass
+   the `verified-rewrite?` kernel gate, so loose recognition here is sound."
+  [e]
+  (or (cn? e "Nat.zero")
+      (= "0" (e/->string e))
+      (let [[h args] (e/get-app-fn-args e)]
+        (and (e/const? h) (= "OfNat.ofNat" (name/->string (e/const-name h))) (>= (count args) 2)
+             (let [v (nth args 1)] (or (cn? v "Nat.zero") (= "0" (e/->string v))))))))
+
 (def ^:private soac-heads
   #{"List.foldl" "List.foldr" "List.map" "List.filter" "List.flatMap"
     "List.filterMap" "List.foldlIdx" "Map.join" "Map.group_by" "List.range"})
@@ -366,7 +379,7 @@
   (let [[h args] (e/get-app-fn-args term)]
     (when (and (cn? h "List.foldl") (= 5 (count args))
                (cn? (nth args 0) "Nat") (cn? (nth args 1) "Nat")
-               (cn? (nth args 2) "Nat.add") (cn? (nth args 3) "Nat.zero"))
+               (cn? (nth args 2) "Nat.add") (nat-zero? (nth args 3)))
       (let [[mh margs] (e/get-app-fn-args (nth args 4))]
         (when (and (cn? mh "List.map") (= 4 (count margs))
                    (cn? (nth margs 0) "Nat") (cn? (nth margs 1) "Nat") (e/lam? (nth margs 2)))
