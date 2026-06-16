@@ -308,14 +308,56 @@
                         (assoc res :verified? true)))))))))))))
 
 
+(defn- reads-fst?
+  "Does `t` reference the X side of the pair `p` (= `bvar 0`) through a `Prod.fst … p` projection? A
+   recursive scan that is robust to how the key is read — a const application `kf (fst p)`, a structure
+   projection node `Customer.0 (fst p)`, or any closed function of it. Used to confirm the LEFT factor
+   genuinely reads the probe side (not the build side)."
+  [t]
+  (let [hit (atom false)]
+    (letfn [(go [x]
+              (when-not @hit
+                (let [[h a] (e/get-app-fn-args x)]
+                  (when (and (e/const? h) (= "Prod.fst" (name/->string (e/const-name h)))
+                             (= 3 (count a)) (e/bvar? (nth a 2)) (= 0 (e/bvar-idx (nth a 2))))
+                    (reset! hit true))
+                  (when (e/proj? x) (go (e/proj-struct x)))
+                  (doseq [c a] (go c))
+                  (when (e/app? x) (go (e/app-fn x))))))]
+      (go t))
+    @hit))
+
+(defn- abstract-read
+  "Abstract the build side out of an expression `R` that reads the pair `p` (= bvar 0) ONLY through
+   `Prod.<proj> X Y p`: return `λy:Y. R[that projection ↦ y]` (handles a record `proj` node, a const app,
+   or any nesting uniformly), or nil if R touches `p` any other way. The surface elaborates a build-side
+   field read `(:amount o)` to `Order.1 (Prod.snd p)` — a proj node — so this is what lets a real record
+   query reach the frame."
+  [R proj-name Y]
+  (let [F 889000
+        repl (fn repl [t]
+               (let [[h a] (e/get-app-fn-args t)]
+                 (if (and (e/const? h) (= proj-name (name/->string (e/const-name h)))
+                          (= 3 (count a)) (e/bvar? (nth a 2)) (= 0 (e/bvar-idx (nth a 2))))
+                   (e/fvar F)
+                   (cond
+                     (e/proj? t) (e/proj (e/proj-type-name t) (e/proj-idx t) (repl (e/proj-struct t)))
+                     (e/app? t)  (e/app (repl (e/app-fn t)) (repl (e/app-arg t)))
+                     :else t))))
+        R' (repl R)]
+    (when-not (e/has-loose-bvars? R')                ; no remaining `p` reference ⇒ cleanly build-side
+      (e/lam "y" Y (e/abstract1 R' F) :default))))
+
 (defn- separable-keyfactor-wg
   "Detect a KEY-FACTOR two-sided aggregate op (the FD scope quotient):
-     λacc:Nat. λp:(X×Y). Nat.add acc (Nat.mul (w (kf (Prod.fst p))) (g (Prod.snd p)))
-   where the LEFT factor reads the join key via `kf` (the SAME key fn the join uses), so it is a function
-   of the matched key — `w : K → Nat`, `g : Y → Nat`, both CLOSED. Returns [w g] or nil. By the FD the
-   key-factor w(kf x) can FLOAT into the per-key index (Map.foldl_keyfactor_float), computed once per
-   distinct key instead of per row."
-  [op kf]
+     λacc:Nat. λp:(X×Y). Nat.add acc (Nat.mul (w (read-of (Prod.fst p))) (read-of (Prod.snd p)))
+   The LEFT factor is `w` applied to a read of the probe side; the RIGHT is any read of the build side
+   (record projection or otherwise). Returns [w g] where w = the outer left factor (closed) and
+   g = λy. (right factor)[snd p ↦ y] (the build-side fn), or nil. We do NOT match the inner key read
+   against the join's kf here (it may be a const app, a `proj` node, or an η-expanded lambda — the #73
+   spellings): try-frame-index-keyfactor builds f'=w∘kf and lets `verified-rewrite?` gate soundness — the
+   composed frame∘float proof only typechecks when the left read IS def-eq to `kf (fst p)`."
+  [op X Y]
   (when (e/lam? op)
     (let [b1 (e/lam-body op)]
       (when (e/lam? b1)
@@ -326,17 +368,11 @@
                      (e/app? (second args)))
             (let [[mh margs] (e/get-app-fn-args (second args))]
               (when (and (e/const? mh) (= "Nat.mul" (name/->string (e/const-name mh))) (= 2 (count margs))
-                         (e/app? (nth margs 0)) (e/app? (nth margs 1)))
-                (let [w (e/app-fn (nth margs 0)) kfx (e/app-arg (nth margs 0))   ; w (kf (fst p))
-                      g (e/app-fn (nth margs 1))                                  ; g (snd p)
-                      [gh gargs] (e/get-app-fn-args (e/app-arg (nth margs 1)))]
-                  (when (and (e/app? kfx) (.equals ^Object (e/app-fn kfx) kf)     ; the join's kf
-                             (let [[ph pargs] (e/get-app-fn-args (e/app-arg kfx))]
-                               (and (e/const? ph) (= "Prod.fst" (name/->string (e/const-name ph)))
-                                    (= 3 (count pargs)) (e/bvar? (nth pargs 2)) (= 0 (e/bvar-idx (nth pargs 2)))))
-                             (e/const? gh) (= "Prod.snd" (name/->string (e/const-name gh)))
-                             (= 3 (count gargs)) (e/bvar? (nth gargs 2)) (= 0 (e/bvar-idx (nth gargs 2)))
-                             (not (e/has-loose-bvars? w)) (not (e/has-loose-bvars? g)))
+                         (e/app? (nth margs 0)))                                  ; left = w applied to a read
+                (let [w (e/app-fn (nth margs 0)) kfx (e/app-arg (nth margs 0))   ; w (read-of (fst p))
+                      g (abstract-read (nth margs 1) "Prod.snd" Y)]              ; g = λy. (snd-read)[snd p↦y]
+                  (when (and (not (e/has-loose-bvars? w)) (some? g)
+                             (reads-fst? kfx))                                    ; left factor reads the probe side
                     [w g]))))))))))
 
 (defn- extract-frame-preidx
@@ -584,7 +620,7 @@
       (when-let [{:keys [S op e jargs]} (fold-join fterm)]
         (when (and (e/const? S) (= "Nat" (name/->string (e/const-name S))))
           (let [[K X Y dec kf lf xs ys] jargs]
-            (when-let [[w g] (separable-keyfactor-wg op kf)]
+            (when-let [[w g] (separable-keyfactor-wg op X Y)]
               (let [build-mem (:memory (cost/pipeline-resources fterm {:selectivity selectivity :sizes sizes}))
                     ndv-est (when (and ndv (e/fvar? ys)) (get ndv (e/fvar-id ys)))]
                 (when (and ndv-est (< (double ndv-est) (double build-mem)))
