@@ -1048,17 +1048,41 @@
 (defn- gh-stepfn [Y g] (e/lam "a" (gh-natT) (e/lam "y" Y (gh-addN (e/bvar 1) (e/app g (e/bvar 0))) :default) :default))
 (defn- gh-foldlN [Y stp init l] (e/app* (e/const' (nm "List.foldl") [z z]) (gh-natT) Y stp init l))
 
-(defn prove-foldl-add-init []
-  (let [Y (e/fvar 1) g (e/fvar 2) l (e/fvar 3) stp (gh-stepfn Y g)
-        goal (-> (e/forall' "acc" (gh-natT)
-                   (e/app* (e/const' (nm "Eq") [L1]) (gh-natT)
-                           (gh-foldlN Y stp (e/bvar 0) l)
-                           (gh-addN (e/bvar 0) (gh-foldlN Y stp (gh-zeroN) l))) :default)
+;; ── List.foldl_add_init (SEMIRING-GENERIC additive-monoid init pull) ──────────────
+;; ∀ (S:Type)(add:S→S→S)(zero:S)
+;;   (hAA:∀a b c, add (add a b) c = add a (add b c))(hZA:∀a, add zero a = a)(hAZ:∀a, add a zero = a)
+;;   (Y:Type)(g:Y→S)(l:List Y)(acc:S),
+;;   foldl (λa y. add a (g y)) acc l = add acc (foldl (λa y. add a (g y)) zero l).
+;; The init-pull needs exactly the ADDITIVE MONOID (associativity + both identities) — no product, no
+;; comm. The Nat law instantiates at (Nat,+,0,Nat.add_assoc,Nat.zero_add,Nat.add_zero).
+(defn prove-foldl-add-init-generic []
+  (let [S (e/fvar 10) addF (e/fvar 11) zeroF (e/fvar 13) hAA (e/fvar 14) hZA (e/fvar 16) hAZ (e/fvar 17)
+        addG (fn [x y] (e/app* addF x y))
+        eqS (fn [x y] (e/app* (e/const' (nm "Eq") [L1]) S x y))
+        gstepf (fn [Y g] (e/lam "a" S (e/lam "y" Y (addG (e/bvar 1) (e/app g (e/bvar 0))) :default) :default))
+        foldlS (fn [Y stp init l] (e/app* (e/const' (nm "List.foldl") [z z]) S Y stp init l))
+        hAA-ty (e/forall' "a" S (e/forall' "b" S (e/forall' "c" S
+                  (eqS (addG (addG (e/bvar 2) (e/bvar 1)) (e/bvar 0))
+                       (addG (e/bvar 2) (addG (e/bvar 1) (e/bvar 0)))) :default) :default) :default)
+        hZA-ty (e/forall' "a" S (eqS (addG zeroF (e/bvar 0)) (e/bvar 0)) :default)
+        hAZ-ty (e/forall' "a" S (eqS (addG (e/bvar 0) zeroF) (e/bvar 0)) :default)
+        arrow (fn [a b] (e/forall' "_" a b :default))
+        sem-pi (fn [t] (-> t
+                  (#(e/forall' "hAZ" hAZ-ty (e/abstract1 % 17) :default))
+                  (#(e/forall' "hZA" hZA-ty (e/abstract1 % 16) :default))
+                  (#(e/forall' "hAA" hAA-ty (e/abstract1 % 14) :default))
+                  (#(e/forall' "zero" S (e/abstract1 % 13) :default))
+                  (#(e/forall' "add" (arrow S (arrow S S)) (e/abstract1 % 11) :default))
+                  (#(e/forall' "S" type0 (e/abstract1 % 10) :default))))
+        Y (e/fvar 1) g (e/fvar 2) l (e/fvar 3) stp (gstepf Y g)
+        goal (-> (e/forall' "acc" S
+                   (eqS (foldlS Y stp (e/bvar 0) l) (addG (e/bvar 0) (foldlS Y stp zeroF l))) :default)
                  (#(e/forall' "l" (listOf Y) (e/abstract1 % 3) :default))
-                 (#(e/forall' "g" (e/forall' "_" Y (gh-natT) :default) (e/abstract1 % 2) :default))
-                 (#(e/forall' "Y" type0 (e/abstract1 % 1) :default)))
+                 (#(e/forall' "g" (arrow Y S) (e/abstract1 % 2) :default))
+                 (#(e/forall' "Y" type0 (e/abstract1 % 1) :default))
+                 sem-pi)
         [ps _] (proof/start-proof (a/env) goal)
-        ps (basic/intros ps ["Y" "g" "l"])
+        ps (basic/intros ps ["S" "add" "zero" "hAA" "hZA" "hAZ" "Y" "g" "l"])
         ps (basic/induction ps (fvid ps "l"))
         ps (reduce
             (fn [ps gid]
@@ -1069,28 +1093,55 @@
                   (let [psg (basic/intros psg ["acc"])
                         ihid (or (fvid psg "ih_tail'") (fvid psg "ih_tail") (fvid psg "ih"))
                         ih (e/fvar ihid)
+                        Sp (gf psg "S") addp (gf psg "add") zerop (gf psg "zero")
+                        haa (gf psg "hAA") hza (gf psg "hZA")
+                        ad (fn [x y] (e/app* addp x y))
                         g (gf psg "g") head (gf psg "head") acc (gf psg "acc")
                         Y (gf psg "Y") tail (gf psg "tail")
-                        gh (e/app g head) stp (gh-stepfn Y g) F (gh-foldlN Y stp (gh-zeroN) tail)
+                        ;; rebuild step/foldl with PROOF-STATE S/add (not the closure's construction-time fvars)
+                        stpP (fn [Y g] (e/lam "a" Sp (e/lam "y" Y (ad (e/bvar 1) (e/app g (e/bvar 0))) :default) :default))
+                        foldlP (fn [Y stp init l] (e/app* (e/const' (nm "List.foldl") [z z]) Sp Y stp init l))
+                        gh (e/app g head) stp (stpP Y g) F (foldlP Y stp zerop tail)
                         q (simp/simp psg ['List.foldl_cons])
-                        q (basic/rewrite q (e/app ih (gh-addN acc gh)))
-                        q (basic/rewrite q (e/app ih (gh-addN (gh-zeroN) gh)))
-                        cgf (fn [fexpr a1 a2 h] (e/app* (e/const' (nm "congrArg") [L1 L1]) (gh-natT) (gh-natT) a1 a2 fexpr h))
-                        addAssoc (e/app* (e/const' (nm "Nat.add_assoc") []) acc gh F)
-                        zaS (e/app* (e/const' (nm "Eq.symm") [L1]) (gh-natT) (gh-addN (gh-zeroN) gh) gh
-                                    (e/app* (e/const' (nm "Nat.zero_add") []) gh))
-                        plusF   (e/lam "w" (gh-natT) (gh-addN (e/bvar 0) F) :default)
-                        accPlus (e/lam "w" (gh-natT) (gh-addN acc (e/bvar 0)) :default)
-                        inner (cgf plusF gh (gh-addN (gh-zeroN) gh) zaS)
-                        p2    (cgf accPlus (gh-addN gh F) (gh-addN (gh-addN (gh-zeroN) gh) F) inner)
-                        result (e/app* (e/const' (nm "Eq.trans") [L1]) (gh-natT)
-                                       (gh-addN (gh-addN acc gh) F) (gh-addN acc (gh-addN gh F))
-                                       (gh-addN acc (gh-addN (gh-addN (gh-zeroN) gh) F)) addAssoc p2)]
+                        q (basic/rewrite q (e/app ih (ad acc gh)))
+                        q (basic/rewrite q (e/app ih (ad zerop gh)))
+                        cgf (fn [fexpr a1 a2 h] (e/app* (e/const' (nm "congrArg") [L1 L1]) Sp Sp a1 a2 fexpr h))
+                        addAssoc (e/app* haa acc gh F)
+                        zaS (e/app* (e/const' (nm "Eq.symm") [L1]) Sp (ad zerop gh) gh (e/app* hza gh))
+                        plusF   (e/lam "w" Sp (ad (e/bvar 0) F) :default)
+                        accPlus (e/lam "w" Sp (ad acc (e/bvar 0)) :default)
+                        inner (cgf plusF gh (ad zerop gh) zaS)
+                        p2    (cgf accPlus (ad gh F) (ad (ad zerop gh) F) inner)
+                        result (e/app* (e/const' (nm "Eq.trans") [L1]) Sp
+                                       (ad (ad acc gh) F) (ad acc (ad gh F))
+                                       (ad acc (ad (ad zerop gh) F)) addAssoc p2)]
                     (basic/exact q result))
-                  (let [psg (basic/intros psg ["acc"])]
-                    (simp/simp psg ['List.foldl_nil 'Nat.add_zero])))))
+                  (let [psg (basic/intros psg ["acc"])
+                        Sp (gf psg "S") acc (gf psg "acc") zerop (gf psg "zero") haz (gf psg "hAZ")
+                        q (simp/simp psg ['List.foldl_nil])
+                        ;; goal now: acc = add acc zero  (RHS inner foldl reduced to zero)
+                        symAZ (e/app* (e/const' (nm "Eq.symm") [L1]) Sp (e/app* (gf psg "add") acc zerop) acc
+                                      (e/app* haz acc))]
+                    (basic/exact q symAZ)))))
             ps (vec (:goals ps)))]
     [goal (when (proof/solved? ps) (extract/extract ps))]))
+
+;; Nat law: thin instantiation at (Nat,+,0,Nat.add_assoc,Nat.zero_add,Nat.add_zero). Goal byte-identical.
+(defn prove-foldl-add-init []
+  (let [[_ pGen] (prove-foldl-add-init-generic)
+        Y (e/fvar 1) g (e/fvar 2) l (e/fvar 3) stp (gh-stepfn Y g)
+        goal (-> (e/forall' "acc" (gh-natT)
+                   (e/app* (e/const' (nm "Eq") [L1]) (gh-natT)
+                           (gh-foldlN Y stp (e/bvar 0) l)
+                           (gh-addN (e/bvar 0) (gh-foldlN Y stp (gh-zeroN) l))) :default)
+                 (#(e/forall' "l" (listOf Y) (e/abstract1 % 3) :default))
+                 (#(e/forall' "g" (e/forall' "_" Y (gh-natT) :default) (e/abstract1 % 2) :default))
+                 (#(e/forall' "Y" type0 (e/abstract1 % 1) :default)))
+        proof (when pGen
+                (e/app* pGen (gh-natT) (e/const' (nm "Nat.add") []) (gh-zeroN)
+                        (e/const' (nm "Nat.add_assoc") []) (e/const' (nm "Nat.zero_add") [])
+                        (e/const' (nm "Nat.add_zero") [])))]
+    [goal proof]))
 
 ;; List.lookup_map_kv : lookup k (map (λp.(fst p, f(snd p))) l) = Option.map f (lookup k l).
 ;; The CRUX of the pre-aggregated (FAQ) join index: probing a key/value-mapped assoc list equals

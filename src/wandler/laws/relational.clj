@@ -739,6 +739,7 @@
           (thm! "List.flatten_chunk_step" (rp/prove-flatten-chunk-step))
           (thm! "List.flatten_chunk"      (rp/prove-flatten-chunk))
           ;; pre-aggregated index (FAQ) foundation: init-extraction for additive folds (#77)
+          (thm! "List.foldl_add_init_generic" (rp/prove-foldl-add-init-generic))
           (thm! "List.foldl_add_init"     (rp/prove-foldl-add-init))
           ;; the crux: probing a key/value-mapped assoc list = mapping the value-fn over the probe.
           (thm! "List.lookup_map_kv"      (rp/prove-lookup-map-kv))
