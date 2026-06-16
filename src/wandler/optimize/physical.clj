@@ -225,7 +225,11 @@
            :hMA "Nat.mul_add" :hMZ "Nat.mul_zero" :hZM "Nat.zero_mul"}
    "Bool" {:add "Bool.or" :mul "Bool.and" :zero "Bool.false"
            :hAA "Bool.or_assoc" :hZA "Bool.false_or" :hAZ "Bool.or_false"
-           :hMA "Bool.and_or_distrib_left" :hMZ "Bool.and_false" :hZM "Bool.false_and"}})
+           :hMA "Bool.and_or_distrib_left" :hMZ "Bool.and_false" :hZM "Bool.false_and"}
+   ;; ℕ∞ tropical (min,+) — shortest-path / Viterbi DP. Carrier + laws from wandler.laws.tropical/install!.
+   "ENat" {:add "ENat.min" :mul "ENat.plus" :zero "ENat.inf"
+           :hAA "ENat.min_assoc" :hZA "ENat.inf_min" :hAZ "ENat.min_inf"
+           :hMA "ENat.plus_min_distrib" :hMZ "ENat.plus_inf" :hZM "ENat.inf_plus"}})
 
 (defn- sr-entry
   "The semiring entry for carrier type `S` (a const), or nil if S is not a registered carrier."

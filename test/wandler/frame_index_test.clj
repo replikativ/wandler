@@ -14,8 +14,10 @@
             [wandler.core :as wc]
             [wandler.kmap :as km]
             [wandler.laws.relational :as rl]
+            [wandler.laws.tropical :as trop]
             [wandler.test-env :as test-env]
             [ansatz.kernel.name :as name]
+            [ansatz.kernel.env :as env]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.level :as lvl]
             [wandler.optimize :as opt]))
@@ -28,7 +30,7 @@
 
 (defn- setup [f]
   (when-let [kenv @test-env/init-full-env]
-    (reset! a/ansatz-env kenv) (wc/install!) (km/install!) (rl/install!))
+    (reset! a/ansatz-env kenv) (wc/install!) (km/install!) (rl/install!) (trop/install!))
   (f))
 (clojure.test/use-fixtures :once setup)
 (defn- ready? [] (some? @test-env/init-full-env))
@@ -143,6 +145,48 @@
         (is (= 10 (long ((cf XS) YS))) "conditional frame plan equals naive")))))
 
 ;; key-factor join: Σ (succ(kf x))·g(y) where the left factor reads the join key (kf=lf=id, g=id).
+;; ── THIRD carrier: the TROPICAL (min,+) semiring over ℕ∞ = ENat ── shortest-path / Viterbi DP ──
+;; foldl (λacc p. min acc (plus (f(fst p)) (g(snd p)))) +∞ (join …) — "cheapest matched pair cost".
+;; ENat needs a TOP element (the min-identity / +-annihilator) absent from Init, so wandler.laws.tropical
+;; builds it and proves the six semiring laws; the ENat registry row then instantiates the GENERIC frame
+;; at (ENat, min, plus, +∞) and verified-rewrite? certifies it — min-plus pre-aggregation through a join.
+(defn- tropical-frame-join-term []
+  (let [Nat (natT) EN (e/const' (nm "ENat") []) PXY (prodT Nat Nat)
+        dec (e/const' (nm "instDecidableEqNat") [])
+        idf (e/lam "n" Nat (e/bvar 0) :default)
+        finf (e/lam "n" Nat (e/app* (e/const' (nm "ENat.fin") []) (e/bvar 0)) :default)   ; Nat → ENat weight
+        xs (e/fvar 76001) ys (e/fvar 76002)
+        fstp (e/app* (e/const' (nm "Prod.fst") [z z]) Nat Nat (e/bvar 0))
+        sndp (e/app* (e/const' (nm "Prod.snd") [z z]) Nat Nat (e/bvar 0))
+        op (e/lam "acc" EN (e/lam "p" PXY
+             (e/app* (e/const' (nm "ENat.min") []) (e/bvar 1)
+                     (e/app* (e/const' (nm "ENat.plus") []) (e/app finf fstp) (e/app finf sndp))) :default) :default)
+        e0 (e/const' (nm "ENat.inf") [])
+        join (e/app* (e/const' (nm "Map.join") []) Nat Nat Nat dec idf idf xs ys)
+        term (e/app* (e/const' (nm "List.foldl") [z z]) EN PXY op e0 join)
+        lctx {76001 {:name "xs" :type (listOf Nat)} 76002 {:name "ys" :type (listOf Nat)}}]
+    {:term term :lctx lctx}))
+
+(deftest tropical-frame-index-auto-selected
+  (when (ready?)
+    (testing "the FRAME index fires over the TROPICAL (min,+) semiring on ℕ∞ — min-plus pre-aggregation
+             through a join, certified by the generic frame law instantiated at the ENat carrier"
+      (when (trop/carrier-installed?)
+        (let [{:keys [term lctx]} (tropical-frame-join-term)
+              res (opt/optimize-cost (a/env) term :lctx lctx :ndv {76002 5.0})]
+          (is (:verified? res) "tropical-carrier frame rewrite kernel-certified (generic frame @ ENat)")
+          (is (some #{:frame-index} (:rewrites res)) "frame-index adopted for the min-plus semiring")
+          (is (= :in-memory-hash (get-in res [:physical :strategy]))))))))
+
+(deftest tropical-carrier-laws-verify
+  (when (ready?)
+    (testing "the six ℕ∞ semiring laws are kernel-installed (each admitted via check-constant)"
+      (when (trop/carrier-installed?)
+        (doseq [law ["ENat.min_assoc" "ENat.inf_min" "ENat.min_inf"
+                     "ENat.plus_min_distrib" "ENat.plus_inf" "ENat.inf_plus"
+                     "Nat.add_min_distrib"]]
+          (is (boolean (env/lookup (a/env) (nm law))) (str law " installed")))))))
+
 (defn- keyfactor-join-term []
   (let [Nat (natT) PXY (prodT Nat Nat)
         dec (e/const' (nm "instDecidableEqNat") [])
