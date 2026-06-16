@@ -1984,3 +1984,51 @@
                     (if (proof/solved? q) q (try (basic/rfl q) (catch Throwable _ q)))))))
             ps (vec (:goals ps)))]
     [goal (when (proof/solved? ps) (extract/extract ps))]))
+
+;; ── Map.foldl_keyfactor_float (FD scope quotient — the optimizer float law, Phase 5 layer 3) ─
+;; foldl (λacc x. acc + (w (kf x)) · getD (lookup (kf x) idx) 0) e xs
+;;   = foldl (λacc x. acc + getD (lookup (kf x) (map (λp. (fst p, w(fst p)·snd p)) idx)) 0) e xs
+;; A key-factor `w(kf x)` multiplying a per-key index lookup FLOATS into the index (reweighting each
+;; entry by w of its key) — over an ARBITRARY index, so it composes directly with the frame's output
+;; (idx := the frame's pre-aggregated index). Moves w from per-row (|xs|) to per-key (|distinct-keys|).
+;; Pure assembly: List.foldl_congr lifts the per-x List.lookup_reweight identity (congrArg under acc+·).
+(defn prove-keyfactor-float []
+  (let [K (e/fvar 1) X (e/fvar 2) dec (e/fvar 3) w (e/fvar 4) kf (e/fvar 5) e (e/fvar 6) xs (e/fvar 7) idx (e/fvar 8)
+        natT (gh-natT) zeroN (gh-zeroN) KN (prodT K natT)
+        instB (e/app* (e/const' (nm "instBEqOfDecidableEq") [z]) K dec)
+        lookupN (fn [key l] (e/app* (e/const' (nm "List.lookup") [z z]) K natT instB key l))
+        getD (fn [o] (e/app* (e/const' (nm "Option.getD") [z]) natT o zeroN))
+        reweight (e/lam "p" KN (mkP K natT (fstOf K natT (e/bvar 0)) (smc-mul (e/app w (fstOf K natT (e/bvar 0))) (sndOf K natT (e/bvar 0)))) :default)
+        mappedIdx (e/app* (e/const' (nm "List.map") [z z]) KN KN reweight idx)
+        R1step (e/lam "acc" natT (e/lam "x" X (gh-addN (e/bvar 1) (smc-mul (e/app w (e/app kf (e/bvar 0))) (getD (lookupN (e/app kf (e/bvar 0)) idx)))) :default) :default)
+        R2step (e/lam "acc" natT (e/lam "x" X (gh-addN (e/bvar 1) (getD (lookupN (e/app kf (e/bvar 0)) mappedIdx))) :default) :default)
+        foldlX (fn [step] (e/app* (e/const' (nm "List.foldl") [z z]) natT X step e xs))
+        af 201 xf 202 acc (e/fvar af) x (e/fvar xf)
+        lrw (e/app* (e/const' (nm "List.lookup_reweight") []) K dec w (e/app kf x) idx)
+        accPlus (e/lam "v" natT (gh-addN acc (e/bvar 0)) :default)
+        hbody (e/app* (e/const' (nm "congrArg") [L1 L1]) natT natT
+                      (smc-mul (e/app w (e/app kf x)) (getD (lookupN (e/app kf x) idx)))
+                      (getD (lookupN (e/app kf x) mappedIdx))
+                      accPlus lrw)
+        hyp (e/lam "acc" natT (e/abstract1 (e/lam "x" X (e/abstract1 hbody xf) :default) af) :default)
+        proof (e/app* (e/const' (nm "List.foldl_congr") []) natT X R1step R2step xs e hyp)
+        concl (lk-eqAt natT (foldlX R1step) (foldlX R2step))
+        goal (-> concl
+                 (#(e/forall' "idx" (listOf KN) (e/abstract1 % 8) :default))
+                 (#(e/forall' "xs" (listOf X) (e/abstract1 % 7) :default))
+                 (#(e/forall' "e" natT (e/abstract1 % 6) :default))
+                 (#(e/forall' "kf" (e/forall' "_" X K :default) (e/abstract1 % 5) :default))
+                 (#(e/forall' "w" (e/forall' "_" K natT :default) (e/abstract1 % 4) :default))
+                 (#(e/forall' "dec" (e/app (e/const' (nm "DecidableEq") [L1]) K) (e/abstract1 % 3) :default))
+                 (#(e/forall' "X" type0 (e/abstract1 % 2) :default))
+                 (#(e/forall' "K" type0 (e/abstract1 % 1) :default)))
+        fproof (-> proof
+                   (#(e/lam "idx" (listOf KN) (e/abstract1 % 8) :default))
+                   (#(e/lam "xs" (listOf X) (e/abstract1 % 7) :default))
+                   (#(e/lam "e" natT (e/abstract1 % 6) :default))
+                   (#(e/lam "kf" (e/forall' "_" X K :default) (e/abstract1 % 5) :default))
+                   (#(e/lam "w" (e/forall' "_" K natT :default) (e/abstract1 % 4) :default))
+                   (#(e/lam "dec" (e/app (e/const' (nm "DecidableEq") [L1]) K) (e/abstract1 % 3) :default))
+                   (#(e/lam "X" type0 (e/abstract1 % 2) :default))
+                   (#(e/lam "K" type0 (e/abstract1 % 1) :default)))]
+    [goal fproof]))

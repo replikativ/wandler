@@ -110,3 +110,16 @@
             (is (some? (re-find #"List.map" s)) "reweights the index by map")
             (is (some? (re-find #"Nat.mul" s)) "the key-factor product"))))
       (is (boolean (kenv/lookup (a/env) (nm "List.lookup_reweight"))) "installed by build-all"))))
+
+(deftest keyfactor-float-verifies
+  (when (ready?)
+    (testing "Map.foldl_keyfactor_float (the optimizer float law) kernel-verifies"
+      (let [[g p] (rp/prove-keyfactor-float)]
+        (is (some? p) "proof extracted")
+        (is (true? (kenv/verifies? (a/env) g p)) "passes check-constant")
+        (let [s (e/->string g)]
+          (testing "Σ_x w(kf x)·getD(lookup(kf x) idx) = Σ_x getD(lookup(kf x) reweight(idx))"
+            (is (some? (re-find #"List.foldl" s)) "a fold over xs")
+            (is (some? (re-find #"List.lookup" s)) "per-key index lookup")
+            (is (some? (re-find #"List.map" s)) "the reweighted index"))))
+      (is (boolean (kenv/lookup (a/env) (nm "Map.foldl_keyfactor_float"))) "installed by build-all"))))
