@@ -58,3 +58,16 @@
       (is (boolean (kenv/lookup (a/env) (nm "Map.foldl_join_frame"))))
       (testing "the frame GENERALIZES the f≡1 sum-factor (both present, same pre-agg foundation)"
         (is (boolean (kenv/lookup (a/env) (nm "Map.foldl_join_sum_factor"))))))))
+
+(deftest cond-and-mul-split-verifies
+  (when (ready?)
+    (testing "Nat.cond_and_mul_split (conditional separation — the dependent-types win) kernel-verifies"
+      (let [[g p] (rp/prove-cond-and-mul-split)]
+        (is (some? p) "proof extracted")
+        (is (true? (kenv/verifies? (a/env) g p)) "passes check-constant")
+        (let [s (e/->string g)]
+          (testing "a separable conjunctive guard P∧Q factors a weighted product"
+            (is (some? (re-find #"Bool.and" s)) "the guard is a conjunction (a && b)")
+            (is (some? (re-find #"cond" s)) "indicator/guard expressed via cond")
+            (is (some? (re-find #"Nat.mul" s)) "factors a product u·v"))))
+      (is (boolean (kenv/lookup (a/env) (nm "Nat.cond_and_mul_split"))) "installed by build-all"))))

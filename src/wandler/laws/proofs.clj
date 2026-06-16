@@ -1721,3 +1721,46 @@
                       factorEq congrEq)
         ps (basic/exact ps proof)]
     [goal (when (proof/solved? ps) (extract/extract ps))]))
+
+;; ── Nat.cond_and_mul_split (CONDITIONAL SEPARATION — the dependent-types win) ─────
+;; cond (a && b) (u·v) 0  =  (cond a u 0) · (cond b v 0)   for a,b : Bool, u,v : Nat.
+;; A SEPARABLE conjunctive guard `P(x) ∧ Q(y)` factors a weighted product into per-side guarded
+;; weights: indicator(P∧Q)·f(x)·g(y) = (indicator(P)·f(x)) · (indicator(Q)·g(y)). This is exactly
+;; what makes a CONDITIONAL aggregation separable — once split, f' = [P]·f and g' = [Q]·g are each
+;; closed, so the FAQ frame rule (Map.foldl_join_frame) fires. The Subtype/refined-domain view: a join
+;; filtered by a separable predicate factors as a product of independently-filtered sides.
+;; Proof: nested Bool.casesOn (a, then b). Because Nat.mul recurses on its SECOND arg, `_·0 ≡ 0`,
+;; `cond false`, and `Bool.and false` all reduce DEFINITIONALLY — so 3 of 4 leaves are Eq.refl and only
+;; the a=false,b=true leaf (0 = 0·v) needs Nat.zero_mul. The casesOn motive is Prop ⇒ level 0.
+(defn prove-cond-and-mul-split []
+  (let [a (e/fvar 1) b (e/fvar 2) u (e/fvar 3) v (e/fvar 4)
+        natT (gh-natT) zeroN (gh-zeroN)
+        condN (fn [c x y] (e/app* (e/const' (nm "cond") [L1]) natT c x y))
+        andB  (fn [x y] (e/app* (e/const' (nm "Bool.and") []) x y))
+        reflN (fn [x] (e/app* (e/const' (nm "Eq.refl") [L1]) natT x))
+        concl (lk-eqAt natT (condN (andB a b) (smc-mul u v) zeroN)
+                       (smc-mul (condN a u zeroN) (condN b v zeroN)))
+        goal (-> concl
+                 (#(e/forall' "v" natT (e/abstract1 % 4) :default))
+                 (#(e/forall' "u" natT (e/abstract1 % 3) :default))
+                 (#(e/forall' "b" boolT (e/abstract1 % 2) :default))
+                 (#(e/forall' "a" boolT (e/abstract1 % 1) :default)))
+        mot-a (e/lam "a'" boolT
+                (lk-eqAt natT (condN (andB (e/bvar 0) b) (smc-mul u v) zeroN)
+                         (smc-mul (condN (e/bvar 0) u zeroN) (condN b v zeroN))) :default)
+        mot-b (fn [aLit] (e/lam "b'" boolT
+                 (lk-eqAt natT (condN (andB aLit (e/bvar 0)) (smc-mul u v) zeroN)
+                          (smc-mul (condN aLit u zeroN) (condN (e/bvar 0) v zeroN))) :default))
+        bcases (fn [mot major mfalse mtrue]
+                 (e/app* (e/const' (nm "Bool.casesOn") [z]) mot major mfalse mtrue))
+        zmv (e/app* (e/const' (nm "Nat.zero_mul") []) v)                                ; 0·v = 0
+        leaf-ft (e/app* (e/const' (nm "Eq.symm") [L1]) natT (smc-mul zeroN v) zeroN zmv) ; 0 = 0·v
+        branch-F (bcases (mot-b bfalse) b (reflN zeroN) leaf-ft)                        ; a=F: (F,F) rfl, (F,T) zero_mul
+        branch-T (bcases (mot-b btrue)  b (reflN zeroN) (reflN (smc-mul u v)))          ; a=T: (T,F) rfl, (T,T) rfl
+        body (bcases mot-a a branch-F branch-T)
+        proof (-> body
+                  (#(e/lam "v" natT (e/abstract1 % 4) :default))
+                  (#(e/lam "u" natT (e/abstract1 % 3) :default))
+                  (#(e/lam "b" boolT (e/abstract1 % 2) :default))
+                  (#(e/lam "a" boolT (e/abstract1 % 1) :default)))]
+    [goal proof]))

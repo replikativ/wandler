@@ -753,6 +753,10 @@
           ;; SAME pre-aggregated index — Σ_{x⋈y} f(x)·g(y) = Σ_x f(x)·(Σ bucket g). Generalizes
           ;; foldl_join_sum_factor (its f≡1 instance); the SPN/FAQ product node over Map.join.
           (thm! "Map.foldl_join_frame"      (rp/prove-foldl-join-frame))
+          ;; CONDITIONAL SEPARATION (the dependent-types win): a separable conjunctive guard P(x)∧Q(y)
+          ;; factors a weighted product — cond(a&&b)(u·v)0 = (cond a u 0)·(cond b v 0) — so once split
+          ;; f'=[P]·f, g'=[Q]·g are closed and the frame rule fires.
+          (thm! "Nat.cond_and_mul_split"    (rp/prove-cond-and-mul-split))
           ;; loop-invariant distributive law (1-variable elimination): a multiplicative x-free factor
           ;; distributes out of the sum — the certificate for hoisting an invariant fold out of a map.
           (thm! "List.sum_map_mul_const"  (rp/prove-sum-map-mul-const))
