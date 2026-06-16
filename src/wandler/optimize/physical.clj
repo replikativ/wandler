@@ -308,6 +308,51 @@
                         (assoc res :verified? true)))))))))))))
 
 
+(defn- separable-keyfactor-wg
+  "Detect a KEY-FACTOR two-sided aggregate op (the FD scope quotient):
+     λacc:Nat. λp:(X×Y). Nat.add acc (Nat.mul (w (kf (Prod.fst p))) (g (Prod.snd p)))
+   where the LEFT factor reads the join key via `kf` (the SAME key fn the join uses), so it is a function
+   of the matched key — `w : K → Nat`, `g : Y → Nat`, both CLOSED. Returns [w g] or nil. By the FD the
+   key-factor w(kf x) can FLOAT into the per-key index (Map.foldl_keyfactor_float), computed once per
+   distinct key instead of per row."
+  [op kf]
+  (when (e/lam? op)
+    (let [b1 (e/lam-body op)]
+      (when (e/lam? b1)
+        (let [body (e/lam-body b1)
+              [h args] (e/get-app-fn-args body)]
+          (when (and (e/const? h) (= "Nat.add" (name/->string (e/const-name h))) (= 2 (count args))
+                     (e/bvar? (first args)) (= 1 (e/bvar-idx (first args)))
+                     (e/app? (second args)))
+            (let [[mh margs] (e/get-app-fn-args (second args))]
+              (when (and (e/const? mh) (= "Nat.mul" (name/->string (e/const-name mh))) (= 2 (count margs))
+                         (e/app? (nth margs 0)) (e/app? (nth margs 1)))
+                (let [w (e/app-fn (nth margs 0)) kfx (e/app-arg (nth margs 0))   ; w (kf (fst p))
+                      g (e/app-fn (nth margs 1))                                  ; g (snd p)
+                      [gh gargs] (e/get-app-fn-args (e/app-arg (nth margs 1)))]
+                  (when (and (e/app? kfx) (.equals ^Object (e/app-fn kfx) kf)     ; the join's kf
+                             (let [[ph pargs] (e/get-app-fn-args (e/app-arg kfx))]
+                               (and (e/const? ph) (= "Prod.fst" (name/->string (e/const-name ph)))
+                                    (= 3 (count pargs)) (e/bvar? (nth pargs 2)) (= 0 (e/bvar-idx (nth pargs 2)))))
+                             (e/const? gh) (= "Prod.snd" (name/->string (e/const-name gh)))
+                             (= 3 (count gargs)) (e/bvar? (nth gargs 2)) (= 0 (e/bvar-idx (nth gargs 2)))
+                             (not (e/has-loose-bvars? w)) (not (e/has-loose-bvars? g)))
+                    [w g]))))))))))
+
+(defn- extract-frame-preidx
+  "Navigate a frame output `foldl Nat X step e xs` to the index the per-x lookup probes (the pre-aggregated
+   PREIDX) — step body = acc + (f' x)·getD (lookup (kf x) PREIDX) 0. Returns PREIDX (closed) or nil."
+  [R1]
+  (try
+    (let [[_ a1] (e/get-app-fn-args R1)
+          body (e/lam-body (e/lam-body (nth a1 2)))
+          [_ addA] (e/get-app-fn-args body)
+          [_ mulA] (e/get-app-fn-args (nth addA 1))
+          [_ getdA] (e/get-app-fn-args (nth mulA 1))
+          [_ lkA] (e/get-app-fn-args (nth getdA 1))]
+      (when (>= (count lkA) 5) (nth lkA 4)))
+    (catch Throwable _ nil)))
+
 (defn try-frame-index
   "PHYSICAL FAQ FRAME RULE for a SEPARABLE two-sided weight over a join — the O(distinct-keys) in-memory
    strategy GENERALIZED to a left-side weight. When `foldl (λacc p. acc + f(fst p)·g(snd p)) e
@@ -523,6 +568,50 @@
                                     (cost/pipeline-cost term {:selectivity selectivity :sizes sizes}))
                                  (cert/verified-rewrite? env term res :lctx lctx))
                         (assoc res :verified? true)))))))))))))
+
+(defn try-frame-index-keyfactor
+  "PHYSICAL FD SCOPE QUOTIENT: a KEY-FACTOR weight `w(kf x)·g(y)` over a join FLOATS the key-factor into
+   the per-key index. When `foldl (λacc p. acc + w(kf(fst p))·g(snd p)) e (Map.join … xs ys)` (the left
+   factor reads the matched key via the join's own kf), run the frame with f'=w∘kf, then compose
+   `Map.foldl_keyfactor_float` to reweight each index entry by w of its key — so w is computed once per
+   distinct key instead of per matching row. Both moves certified (frame ∘ float), ndv-gated like the
+   other frame indices. The dependent-types win: a key-determined factor moves to the cheaper scope."
+  [^Env env term & {:keys [lctx selectivity sizes memory-budget ndv]}]
+  (when (cost/mentions-const? term "Map.join")
+    (let [fused  (cert/optimize env term :lctx lctx)
+          fterm  (if (:verified? fused) (:term fused) term)
+          fproof (when (:verified? fused) (:proof fused))]
+      (when-let [{:keys [S op e jargs]} (fold-join fterm)]
+        (when (and (e/const? S) (= "Nat" (name/->string (e/const-name S))))
+          (let [[K X Y dec kf lf xs ys] jargs]
+            (when-let [[w g] (separable-keyfactor-wg op kf)]
+              (let [build-mem (:memory (cost/pipeline-resources fterm {:selectivity selectivity :sizes sizes}))
+                    ndv-est (when (and ndv (e/fvar? ys)) (get ndv (e/fvar-id ys)))]
+                (when (and ndv-est (< (double ndv-est) (double build-mem)))
+                  (let [nm   (fn [s] (name/from-string s))
+                        z    lvl/zero  L1 (lvl/succ z)  natT (e/const' (nm "Nat") [])
+                        f'   (e/lam "x" X (e/app w (e/app kf (e/bvar 0))) :default)
+                        frameEq (e/app* (e/const' (nm "Map.foldl_join_frame") []) K X Y dec f' g kf lf e xs ys)
+                        st (cert/mk-st env lctx)
+                        feT (try (tc/infer-type st frameEq) (catch Throwable _ nil))
+                        [_ feA] (when feT (e/get-app-fn-args feT))
+                        R1 (when (and feA (>= (count feA) 3)) (nth feA 2))
+                        preidx (when R1 (extract-frame-preidx R1))]
+                    (when preidx
+                      (let [floatEq (e/app* (e/const' (nm "Map.foldl_keyfactor_float") []) K X dec w kf e xs preidx)
+                            flT (try (tc/infer-type st floatEq) (catch Throwable _ nil))
+                            [_ flA] (when flT (e/get-app-fn-args flT))
+                            R2 (when (and flA (>= (count flA) 3)) (nth flA 2))]
+                        (when R2
+                          (let [rwPf (e/app* (e/const' (nm "Eq.trans") [L1]) natT fterm R1 R2 frameEq floatEq)
+                                proof (compose-trans env lctx term fterm R2 fproof rwPf)
+                                res {:term R2 :proof proof :changed? true :rewrites [:frame-index-keyfactor]
+                                     :physical {:strategy :in-memory-hash :index-est (double ndv-est) :budget (or memory-budget 1.0e8)}
+                                     :cost (cost/pipeline-cost R2 {:selectivity selectivity :sizes sizes})}]
+                            (when (and (< (cost/pipeline-cost R2 {:selectivity selectivity :sizes sizes})
+                                          (cost/pipeline-cost term {:selectivity selectivity :sizes sizes}))
+                                       (cert/verified-rewrite? env term res :lctx lctx))
+                              (assoc res :verified? true))))))))))))))))
 
 (def ^:private soac-heads
   "Heads whose presence in an invariant `c` makes hoisting it out of a row-loop worthwhile (the cost

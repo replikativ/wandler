@@ -141,3 +141,47 @@
         (is (:verified? res) "conditional frame certified")
         (is (= 10 (long ((nf XS) YS))) "naive guarded Σ over join")
         (is (= 10 (long ((cf XS) YS))) "conditional frame plan equals naive")))))
+
+;; key-factor join: Σ (succ(kf x))·g(y) where the left factor reads the join key (kf=lf=id, g=id).
+(defn- keyfactor-join-term []
+  (let [Nat (natT) PXY (prodT Nat Nat)
+        dec (e/const' (nm "instDecidableEqNat") [])
+        idf (e/lam "n" Nat (e/bvar 0) :default)
+        w (e/lam "k" Nat (e/app* (e/const' (nm "Nat.succ") []) (e/bvar 0)) :default)
+        xs (e/fvar 74001) ys (e/fvar 74002)
+        fstp (e/app* (e/const' (nm "Prod.fst") [z z]) Nat Nat (e/bvar 0))
+        sndp (e/app* (e/const' (nm "Prod.snd") [z z]) Nat Nat (e/bvar 0))
+        op (e/lam "acc" Nat (e/lam "p" PXY
+             (e/app* (e/const' (nm "Nat.add") []) (e/bvar 1)
+                     (e/app* (e/const' (nm "Nat.mul") []) (e/app w (e/app idf fstp)) (e/app idf sndp))) :default) :default)
+        e0 (e/const' (nm "Nat.zero") [])
+        join (e/app* (e/const' (nm "Map.join") []) Nat Nat Nat dec idf idf xs ys)
+        term (e/app* (e/const' (nm "List.foldl") [z z]) Nat PXY op e0 join)
+        lctx {74001 {:name "xs" :type (listOf Nat)} 74002 {:name "ys" :type (listOf Nat)}}]
+    {:term term :lctx lctx}))
+
+(deftest keyfactor-float-auto-selected
+  (when (ready?)
+    (testing "optimize-cost floats a key-factor w(kf x) into the per-key index (FD scope quotient)"
+      (let [{:keys [term lctx]} (keyfactor-join-term)
+            res (opt/optimize-cost (a/env) term :lctx lctx :ndv {74002 5.0})]
+        (is (:verified? res) "key-factor float kernel-certified (frame ∘ float)")
+        (is (some #{:frame-index-keyfactor} (:rewrites res)) "frame-index-keyfactor adopted")
+        (is (= :in-memory-hash (get-in res [:physical :strategy])))))))
+
+(deftest keyfactor-float-executes-correctly
+  (when (ready?)
+    (testing "the key-factor-floated plan RUNS and equals the naive Σ (succ(kf x))·g(y)"
+      (let [{:keys [term lctx]} (keyfactor-join-term)
+            res (opt/optimize-cost (a/env) term :lctx lctx :ndv {74002 5.0})
+            mk-fn (fn [t] (let [t1 (e/abstract1 t 74002)
+                                ly (e/lam "ys" (listOf (natT)) t1 :default)
+                                t2 (e/abstract1 ly 74001)
+                                lx (e/lam "xs" (listOf (natT)) t2 :default)]
+                            (eval (a/ansatz->clj (a/env) lx []))))
+            kf-fn (mk-fn (:term res)) nf (mk-fn term)
+            ;; x=1→{1,1}: succ(1)·(1+1)=2·2=4 ; x=2→{2,2}: succ(2)·(2+2)=3·4=12 ⇒ 16
+            XS [1 2] YS [1 1 2 2]]
+        (is (:verified? res) "key-factor float certified")
+        (is (= 16 (long ((nf XS) YS))) "naive Σ (succ(kf x))·g(y)")
+        (is (= 16 (long ((kf-fn XS) YS))) "floated plan equals naive")))))
