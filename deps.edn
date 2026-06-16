@@ -3,8 +3,8 @@
  ;; Ansatz CIC-kernel DSL. Provides the collection/relational/record surface, the certified optimizer,
  ;; the execution modes, and the inference layer. Depends on `ansatz` (the Lean4-in-Clojure DSL).
  ;; ansatz from Clojars (the public pin). For side-by-side development use:
- ;;   org.replikativ/ansatz {:mvn/version "0.1.59"}
- :deps {org.replikativ/ansatz {:mvn/version "0.1.59"}
+ ;;   org.replikativ/ansatz {:mvn/version "0.1.60"}
+ :deps {org.replikativ/ansatz {:mvn/version "0.1.60"}
         metosin/malli {:mvn/version "0.16.4"}}
  :aliases
  {:test {:extra-paths ["test"]

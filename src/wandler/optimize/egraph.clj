@@ -25,10 +25,20 @@
             [ansatz.kernel.tc :as tc]
             [wandler.optimize :as opt]
             [wandler.optimize.cost :as cost]
+            [wandler.optimize.certify :as cert]
             [ansatz.tactic.grind.egraph :as eg]
             [ansatz.tactic.grind.ematch :as ematch]
             [ansatz.tactic.grind.proof :as egproof])
   (:import [ansatz.kernel Env]))
+
+(def ^:private soac-head?
+  "Predicate on a head Name: true for SOAC ops (map/filter/foldl/flatMap/…). Drives `internalize-binders`'
+   under-binder descent (#C) — only SOAC step-λs are opened, bounding e-graph growth."
+  (fn [nm] (boolean (cert/soac-names (name/->string nm)))))
+
+(def ^:private binder-descent-depth
+  "Max binder-nesting `internalize-binders` opens (#C cost guard). 3 covers nested aggregations (Σx Σy …)."
+  3)
 
 (defn- mk-st [^Env env lctx]
   (if (seq lctx) (tc/mk-tc-state-with-locals env lctx) (tc/mk-tc-state env)))
@@ -67,7 +77,7 @@
    cheapest term IS `term` (no change)."
   [^Env env st term laws cost-fn]
   (let [thms (ematch/prepare-theorems env laws)
-        gs (-> (eg/mk-grind-state env) (eg/internalize term 0))
+        gs (eg/internalize-binders (eg/mk-grind-state env) term 0 soac-head? 0 binder-descent-depth)
         gs (if (seq thms) (:gs (ematch/run-ematch gs thms #{})) gs)
         rec (try (egproof/extract-and-prove gs st term cost-fn)
                  (catch Throwable _ nil))]
@@ -140,8 +150,13 @@
         ;; Encoded as `depth + ε·pipeline` so depth dominates and pipeline only decides equal-depth plans.
         ;; ε small enough that any genuine depth difference (≥1) outweighs any pipeline difference. Kept
         ;; SEPARATE from the bare pipeline-cost gate of the confluent/factorization path (invariant intact).
+        ;; LEXICOGRAPHIC (depth, invariant, pipeline): depth drives hoists that move a SOAC OUT of a
+        ;; binder (Step 1, the FAQ outer hoist); soac-invariant-cost (#C) drives the nested-FAQ INNER
+        ;; hoist that's depth-neutral but makes a subterm loop-invariant (enabling the next outer hoist);
+        ;; pipeline breaks remaining ties. ε's chosen so depth ≫ invariant ≫ pipeline.
         ecost (fn [t] (+ (cost/soac-depth-cost t)
-                         (* 1e-9 (opt/pipeline-cost t {:selectivity selectivity}))))
+                         (* 1e-6 (cost/soac-invariant-cost t))
+                         (* 1e-12 (opt/pipeline-cost t {:selectivity selectivity}))))
         alpha (try (tc/infer-type st term) (catch Throwable _ nil))
         finish (fn [cur acc rounds]
                  {:term cur
@@ -156,9 +171,15 @@
     (loop [cur term, acc nil, rounds 0]
       (if (>= rounds max-rounds)
         (finish cur acc rounds)
-        (let [;; (1) e-graph HOIST on the UNFUSED term (needs the pre-fusion map(λ.f x*c) shape)
-              [cur1 acc1] (advance st alpha term [cur acc]
-                                   (egraph-step env st cur hlaws ecost lctx))
+        (let [;; (1) e-graph HOIST on the UNFUSED term (needs the pre-fusion map(λ.f x*c) shape),
+              ;; ITERATED to its own fixpoint (each egraph-step re-internalizes) so a nested-FAQ cascade
+              ;; (under-binder inner hoist → outer hoist, #C) completes BEFORE simp can collapse the shape.
+              [cur1 acc1] (loop [c cur, ac acc, i 0]
+                            (let [step (egraph-step env st c hlaws ecost lctx)]
+                              (if (and (< i 6) step (:proof step) (not (.equals ^Object (:term step) c)))
+                                (let [[c' ac'] (advance st alpha term [c ac] step)]
+                                  (recur c' ac' (inc i)))
+                                [c ac])))
               ;; (2) confluent fusion (simp) on the chosen plan — proof cur1 = fused
               fuse (let [o (opt/optimize env cur1 :lctx lctx)]
                      (when (and (:changed? o) (:verified? o)) o))

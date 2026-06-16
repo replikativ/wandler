@@ -162,6 +162,41 @@
               :else 0.0))]
     (walk term 0)))
 
+(defn soac-invariant-cost
+  "Effective-DEPENDENCE cost (the under-binder #C signal): a SOAC pays `base^k` where k = the number of
+   distinct ENCLOSING binders its subtree actually DEPENDS ON — counting both opened-binder fvars
+   (id ≥ 950000000, present during under-binder extraction) and enclosing step-λ bvars (present in the
+   final re-abstracted term). A loop-INVARIANT SOAC (syntactically under a binder it doesn't use) pays
+   base^0. This REWARDS making a subterm invariant — e.g. the nested-FAQ inner hoist `∑y x·y → x·(∑y y)`,
+   which leaves `∑y y` under the outer `λx` (so `soac-depth-cost` is unchanged) but x-INDEPENDENT (so
+   THIS cost drops). Used as the LEXICOGRAPHIC SECONDARY after `soac-depth-cost`: depth drives the
+   hoists that move a SOAC out of a binder (Step 1, the FAQ outer hoist); invariance drives the inner
+   hoist that makes the next outer hoist possible."
+  [term & {:keys [base] :or {base 10.0}}]
+  (letfn [(enc [ex d acc]   ; collect enclosing-binder identities used in `ex` (d = current λ-depth)
+            (cond
+              (e/fvar? ex) (when (>= (e/fvar-id ex) 950000000) (vswap! acc conj [:fv (e/fvar-id ex)]))
+              (e/bvar? ex) (let [l (- d 1 (e/bvar-idx ex))] (when (>= l 0) (vswap! acc conj [:bv l])))
+              (e/app? ex)  (let [[h ar] (e/get-app-fn-args ex)] (enc h d acc) (run! #(enc % d acc) ar))
+              (e/lam? ex)  (do (enc (e/lam-type ex) d acc) (enc (e/lam-body ex) (inc d) acc))
+              (e/forall? ex) (do (enc (e/forall-type ex) d acc) (enc (e/forall-body ex) (inc d) acc))
+              :else nil))
+          (eff [ex d]   ; # distinct enclosing binders the SOAC subtree depends on (own binders excluded)
+            (let [acc (volatile! #{})]
+              (enc ex d acc)
+              (count (filter (fn [[t l]] (or (= t :fv) (< l d))) @acc))))
+          (walk [ex d]
+            (cond
+              (e/app? ex) (let [[h ar] (e/get-app-fn-args ex)
+                                s? (and (e/const? h) (cert/soac-names (name/->string (e/const-name h))))]
+                            (+ (if s? (Math/pow (double base) (double (eff ex d))) 0.0)
+                               (reduce + 0.0 (map (fn [a] (if (e/lam? a) (walk (e/lam-body a) (inc d)) (walk a d))) ar))))
+              (e/lam? ex)    (walk (e/lam-body ex) (inc d))
+              (e/forall? ex) (walk (e/forall-body ex) d)
+              (e/let? ex)    (+ (walk (e/let-value ex) d) (walk (e/let-body ex) d))
+              :else 0.0))]
+    (walk term 0)))
+
 
 ;; ── cardinality-propagation cost (datahike's estimate.cljc, made static) ──────
 ;; soac-cost counts ops; it can't tell a filter that runs BEFORE a join (small
