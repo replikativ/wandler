@@ -1842,3 +1842,67 @@
                     (if (proof/solved? q) q (try (basic/rfl q) (catch Throwable _ q)))))))
             ps (vec (:goals ps)))]
     [goal (when (proof/solved? ps) (extract/extract ps))]))
+
+;; ── Map.bucket_factor_pull (FD scope quotient — key-factor pull, Phase 5 layer 2) ─
+;; foldl(+) 0 (map (λy. (w (lf y)) · (g y)) (filter (λy. k == lf y) ys))
+;;   = (w k) · foldl(+) 0 (map g (filter (λy. k == lf y) ys))
+;; A key-dependent build-side factor `w(lf y)` is CONSTANT on the bucket (= w k, by the FD
+;; Map.bucket_key_subst), so it pulls OUT of the per-bucket sum — computed ONCE per distinct key, not
+;; per matching row. Pure assembly (NO new induction): bucket_key_subst rewrites w(lf y)→w(k) inside the
+;; map, then List.foldl_map + List.foldl_const_mul_pull (the §P1 const pull) factor (w k) out, then
+;; foldl_map back. The certificate the optimizer needs to FLOAT a key-factor into the per-key
+;; pre-aggregated index (the win when distinct-keys ≪ |xs|).
+(defn prove-bucket-factor-pull []
+  (let [K (e/fvar 1) Y (e/fvar 2) dec (e/fvar 3) lf (e/fvar 4) w (e/fvar 5) g (e/fvar 6) k (e/fvar 7) ys (e/fvar 8)
+        natT (gh-natT) zeroN (gh-zeroN) addC (e/const' (nm "Nat.add") [])
+        instB (e/app* (e/const' (nm "instBEqOfDecidableEq") [z]) K dec)
+        filtP (e/lam "y" Y (e/app* (e/const' (nm "BEq.beq") [z]) K instB k (e/app lf (e/bvar 0))) :default)
+        bf (e/app* (e/const' (nm "List.filter") [z]) Y filtP ys)
+        mapY (fn [fn l] (e/app* (e/const' (nm "List.map") [z z]) Y natT fn l))
+        foldlS (fn [l] (e/app* (e/const' (nm "List.foldl") [z z]) natT natT addC zeroN l))
+        wlfg (e/lam "y" Y (smc-mul (e/app w (e/app lf (e/bvar 0))) (e/app g (e/bvar 0))) :default)
+        wkg  (e/lam "y" Y (smc-mul (e/app w k) (e/app g (e/bvar 0))) :default)
+        h (e/lam "key" K (e/lam "y" Y (smc-mul (e/app w (e/bvar 1)) (e/app g (e/bvar 0))) :default) :default)
+        bks (e/app* (e/const' (nm "Map.bucket_key_subst") []) K natT Y dec lf h k ys)
+        stepA (e/app* (e/const' (nm "congrArg") [L1 L1]) (listOf natT) natT
+                      (mapY wlfg bf) (mapY wkg bf)
+                      (e/lam "l" (listOf natT) (foldlS (e/bvar 0)) :default) bks)
+        fusedWk (e/app* (e/const' (nm "List.foldl") [z z]) natT Y
+                        (e/lam "a" natT (e/lam "y" Y (e/app* addC (e/bvar 1) (smc-mul (e/app w k) (e/app g (e/bvar 0)))) :default) :default)
+                        zeroN bf)
+        fusedG  (e/app* (e/const' (nm "List.foldl") [z z]) natT Y
+                        (e/lam "a" natT (e/lam "y" Y (e/app* addC (e/bvar 1) (e/app g (e/bvar 0))) :default) :default)
+                        zeroN bf)
+        fm1 (e/app* (e/const' (nm "List.foldl_map") [z z z]) Y natT natT wkg addC bf zeroN)
+        cmp (e/app* (e/const' (nm "List.foldl_const_mul_pull") []) Y (e/app w k) g bf)
+        fm2 (e/app* (e/const' (nm "List.foldl_map") [z z z]) Y natT natT g addC bf zeroN)
+        fm2sym (e/app* (e/const' (nm "Eq.symm") [L1]) natT (foldlS (mapY g bf)) fusedG fm2)
+        congMul (e/app* (e/const' (nm "congrArg") [L1 L1]) natT natT fusedG (foldlS (mapY g bf))
+                        (e/lam "v" natT (smc-mul (e/app w k) (e/bvar 0)) :default) fm2sym)
+        stepB (e/app* (e/const' (nm "Eq.trans") [L1]) natT
+                      (foldlS (mapY wkg bf)) (smc-mul (e/app w k) fusedG) (smc-mul (e/app w k) (foldlS (mapY g bf)))
+                      (e/app* (e/const' (nm "Eq.trans") [L1]) natT (foldlS (mapY wkg bf)) fusedWk (smc-mul (e/app w k) fusedG) fm1 cmp)
+                      congMul)
+        proof (e/app* (e/const' (nm "Eq.trans") [L1]) natT
+                      (foldlS (mapY wlfg bf)) (foldlS (mapY wkg bf)) (smc-mul (e/app w k) (foldlS (mapY g bf)))
+                      stepA stepB)
+        concl (lk-eqAt natT (foldlS (mapY wlfg bf)) (smc-mul (e/app w k) (foldlS (mapY g bf))))
+        goal (-> concl
+                 (#(e/forall' "ys" (listOf Y) (e/abstract1 % 8) :default))
+                 (#(e/forall' "k" K (e/abstract1 % 7) :default))
+                 (#(e/forall' "g" (e/forall' "_" Y natT :default) (e/abstract1 % 6) :default))
+                 (#(e/forall' "w" (e/forall' "_" K natT :default) (e/abstract1 % 5) :default))
+                 (#(e/forall' "lf" (e/forall' "_" Y K :default) (e/abstract1 % 4) :default))
+                 (#(e/forall' "dec" (e/app (e/const' (nm "DecidableEq") [L1]) K) (e/abstract1 % 3) :default))
+                 (#(e/forall' "Y" type0 (e/abstract1 % 2) :default))
+                 (#(e/forall' "K" type0 (e/abstract1 % 1) :default)))
+        fproof (-> proof
+                   (#(e/lam "ys" (listOf Y) (e/abstract1 % 8) :default))
+                   (#(e/lam "k" K (e/abstract1 % 7) :default))
+                   (#(e/lam "g" (e/forall' "_" Y natT :default) (e/abstract1 % 6) :default))
+                   (#(e/lam "w" (e/forall' "_" K natT :default) (e/abstract1 % 5) :default))
+                   (#(e/lam "lf" (e/forall' "_" Y K :default) (e/abstract1 % 4) :default))
+                   (#(e/lam "dec" (e/app (e/const' (nm "DecidableEq") [L1]) K) (e/abstract1 % 3) :default))
+                   (#(e/lam "Y" type0 (e/abstract1 % 2) :default))
+                   (#(e/lam "K" type0 (e/abstract1 % 1) :default)))]
+    [goal fproof]))

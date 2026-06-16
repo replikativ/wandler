@@ -761,6 +761,11 @@
           ;; lf y = k, so substituting the join key k for (lf y) is sound. A key-dependent build-side
           ;; factor can therefore float to whichever side is cheaper (e.g. into the per-key index).
           (thm! "Map.bucket_key_subst"      (rp/prove-bucket-key-subst))
+          ;; FD factor-pull: a key-dependent build-side factor w(lf y) is constant on the bucket, so it
+          ;; pulls OUT of the per-bucket sum (computed once per key). The certificate for floating a
+          ;; key-factor into the per-key pre-aggregated index. Assembly: bucket_key_subst ∘ foldl_map ∘
+          ;; foldl_const_mul_pull.
+          (thm! "Map.bucket_factor_pull"    (rp/prove-bucket-factor-pull))
           ;; loop-invariant distributive law (1-variable elimination): a multiplicative x-free factor
           ;; distributes out of the sum — the certificate for hoisting an invariant fold out of a map.
           (thm! "List.sum_map_mul_const"  (rp/prove-sum-map-mul-const))

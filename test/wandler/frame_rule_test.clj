@@ -84,3 +84,16 @@
             (is (some? (re-find #"List.map" s)) "substituting the key inside the mapped fn")
             (is (some? (re-find #"BEq.beq" s)) "the filter keys on equality k == lf y"))))
       (is (boolean (kenv/lookup (a/env) (nm "Map.bucket_key_subst"))) "installed by build-all"))))
+
+(deftest bucket-factor-pull-verifies
+  (when (ready?)
+    (testing "Map.bucket_factor_pull (FD key-factor pull) kernel-verifies"
+      (let [[g p] (rp/prove-bucket-factor-pull)]
+        (is (some? p) "proof extracted")
+        (is (true? (kenv/verifies? (a/env) g p)) "passes check-constant")
+        (let [s (e/->string g)]
+          (testing "a key-factor pulls out of the bucket sum: Σ w(lf y)·g y = w(k)·Σ g"
+            (is (some? (re-find #"List.filter" s)) "over the bucket = keyed filter")
+            (is (some? (re-find #"Nat.mul" s)) "the key-factor product")
+            (is (some? (re-find #"List.foldl" s)) "summed via foldl"))))
+      (is (boolean (kenv/lookup (a/env) (nm "Map.bucket_factor_pull"))) "installed by build-all"))))
