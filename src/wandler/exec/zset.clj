@@ -210,7 +210,13 @@
                 (case op
                   :filter (map #(z-filter a %) views)
                   :map    (map #(z-map a %) views)
-                  :sum    (map #(z-sum a %) views)))
+                  :sum    (map #(z-sum a %) views)
+                  ;; a post-stage op with no incremental operator (e.g. :flat-map / :group-by from a
+                  ;; differential plan that wasn't fully linearized) — fail loudly with the op, not an
+                  ;; opaque "No matching clause" from `case`.
+                  (throw (ex-info (str "zset/query: no incremental operator for post-stage op " op
+                                       " (supported: :filter :map :sum after the :join)")
+                                  {:op op :stages stages}))))
               (incremental-join kf lf deltas) post))))
 
 (defn explain
@@ -222,4 +228,6 @@
       (case op
         :join   (format "  join %s=%s   ⟶  BILINEAR differential  (Zproduct_product_rule): Δview = δL⋈R ⊞ L⋈δR ⊞ δL⋈δR" a b)
         :filter "  filter         ⟶  LINEAR  (DBSP Thm 5.4: Q^Δ=Q — increment is the filter on the delta)"
-        :sum    "  sum            ⟶  group HOMOMORPHISM (increment is the sum of the delta)"))))
+        :map    "  map            ⟶  LINEAR  (increment is the map of the delta)"
+        :sum    "  sum            ⟶  group HOMOMORPHISM (increment is the sum of the delta)"
+        (str "  " (name op) "          ⟶  (no certificate registered for this stage)")))))

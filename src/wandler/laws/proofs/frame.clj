@@ -300,41 +300,6 @@
         body (gh-addN acc (sf-getD (gh-natT) ((:llookupNat P) (e/app kf x)) (gh-zeroN)))]
     (e/lam "acc" (gh-natT) (e/abstract1 (e/lam "x" X (e/abstract1 body xf) :default) af) :default)))
 
-(defn- sf-f-outer [K X Y dec g kf lf e xs ys]
-  (let [P (sf-parts K X Y dec g kf lf e xs ys)
-        af 101 xf 102 acc (e/fvar af) x (e/fvar xf)
-        BKT (sf-getD (:LY P) (e/app* (e/const' (nm "Map.lookup") []) K (:LY P) dec (e/app kf x) (:idx P)) (nilOf Y))
-        innerStep (e/lam "a" (gh-natT) (e/lam "y" Y (e/app* (:op P) (e/bvar 1) (mkP X Y x (e/bvar 0))) :default) :default)
-        body (gh-foldlN' (gh-natT) Y innerStep acc BKT)]
-    (e/lam "acc" (gh-natT) (e/abstract1 (e/lam "x" X (e/abstract1 body xf) :default) af) :default)))
-
-(defn- sf-hyp [K X Y dec g kf lf e xs ys]
-  (let [P (sf-parts K X Y dec g kf lf e xs ys)
-        LY (:LY P) af 101 xf 102 acc (e/fvar af) x (e/fvar xf)
-        kfx (e/app kf x)
-        BKT (sf-getD LY (e/app* (e/const' (nm "Map.lookup") []) K LY dec kfx (:idx P)) (nilOf Y))
-        bsBKT (gh-foldlN' (gh-natT) Y (:stepAdd P) (gh-zeroN) BKT)
-        addInitEq (e/app* (e/const' (nm "List.foldl_add_init") []) Y g BKT acc)
-        Oprime (e/app* (e/const' (nm "List.lookup") [z z]) K LY (:beq P) kfx (:entries P))
-        lmkv (e/app* (e/const' (nm "List.lookup_map_kv") []) K LY (gh-natT) (:beq P) (:bucketSumFn P) kfx (:entries P))
-        optMapB (fn [o] (e/app* (e/const' (nm "Option.map") [z z]) LY (gh-natT) (:bucketSumFn P) o))
-        lookPre ((:llookupNat P) kfx)
-        optNat (e/app (e/const' (nm "Option") [z]) (gh-natT))
-        getDNfn (e/lam "o" optNat (sf-getD (gh-natT) (e/bvar 0) (gh-zeroN)) :default)
-        congGetD (e/app* (e/const' (nm "congrArg") [L1 L1]) optNat (gh-natT)
-                         lookPre (optMapB Oprime) getDNfn lmkv)
-        getdMap (e/app* (e/const' (nm "Option.getD_map") [z z]) LY (gh-natT) (:bucketSumFn P) (nilOf Y) Oprime)
-        targetRHS (sf-getD (gh-natT) lookPre (gh-zeroN))
-        presumQ (e/app* (e/const' (nm "Eq.trans") [L1]) (gh-natT)
-                        targetRHS (sf-getD (gh-natT) (optMapB Oprime) (gh-zeroN)) bsBKT congGetD getdMap)
-        symPresum (e/app* (e/const' (nm "Eq.symm") [L1]) (gh-natT) targetRHS bsBKT presumQ)
-        addAccFn (e/lam "w" (gh-natT) (gh-addN acc (e/bvar 0)) :default)
-        congAdd (e/app* (e/const' (nm "congrArg") [L1 L1]) (gh-natT) (gh-natT) bsBKT targetRHS addAccFn symPresum)
-        proofBody (e/app* (e/const' (nm "Eq.trans") [L1]) (gh-natT)
-                          (gh-foldlN' (gh-natT) Y (:stepAdd P) acc BKT)
-                          (gh-addN acc bsBKT) (gh-addN acc targetRHS) addInitEq congAdd)]
-    (e/lam "acc" (gh-natT) (e/abstract1 (e/lam "x" X (e/abstract1 proofBody xf) :default) af) :default)))
-
 ;; the monoid-generic version is defined after the frame block (it reuses sf-parts-g); declared here so
 ;; the Nat law below can instantiate it.
 (declare prove-foldl-join-sum-factor-generic)
@@ -742,60 +707,12 @@
         op (ff-op X Y f g)]
     (assoc P :op op :lhs (gh-foldlN' (gh-natT) (prodT X Y) op e (:join P)))))
 
-(defn- ff-f-outer [K X Y dec f g kf lf e xs ys]
-  (let [P (ff-parts K X Y dec f g kf lf e xs ys)
-        af 101 xf 102 acc (e/fvar af) x (e/fvar xf)
-        BKT (sf-getD (:LY P) (e/app* (e/const' (nm "Map.lookup") []) K (:LY P) dec (e/app kf x) (:idx P)) (nilOf Y))
-        innerStep (e/lam "a" (gh-natT) (e/lam "y" Y (e/app* (:op P) (e/bvar 1) (mkP X Y x (e/bvar 0))) :default) :default)
-        body (gh-foldlN' (gh-natT) Y innerStep acc BKT)]
-    (e/lam "acc" (gh-natT) (e/abstract1 (e/lam "x" X (e/abstract1 body xf) :default) af) :default)))
-
 (defn- ff-g-outer [K X Y dec f g kf lf e xs ys]
   (let [P (ff-parts K X Y dec f g kf lf e xs ys)
         af 101 xf 102 acc (e/fvar af) x (e/fvar xf)
         body (gh-addN acc (smc-mul (e/app f x)
                                    (sf-getD (gh-natT) ((:llookupNat P) (e/app kf x)) (gh-zeroN))))]
     (e/lam "acc" (gh-natT) (e/abstract1 (e/lam "x" X (e/abstract1 body xf) :default) af) :default)))
-
-(defn- ff-hyp [K X Y dec f g kf lf e xs ys]
-  (let [P (ff-parts K X Y dec f g kf lf e xs ys)
-        LY (:LY P) af 101 xf 102 acc (e/fvar af) x (e/fvar xf)
-        kfx (e/app kf x) fx (e/app f x)
-        BKT (sf-getD LY (e/app* (e/const' (nm "Map.lookup") []) K LY dec kfx (:idx P)) (nilOf Y))
-        h (e/lam "y" Y (smc-mul fx (e/app g (e/bvar 0))) :default)               ; λy. (f x)·(g y)
-        hstep (e/lam "a" (gh-natT) (e/lam "y" Y (gh-addN (e/bvar 1) (smc-mul fx (e/app g (e/bvar 0)))) :default) :default)
-        bsBKT (gh-foldlN' (gh-natT) Y (:stepAdd P) (gh-zeroN) BKT)               ; foldl (λa y. a + g y) 0 BKT
-        hBKT0 (gh-foldlN' (gh-natT) Y hstep (gh-zeroN) BKT)                      ; foldl hstep 0 BKT
-        addInitEq (e/app* (e/const' (nm "List.foldl_add_init") []) Y h BKT acc) ; foldl hstep acc BKT = acc + hBKT0
-        pull (e/app* (e/const' (nm "List.foldl_const_mul_pull") []) Y fx g BKT) ; hBKT0 = (f x)·bsBKT
-        ;; presum (reuse sf machinery): symPresum : bsBKT = targetRHS
-        Oprime (e/app* (e/const' (nm "List.lookup") [z z]) K LY (:beq P) kfx (:entries P))
-        lmkv (e/app* (e/const' (nm "List.lookup_map_kv") []) K LY (gh-natT) (:beq P) (:bucketSumFn P) kfx (:entries P))
-        optMapB (fn [o] (e/app* (e/const' (nm "Option.map") [z z]) LY (gh-natT) (:bucketSumFn P) o))
-        lookPre ((:llookupNat P) kfx)
-        optNat (e/app (e/const' (nm "Option") [z]) (gh-natT))
-        getDNfn (e/lam "o" optNat (sf-getD (gh-natT) (e/bvar 0) (gh-zeroN)) :default)
-        congGetD (e/app* (e/const' (nm "congrArg") [L1 L1]) optNat (gh-natT)
-                         lookPre (optMapB Oprime) getDNfn lmkv)
-        getdMap (e/app* (e/const' (nm "Option.getD_map") [z z]) LY (gh-natT) (:bucketSumFn P) (nilOf Y) Oprime)
-        targetRHS (sf-getD (gh-natT) lookPre (gh-zeroN))
-        presumQ (e/app* (e/const' (nm "Eq.trans") [L1]) (gh-natT)
-                        targetRHS (sf-getD (gh-natT) (optMapB Oprime) (gh-zeroN)) bsBKT congGetD getdMap)
-        symPresum (e/app* (e/const' (nm "Eq.symm") [L1]) (gh-natT) targetRHS bsBKT presumQ)   ; bsBKT = targetRHS
-        ;; hBKT0 = (f x)·targetRHS  via pull then congrArg (mul fx ·) symPresum
-        mulFx (e/lam "w" (gh-natT) (smc-mul fx (e/bvar 0)) :default)
-        congMulPresum (e/app* (e/const' (nm "congrArg") [L1 L1]) (gh-natT) (gh-natT) bsBKT targetRHS mulFx symPresum)
-        hBKT0ToFxTarget (e/app* (e/const' (nm "Eq.trans") [L1]) (gh-natT)
-                                hBKT0 (smc-mul fx bsBKT) (smc-mul fx targetRHS) pull congMulPresum)
-        ;; wrap acc + · :  acc + hBKT0 = acc + (f x)·targetRHS
-        accPlus (e/lam "w" (gh-natT) (gh-addN acc (e/bvar 0)) :default)
-        congAcc (e/app* (e/const' (nm "congrArg") [L1 L1]) (gh-natT) (gh-natT) hBKT0 (smc-mul fx targetRHS) accPlus hBKT0ToFxTarget)
-        proofBody (e/app* (e/const' (nm "Eq.trans") [L1]) (gh-natT)
-                          (gh-foldlN' (gh-natT) Y hstep acc BKT)
-                          (gh-addN acc hBKT0)
-                          (gh-addN acc (smc-mul fx targetRHS))
-                          addInitEq congAcc)]
-    (e/lam "acc" (gh-natT) (e/abstract1 (e/lam "x" X (e/abstract1 proofBody xf) :default) af) :default)))
 
 ;; ── SEMIRING-GENERIC frame rule ──────────────────────────────────────────────────
 ;; The whole frame proof is pure structural plumbing over the three generic leaves

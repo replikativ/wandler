@@ -209,7 +209,7 @@
         (if use-egraph?
           ;; e-graph saturation search (resolved lazily to avoid a namespace cycle)
           (let [sat ((requiring-resolve 'wandler.optimize.egraph/saturate-and-extract)
-                     env term :lctx lctx :selectivity selectivity)]
+                     env term :lctx lctx :selectivity selectivity :sizes sizes)]
             (if (and sat (:verified? sat) (:changed? sat)
                      (< (pc (:term sat)) (pc (:term base))))
               (assoc sat :rewrites [:egraph] :cost (cost/soac-cost (:term sat)))

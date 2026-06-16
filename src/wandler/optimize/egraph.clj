@@ -131,12 +131,14 @@
      :lctx         free-variable context for an in-progress a/defn body
      :laws         the non-confluent e-graph law set (default `default-laws` = hoist + reorder)
      :selectivity  threaded to `pipeline-cost` (measured profile / refinement bound)
+     :sizes        per-source cardinalities, threaded to `pipeline-cost` (kept in lockstep with the
+                   greedy path so the e-graph search ranks plans on the same inputs)
      :max-rounds   outer fixpoint cap (default 4)"
-  [^Env env term & {:keys [lctx selectivity max-rounds laws]
+  [^Env env term & {:keys [lctx selectivity sizes max-rounds laws]
                     :or {max-rounds 4}}]
   (let [laws (or laws default-laws)
         st (mk-st env lctx)
-        cost-fn (fn [t] (opt/pipeline-cost t {:selectivity selectivity}))
+        cost-fn (fn [t] (opt/pipeline-cost t {:selectivity selectivity :sizes sizes}))
         ;; honest extraction/adopt cost for the e-graph search — LEXICOGRAPHIC (depth, invariant, pipeline):
         ;;   primary   = SOAC-DEPTH cost (a fold under a step-λ pays base^depth) → drives hoists that move a
         ;;               SOAC OUT of a binder (Step 1's FAQ hoist, the nested-FAQ OUTER hoist) — the win
@@ -150,7 +152,7 @@
         ;; confluent/factorization path, so that invariant is untouched.
         ecost (fn [t] (+ (cost/soac-depth-cost t)
                          (* 1e-6 (cost/soac-invariant-cost t))
-                         (* 1e-12 (opt/pipeline-cost t {:selectivity selectivity}))))
+                         (* 1e-12 (opt/pipeline-cost t {:selectivity selectivity :sizes sizes}))))
         alpha (try (tc/infer-type st term) (catch Throwable _ nil))
         finish (fn [cur acc rounds]
                  {:term cur

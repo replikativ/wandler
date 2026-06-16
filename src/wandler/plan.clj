@@ -48,7 +48,10 @@
   (let [nat  (e/const' (nm "Nat") [])
         vt   (or value-type elem-type)
         vals (if value-fn (e/app* (e/const' (nm "List.map") [z z]) elem-type vt value-fn term) term)]
-    (e/app* (e/const' (nm "List.foldl") [z z]) vt vt
+    ;; the accumulator type is Nat (op = Nat.add, init = Nat.zero), the list-element type is vt — so the
+    ;; fold is well-typed only when vt = Nat (value-fn produces a Nat). Was `vt vt` (wrong acc type for a
+    ;; non-Nat vt); now `nat vt`, matching count-sink's `nat elem-type`. :sum is Nat-only by construction.
+    (e/app* (e/const' (nm "List.foldl") [z z]) nat vt
             (e/const' (nm "Nat.add") []) (e/const' (nm "Nat.zero") []) vals)))
 
 (defn- limit-sink [term elem-type n]

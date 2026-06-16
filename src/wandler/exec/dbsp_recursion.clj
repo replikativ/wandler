@@ -125,9 +125,13 @@
   (laws/cached-install! cache "Cycle.iter_fixpoint_stable"
     (fn []
       (let [reg! (fn [ci] (swap! a/ansatz-env kenv/check-constant ci) ci)
-            bi (reg! (kenv/mk-thm (nm "Recursion.body_incr") [] (first (prove-body-incr)) (second (prove-body-incr))))
+            ;; build each proof ONCE — the tactic proof allocates fresh fvar/metavar state per call, so
+            ;; calling it twice (once for goal, once for term) risks desyncing goal vs proof.
+            [bi-g bi-p] (prove-body-incr)
+            bi (reg! (kenv/mk-thm (nm "Recursion.body_incr") [] bi-g bi-p))
             it (reg! (iter-def))
-            fs (reg! (kenv/mk-thm (nm "Cycle.iter_fixpoint_stable") [] (first (prove-fixpoint-stable)) (second (prove-fixpoint-stable))))]
+            [fs-g fs-p] (prove-fixpoint-stable)
+            fs (reg! (kenv/mk-thm (nm "Cycle.iter_fixpoint_stable") [] fs-g fs-p))]
         [bi it fs]))))
 
 ;; ── runtime: least-fixpoint of F(R)=R0 ∪ step(R), naive vs SEMI-NAIVE (delta-driven) ────────────
