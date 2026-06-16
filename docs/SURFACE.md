@@ -10,6 +10,13 @@ nest arbitrarily — and explicit about its edge: anything outside it is an hone
 named error, never silent miscompilation. `:tier` other than `core` is pre-release
 surface.
 
+## `ansatz.surface.data`
+
+| verb | signature | dispatch | kernel denotation | runtime lowering | tier |
+|---|---|---|---|---|---|
+| `get` | `(get v k)` | Value → vget · records fall back to keyword projection | `vget (Value.vkw k) v` | get | edn |
+| `int?` | `(int? v) — and string? boolean? keyword? nil? map? vector? set? double? float? some? any?` | Value receivers only (named error otherwise) | `vint? / vstr? / …` | predicate | edn |
+
 ## `wandler.surface.collections`
 
 | verb | signature | dispatch | kernel denotation | runtime lowering | tier |
@@ -43,13 +50,6 @@ surface.
 | `take` | `(take n coll)` | List → List.take · Strm/LSeq → the WINDOW (stream → List) | `List.take / Strm.take / LSeq.take` | take (lazy; windows infinite sources) | core |
 | `take-while` | `(take-while p coll)` | List | `List.takeWhile` | take-while | core |
 | `transduce` | `(transduce xform rf init coll)` | xform = (comp (map f) (filter p) (remove p)…) | `reduce over the desugared pipeline` | as the pipeline (fuses + certifies) | core |
-
-## `wandler.surface.edn`
-
-| verb | signature | dispatch | kernel denotation | runtime lowering | tier |
-|---|---|---|---|---|---|
-| `get` | `(get v k)` | Value → vget · records fall back to keyword projection | `vget (Value.vkw k) v` | get | edn |
-| `int?` | `(int? v) — and string? boolean? keyword? nil? map? vector? set? double? float? some? any?` | Value receivers only (named error otherwise) | `vint? / vstr? / …` | predicate | edn |
 
 ## `wandler.surface.records`
 
