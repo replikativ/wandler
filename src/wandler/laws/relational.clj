@@ -759,6 +759,7 @@
           ;; CONDITIONAL SEPARATION (the dependent-types win): a separable conjunctive guard P(x)∧Q(y)
           ;; factors a weighted product — cond(a&&b)(u·v)0 = (cond a u 0)·(cond b v 0) — so once split
           ;; f'=[P]·f, g'=[Q]·g are closed and the frame rule fires.
+          (thm! "Nat.cond_and_mul_split_generic" (rp/prove-cond-and-mul-split-generic))
           (thm! "Nat.cond_and_mul_split"    (rp/prove-cond-and-mul-split))
           ;; FD SCOPE QUOTIENT foundation: on a group_by bucket (= the keyed filter), every element has
           ;; lf y = k, so substituting the join key k for (lf y) is sound. A key-dependent build-side

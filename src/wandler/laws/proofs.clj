@@ -1794,12 +1794,74 @@
 ;; Proof: nested Bool.casesOn (a, then b). Because Nat.mul recurses on its SECOND arg, `_·0 ≡ 0`,
 ;; `cond false`, and `Bool.and false` all reduce DEFINITIONALLY — so 3 of 4 leaves are Eq.refl and only
 ;; the a=false,b=true leaf (0 = 0·v) needs Nat.zero_mul. The casesOn motive is Prop ⇒ level 0.
+;; ── Nat.cond_and_mul_split (SEMIRING-GENERIC conditional split) ───────────────────
+;; ∀ (S:Type)(mul:S→S→S)(zero:S)(hZM:∀v, mul zero v = zero)(hMZ:∀u, mul u zero = zero)(a b:Bool)(u v:S),
+;;   cond (a && b) (mul u v) zero = mul (cond a u zero) (cond b v zero).
+;; The conditional-guard separation needs ONLY a two-sided annihilator (mul zero v = zero = mul u zero) —
+;; the rest is Bool case analysis + cond/and reduction. The Nat law hid BOTH annihilators behind Nat.mul's
+;; definitional computation (the refl leaves typecheck because Nat.mul u 0 / Nat.mul 0 0 compute to 0); over
+;; an abstract mul they become explicit hypotheses. Nat law below instantiates at (Nat,·,0,zero_mul,mul_zero).
+(defn prove-cond-and-mul-split-generic []
+  (let [S (e/fvar 10) mulF (e/fvar 12) zeroF (e/fvar 13) hZM (e/fvar 16) hMZ (e/fvar 15)
+        mulG (fn [x y] (e/app* mulF x y))
+        condS (fn [c x y] (e/app* (e/const' (nm "cond") [L1]) S c x y))
+        andB  (fn [x y] (e/app* (e/const' (nm "Bool.and") []) x y))
+        eqS (fn [x y] (e/app* (e/const' (nm "Eq") [L1]) S x y))
+        reflS (fn [x] (e/app* (e/const' (nm "Eq.refl") [L1]) S x))
+        symS (fn [x y h] (e/app* (e/const' (nm "Eq.symm") [L1]) S x y h))
+        hZM-ty (e/forall' "v" S (eqS (mulG zeroF (e/bvar 0)) zeroF) :default)
+        hMZ-ty (e/forall' "u" S (eqS (mulG (e/bvar 0) zeroF) zeroF) :default)
+        sem-pi (fn [t] (-> t
+                  (#(e/forall' "hMZ" hMZ-ty (e/abstract1 % 15) :default))
+                  (#(e/forall' "hZM" hZM-ty (e/abstract1 % 16) :default))
+                  (#(e/forall' "zero" S (e/abstract1 % 13) :default))
+                  (#(e/forall' "mul" (sf-arrow S (sf-arrow S S)) (e/abstract1 % 12) :default))
+                  (#(e/forall' "S" type0 (e/abstract1 % 10) :default))))
+        sem-lam (fn [t] (-> t
+                  (#(e/lam "hMZ" hMZ-ty (e/abstract1 % 15) :default))
+                  (#(e/lam "hZM" hZM-ty (e/abstract1 % 16) :default))
+                  (#(e/lam "zero" S (e/abstract1 % 13) :default))
+                  (#(e/lam "mul" (sf-arrow S (sf-arrow S S)) (e/abstract1 % 12) :default))
+                  (#(e/lam "S" type0 (e/abstract1 % 10) :default))))
+        a (e/fvar 1) b (e/fvar 2) u (e/fvar 3) v (e/fvar 4)
+        concl (eqS (condS (andB a b) (mulG u v) zeroF)
+                   (mulG (condS a u zeroF) (condS b v zeroF)))
+        goal (-> concl
+                 (#(e/forall' "v" S (e/abstract1 % 4) :default))
+                 (#(e/forall' "u" S (e/abstract1 % 3) :default))
+                 (#(e/forall' "b" boolT (e/abstract1 % 2) :default))
+                 (#(e/forall' "a" boolT (e/abstract1 % 1) :default))
+                 sem-pi)
+        mot-a (e/lam "a'" boolT
+                (eqS (condS (andB (e/bvar 0) b) (mulG u v) zeroF)
+                     (mulG (condS (e/bvar 0) u zeroF) (condS b v zeroF))) :default)
+        mot-b (fn [aLit] (e/lam "b'" boolT
+                 (eqS (condS (andB aLit (e/bvar 0)) (mulG u v) zeroF)
+                      (mulG (condS aLit u zeroF) (condS (e/bvar 0) v zeroF))) :default))
+        bcases (fn [mot major mfalse mtrue]
+                 (e/app* (e/const' (nm "Bool.casesOn") [z]) mot major mfalse mtrue))
+        leaf-ff (symS (mulG zeroF zeroF) zeroF (e/app* hZM zeroF))   ; zero = mul zero zero
+        leaf-ft (symS (mulG zeroF v)     zeroF (e/app* hZM v))       ; zero = mul zero v
+        leaf-tf (symS (mulG u zeroF)     zeroF (e/app* hMZ u))       ; zero = mul u zero
+        leaf-tt (reflS (mulG u v))                                   ; mul u v = mul u v
+        branch-F (bcases (mot-b bfalse) b leaf-ff leaf-ft)           ; a=F: (F,F)→mul0,0  (F,T)→zero_mul
+        branch-T (bcases (mot-b btrue)  b leaf-tf leaf-tt)           ; a=T: (T,F)→mul_zero (T,T)→rfl
+        body (bcases mot-a a branch-F branch-T)
+        proof (-> body
+                  (#(e/lam "v" S (e/abstract1 % 4) :default))
+                  (#(e/lam "u" S (e/abstract1 % 3) :default))
+                  (#(e/lam "b" boolT (e/abstract1 % 2) :default))
+                  (#(e/lam "a" boolT (e/abstract1 % 1) :default))
+                  sem-lam)]
+    [goal proof]))
+
+;; Nat law: thin instantiation of the generic at (Nat,·,0,Nat.zero_mul,Nat.mul_zero). Goal byte-identical.
 (defn prove-cond-and-mul-split []
-  (let [a (e/fvar 1) b (e/fvar 2) u (e/fvar 3) v (e/fvar 4)
+  (let [[_ pGen] (prove-cond-and-mul-split-generic)
+        a (e/fvar 1) b (e/fvar 2) u (e/fvar 3) v (e/fvar 4)
         natT (gh-natT) zeroN (gh-zeroN)
         condN (fn [c x y] (e/app* (e/const' (nm "cond") [L1]) natT c x y))
         andB  (fn [x y] (e/app* (e/const' (nm "Bool.and") []) x y))
-        reflN (fn [x] (e/app* (e/const' (nm "Eq.refl") [L1]) natT x))
         concl (lk-eqAt natT (condN (andB a b) (smc-mul u v) zeroN)
                        (smc-mul (condN a u zeroN) (condN b v zeroN)))
         goal (-> concl
@@ -1807,24 +1869,9 @@
                  (#(e/forall' "u" natT (e/abstract1 % 3) :default))
                  (#(e/forall' "b" boolT (e/abstract1 % 2) :default))
                  (#(e/forall' "a" boolT (e/abstract1 % 1) :default)))
-        mot-a (e/lam "a'" boolT
-                (lk-eqAt natT (condN (andB (e/bvar 0) b) (smc-mul u v) zeroN)
-                         (smc-mul (condN (e/bvar 0) u zeroN) (condN b v zeroN))) :default)
-        mot-b (fn [aLit] (e/lam "b'" boolT
-                 (lk-eqAt natT (condN (andB aLit (e/bvar 0)) (smc-mul u v) zeroN)
-                          (smc-mul (condN aLit u zeroN) (condN (e/bvar 0) v zeroN))) :default))
-        bcases (fn [mot major mfalse mtrue]
-                 (e/app* (e/const' (nm "Bool.casesOn") [z]) mot major mfalse mtrue))
-        zmv (e/app* (e/const' (nm "Nat.zero_mul") []) v)                                ; 0·v = 0
-        leaf-ft (e/app* (e/const' (nm "Eq.symm") [L1]) natT (smc-mul zeroN v) zeroN zmv) ; 0 = 0·v
-        branch-F (bcases (mot-b bfalse) b (reflN zeroN) leaf-ft)                        ; a=F: (F,F) rfl, (F,T) zero_mul
-        branch-T (bcases (mot-b btrue)  b (reflN zeroN) (reflN (smc-mul u v)))          ; a=T: (T,F) rfl, (T,T) rfl
-        body (bcases mot-a a branch-F branch-T)
-        proof (-> body
-                  (#(e/lam "v" natT (e/abstract1 % 4) :default))
-                  (#(e/lam "u" natT (e/abstract1 % 3) :default))
-                  (#(e/lam "b" boolT (e/abstract1 % 2) :default))
-                  (#(e/lam "a" boolT (e/abstract1 % 1) :default)))]
+        proof (when pGen
+                (e/app* pGen natT (e/const' (nm "Nat.mul") []) zeroN
+                        (e/const' (nm "Nat.zero_mul") []) (e/const' (nm "Nat.mul_zero") [])))]
     [goal proof]))
 
 ;; ── Map.bucket_key_subst (the FD SCOPE QUOTIENT foundation) ───────────────────────
