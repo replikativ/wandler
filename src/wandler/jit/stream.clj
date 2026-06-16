@@ -1,4 +1,4 @@
-(ns wandler.exec.jit
+(ns wandler.jit.stream
   "Verified hot-swap JIT for streaming pipelines (docs/COST_MODEL_REDESIGN, the JIT story).
 
    THE PROPERTY that makes this different from every other JIT: every plan wandler compiles is

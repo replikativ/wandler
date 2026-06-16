@@ -5,7 +5,7 @@
   (:require [clojure.test :refer [deftest is]]
             [wandler.reducers :as r]))
 
-(defn- simd? [] (try (require 'wandler.simd) true (catch Throwable _ false)))
+(defn- simd? [] (try (require 'wandler.backend.simd) true (catch Throwable _ false)))
 
 ;; exact (associativity provable) vs floating-point (associativity false) monoids
 (def bit-or-mono (r/monoid-spec {:name :nat/bit-or :unit-fn (constantly 0) :combine bit-or
@@ -18,8 +18,8 @@
 (deftest proof-gated-simd
   (if-not (simd?)
     (do (println "SKIP simd-test: stratum/SimdReduce not on classpath (run with -M:stratum:test)") (is true))
-    (let [licensed?   (requiring-resolve 'wandler.simd/simd-licensed?)
-          simd-reduce (requiring-resolve 'wandler.simd/simd-reduce)
+    (let [licensed?   (requiring-resolve 'wandler.backend.simd/simd-licensed?)
+          simd-reduce (requiring-resolve 'wandler.backend.simd/simd-reduce)
           col (long-array (map #(long (bit-shift-left 1 (mod % 20))) (range 100000)))
           scalar-or (areduce col i acc (long 0) (bit-or acc (aget col i)))]
       ;; the GATE: exact ops are licensed (associativity proven); Float.add is refused

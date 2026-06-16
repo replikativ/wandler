@@ -5,7 +5,7 @@
    has: profiling can trigger a recompile+swap, and the answer cannot change, only the speed."
   (:require [ansatz.core :as a]
             [wandler.core :as w]
-            [wandler.exec.jit :as jit]
+            [wandler.jit.stream :as jit]
             [wandler.optimize :as opt]
             [wandler.optimize.cost :as cost]
             [wandler.test-env :as test-env]

@@ -1,4 +1,4 @@
-(ns wandler.simd
+(ns wandler.backend.simd
   "Layer C — PROOF-GATED SIMD reduction (the floating-point determinism guarantee).
 
    A SIMD lane-wise reduction keeps one partial per vector lane and combines the lane-partials at the end
