@@ -233,6 +233,38 @@
                 G))))))))
 
 
+(defn- separable-frame-fg
+  "Detect a SEPARABLE two-sided product aggregate op (the FAQ frame shape):
+     λacc:Nat. λp:(X×Y). Nat.add acc (Nat.mul (f (Prod.fst X Y p)) (g (Prod.snd X Y p)))
+   where f:X→Nat reads only the LEFT (probe) side and g:Y→Nat only the RIGHT (build) side. Returns
+   [f g] (both CLOSED Nat-valued terms, i.e. no dependence on acc/p) or nil. This is the exact op shape
+   `Map.foldl_join_frame` is stated for — a match means the law's LHS is def-eq to the term and the
+   pre-aggregated index applies to the separable y-side weight g, with the x-side weight f factored out."
+  [op]
+  (when (e/lam? op)
+    (let [b1 (e/lam-body op)]
+      (when (e/lam? b1)
+        (let [body (e/lam-body b1)
+              [h args] (e/get-app-fn-args body)]
+          (when (and (e/const? h) (= "Nat.add" (name/->string (e/const-name h))) (= 2 (count args))
+                     (e/bvar? (first args)) (= 1 (e/bvar-idx (first args)))
+                     (e/app? (second args)))
+            (let [mult (second args)
+                  [mh margs] (e/get-app-fn-args mult)]
+              (when (and (e/const? mh) (= "Nat.mul" (name/->string (e/const-name mh))) (= 2 (count margs))
+                         (e/app? (nth margs 0)) (e/app? (nth margs 1)))
+                (let [fa (nth margs 0) ga (nth margs 1)
+                      f (e/app-fn fa) g (e/app-fn ga)
+                      [fh fargs] (e/get-app-fn-args (e/app-arg fa))
+                      [gh gargs] (e/get-app-fn-args (e/app-arg ga))]
+                  (when (and (e/const? fh) (= "Prod.fst" (name/->string (e/const-name fh)))
+                             (= 3 (count fargs)) (e/bvar? (nth fargs 2)) (= 0 (e/bvar-idx (nth fargs 2)))
+                             (e/const? gh) (= "Prod.snd" (name/->string (e/const-name gh)))
+                             (= 3 (count gargs)) (e/bvar? (nth gargs 2)) (= 0 (e/bvar-idx (nth gargs 2)))
+                             (not (e/has-loose-bvars? f)) (not (e/has-loose-bvars? g)))
+                    [f g]))))))))))
+
+
 (defn try-pre-agg-index
   "PHYSICAL pre-aggregated (FAQ) index for a SEPARABLE SUM aggregate over a join — the O(distinct-keys)
    in-memory strategy. When `foldl (λacc p. acc + g (snd p)) e (Map.join … xs ys)` (sum of a right-side
@@ -268,6 +300,46 @@
                     (let [rhs (nth eqargs 2)
                           proof (compose-trans env lctx term fterm rhs fproof law)
                           res {:term rhs :proof proof :changed? true :rewrites [:pre-agg-index]
+                               :physical {:strategy :in-memory-hash :index-est (double ndv-est) :budget (or memory-budget 1.0e8)}
+                               :cost (cost/pipeline-cost rhs {:selectivity selectivity :sizes sizes})}]
+                      (when (and (< (cost/pipeline-cost rhs {:selectivity selectivity :sizes sizes})
+                                    (cost/pipeline-cost term {:selectivity selectivity :sizes sizes}))
+                                 (cert/verified-rewrite? env term res :lctx lctx))
+                        (assoc res :verified? true)))))))))))))
+
+
+(defn try-frame-index
+  "PHYSICAL FAQ FRAME RULE for a SEPARABLE two-sided weight over a join — the O(distinct-keys) in-memory
+   strategy GENERALIZED to a left-side weight. When `foldl (λacc p. acc + f(fst p)·g(snd p)) e
+   (Map.join … xs ys)` (a product of a probe-side field f and a build-side field g), rewrite via
+   `Map.foldl_join_frame` to `foldl (λacc x. acc + f(x)·getD (lookup (kf x) PREIDX) 0) e xs`, where
+   PREIDX is the SAME g-only group-by index with each bucket PRE-SUMMED once — held memory O(distinct
+   keys), not O(|ys|), and the per-x weight f(x) applied AFTER the lookup. The f≡1 case is exactly
+   `try-pre-agg-index` (the two matchers are disjoint: this one requires the explicit Nat.mul). Same
+   ndv gating (DuckDB PerfectHashAggregate) and certification (`cert/verified-rewrite?`) as the
+   sum-factor index. Without ndv, the op-generic `try-fold-factor*` still removes the product; the frame
+   index adds the pre-summed held-memory win when ndv ≪ |ys|."
+  [^Env env term & {:keys [lctx selectivity sizes memory-budget ndv]}]
+  (when (cost/mentions-const? term "Map.join")
+    (let [fused  (cert/optimize env term :lctx lctx)
+          fterm  (if (:verified? fused) (:term fused) term)
+          fproof (when (:verified? fused) (:proof fused))]
+      (when-let [{:keys [S op e jargs]} (fold-join fterm)]
+        (when (and (e/const? S) (= "Nat" (name/->string (e/const-name S))))
+          (when-let [[f g] (separable-frame-fg op)]
+            (let [[K X Y dec kf lf xs ys] jargs
+                  build-mem (:memory (cost/pipeline-resources fterm {:selectivity selectivity :sizes sizes}))
+                  ndv-est (when (and ndv (e/fvar? ys)) (get ndv (e/fvar-id ys)))]
+              (when (and ndv-est (< (double ndv-est) (double build-mem)))
+                (let [law (e/app* (e/const' (name/from-string "Map.foldl_join_frame") [])
+                                  K X Y dec f g kf lf e xs ys)
+                      st (cert/mk-st env lctx)
+                      ptype (try (tc/infer-type st law) (catch Throwable _ nil))   ; nil if law absent
+                      [_ eqargs] (when ptype (e/get-app-fn-args ptype))]           ; @Eq Nat LHS RHS
+                  (when (and eqargs (>= (count eqargs) 3))
+                    (let [rhs (nth eqargs 2)
+                          proof (compose-trans env lctx term fterm rhs fproof law)
+                          res {:term rhs :proof proof :changed? true :rewrites [:frame-index]
                                :physical {:strategy :in-memory-hash :index-est (double ndv-est) :budget (or memory-budget 1.0e8)}
                                :cost (cost/pipeline-cost rhs {:selectivity selectivity :sizes sizes})}]
                       (when (and (< (cost/pipeline-cost rhs {:selectivity selectivity :sizes sizes})

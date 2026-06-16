@@ -38,6 +38,7 @@
 (def try-fold-factor* phys/try-fold-factor*)
 (def try-grace-hash phys/try-grace-hash)
 (def try-pre-agg-index phys/try-pre-agg-index)
+(def try-frame-index phys/try-frame-index)
 (def hoist-invariant-indices phys/hoist-invariant-indices)
 
 
@@ -109,6 +110,12 @@
         pre-agg (when (not skip-reorder?)
                   (phys/try-pre-agg-index env term :lctx lctx :selectivity selectivity :sizes sizes
                                      :memory-budget memory-budget :ndv ndv))
+        ;; FAQ FRAME RULE: a SEPARABLE two-sided weight f(x)·g(y) over a join holds the SAME
+        ;; O(distinct-keys) pre-summed index (g pre-aggregated), with the probe-side weight f(x) applied
+        ;; after the lookup. The f≡1 generalization of pre-agg; disjoint matcher (requires the Nat.mul).
+        frame (when (not skip-reorder?)
+                (phys/try-frame-index env term :lctx lctx :selectivity selectivity :sizes sizes
+                                      :memory-budget memory-budget :ndv ndv))
         ;; PHYSICAL grace-hash: if a memory budget is set and the join index would exceed it, spill
         ;; the build side into budget-sized blocks BEFORE factorization (grace-hash is an ALTERNATIVE
         ;; to the in-memory hash/factor, operating on the raw foldl-over-join). Certified rewrite.
@@ -132,6 +139,10 @@
       (and pre-agg (:verified? pre-agg)
            (<= (double (:index-est (:physical pre-agg))) (double (or memory-budget 1.0e8))))
       pre-agg
+      ;; frame index (two-sided separable weight) — same held-index gate as pre-agg.
+      (and frame (:verified? frame)
+           (<= (double (:index-est (:physical frame))) (double (or memory-budget 1.0e8))))
+      frame
       (:verified? gh) gh
       (and reorder (:verified? reorder))
       ;; a pre-rewrite fired → fuse its result, then compose proofs (pre ∘ fuse).
