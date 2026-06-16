@@ -9,7 +9,8 @@
             [ansatz.kernel.env :as env]
             [ansatz.kernel.tc :as tc]
             [wandler.optimize.certify :as cert]
-            [wandler.optimize.cost :as cost])
+            [wandler.optimize.cost :as cost]
+            [wandler.laws.semiring :as sreg])
   (:import [ansatz.kernel Env]))
 
 (declare compose-trans)
@@ -219,25 +220,11 @@
 ;; factorize through the pre-aggregated index end-to-end. Nat = counting/SUM; Bool = boolean provenance /
 ;; reachability (∨ = ∃, ∧ = ∧). Soundness still rests entirely on `cert/verified-rewrite?` (check-constant);
 ;; a bad registry row cannot pass the kernel gate.
-(def ^:private semiring-registry
-  {"Nat"  {:add "Nat.add" :mul "Nat.mul" :zero "Nat.zero"
-           :hAA "Nat.add_assoc" :hZA "Nat.zero_add" :hAZ "Nat.add_zero"
-           :hMA "Nat.mul_add" :hMZ "Nat.mul_zero" :hZM "Nat.zero_mul"}
-   "Bool" {:add "Bool.or" :mul "Bool.and" :zero "Bool.false"
-           :hAA "Bool.or_assoc" :hZA "Bool.false_or" :hAZ "Bool.or_false"
-           :hMA "Bool.and_or_distrib_left" :hMZ "Bool.and_false" :hZM "Bool.false_and"}
-   ;; ℕ∞ tropical (min,+) — shortest-path / Viterbi DP. Carrier + laws from wandler.laws.tropical/install!.
-   "ENat" {:add "ENat.min" :mul "ENat.plus" :zero "ENat.inf"
-           :hAA "ENat.min_assoc" :hZA "ENat.inf_min" :hAZ "ENat.min_inf"
-           :hMA "ENat.plus_min_distrib" :hMZ "ENat.plus_inf" :hZM "ENat.inf_plus"}})
-
-(defn- sr-entry
-  "The semiring entry for carrier type `S` (a const), or nil if S is not a registered carrier."
-  [S] (when (e/const? S) (semiring-registry (name/->string (e/const-name S)))))
-
-(defn- sr-c
-  "Build the const term for entry field `kw` (e.g. :add → Nat.add / Bool.or)."
-  [entry kw] (e/const' (name/from-string (get entry kw)) []))
+;; The semiring carrier registry lives in wandler.laws.semiring (each carrier registers its row next to
+;; where its kernel laws are admitted). `sr-entry`/`sr-c` here are thin aliases used by the recognizers/
+;; emitters below.
+(defn- sr-entry [S] (sreg/entry S))
+(defn- sr-c [entry kw] (sreg/const entry kw))
 
 (defn- separable-sum-g
   "Detect a SEPARABLE additive aggregate op: `λacc:S. λp:(X×Y). add acc (g (Prod.snd X Y p))` over any

@@ -16,7 +16,8 @@
             [ansatz.kernel.env :as kenv]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.expr :as e]
-            [ansatz.kernel.level :as lvl]))
+            [ansatz.kernel.level :as lvl]
+            [wandler.laws.semiring :as sreg]))
 
 (defn- nm [s] (name/from-string s))
 (def ^:private z lvl/zero)
@@ -133,6 +134,10 @@
     ;; 3. the six semiring laws
     (doseq [[lbl [g p]] (build-enat-lemmas)]
       (admit! lbl g p)))
+  ;; 4. register the ℕ∞ row so the optimizer's frame index instantiates the generic laws at (ENat,min,plus,∞)
+  (sreg/register! "ENat" {:add "ENat.min" :mul "ENat.plus" :zero "ENat.inf"
+                          :hAA "ENat.min_assoc" :hZA "ENat.inf_min" :hAZ "ENat.min_inf"
+                          :hMA "ENat.plus_min_distrib" :hMZ "ENat.plus_inf" :hZM "ENat.inf_plus"})
   (a/env))
 
 (defn carrier-installed? [] (has? "ENat.plus_min_distrib"))

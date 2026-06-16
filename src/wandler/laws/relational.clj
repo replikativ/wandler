@@ -16,7 +16,8 @@
             [ansatz.tactic.basic :as basic]
             [ansatz.tactic.simp :as simp]
             [ansatz.tactic.extract :as extract]
-            [wandler.laws.proofs :as rp]))   ; the perm/bucket/join_comm proof chain (clean src home)
+            [wandler.laws.proofs :as rp]    ; the perm/bucket/join_comm proof chain (clean src home)
+            [wandler.laws.semiring :as sreg]))   ; the carrier registry the optimizer's frame index reads
 
 (defn- nm [s] (name/from-string s))
 (def ^:private z lvl/zero)
@@ -810,4 +811,12 @@
       ;; kernel re-check catches any drift
       (doseq [ci @cache] (swap! a/ansatz-env kenv/check-constant ci))
       (build-all)))
+  ;; register the two Init carriers the frame index can certify (counting/SUM and boolean provenance) —
+  ;; idempotent; each row's named consts are admitted by build-all above (Nat) / Init (Bool).
+  (sreg/register! "Nat"  {:add "Nat.add" :mul "Nat.mul" :zero "Nat.zero"
+                          :hAA "Nat.add_assoc" :hZA "Nat.zero_add" :hAZ "Nat.add_zero"
+                          :hMA "Nat.mul_add" :hMZ "Nat.mul_zero" :hZM "Nat.zero_mul"})
+  (sreg/register! "Bool" {:add "Bool.or" :mul "Bool.and" :zero "Bool.false"
+                          :hAA "Bool.or_assoc" :hZA "Bool.false_or" :hAZ "Bool.or_false"
+                          :hMA "Bool.and_or_distrib_left" :hMZ "Bool.and_false" :hZM "Bool.false_and"})
   (a/env))
