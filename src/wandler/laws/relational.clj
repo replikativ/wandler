@@ -17,7 +17,8 @@
             [ansatz.tactic.simp :as simp]
             [ansatz.tactic.extract :as extract]
             [wandler.laws.proofs :as rp]    ; the perm/bucket/join_comm proof chain (clean src home)
-            [wandler.laws.semiring :as sreg]))   ; the carrier registry the optimizer's frame index reads
+            [wandler.laws.semiring :as sreg]    ; the carrier registry the optimizer's frame index reads
+            [wandler.laws.proofs.frame :as rpf]))   ; the FAQ frame-rule + semiring-generic proof family
 
 (defn- nm [s] (name/from-string s))
 (def ^:private z lvl/zero)
@@ -740,62 +741,62 @@
           (thm! "List.flatten_chunk_step" (rp/prove-flatten-chunk-step))
           (thm! "List.flatten_chunk"      (rp/prove-flatten-chunk))
           ;; pre-aggregated index (FAQ) foundation: init-extraction for additive folds (#77)
-          (thm! "List.foldl_add_init_generic" (rp/prove-foldl-add-init-generic))
-          (thm! "List.foldl_add_init"     (rp/prove-foldl-add-init))
+          (thm! "List.foldl_add_init_generic" (rpf/prove-foldl-add-init-generic))
+          (thm! "List.foldl_add_init"     (rpf/prove-foldl-add-init))
           ;; the crux: probing a key/value-mapped assoc list = mapping the value-fn over the probe.
-          (thm! "List.lookup_map_kv"      (rp/prove-lookup-map-kv))
+          (thm! "List.lookup_map_kv"      (rpf/prove-lookup-map-kv))
           ;; pointwise foldl congruence (lifts the per-bucket identity to the whole outer fold).
-          (thm! "List.foldl_congr"        (rp/prove-foldl-congr))
+          (thm! "List.foldl_congr"        (rpf/prove-foldl-congr))
           ;; THE pre-aggregated (FAQ) join index for separable SUM aggregates — O(distinct keys).
-          (thm! "Map.foldl_join_sum_factor_generic" (rp/prove-foldl-join-sum-factor-generic))
-          (thm! "Map.foldl_join_sum_factor" (rp/prove-foldl-join-sum-factor))
+          (thm! "Map.foldl_join_sum_factor_generic" (rpf/prove-foldl-join-sum-factor-generic))
+          (thm! "Map.foldl_join_sum_factor" (rpf/prove-foldl-join-sum-factor))
           ;; element-polymorphic foldl-form const-factor pull (the FAQ frame rule needs it: a bucket is
           ;; List Y with weight g:Y→Nat, where the Nat-only sum_map_const_mul does not apply).
           ;; SEMIRING-GENERIC version first: the product-pull holds for ANY (S,+,·,0) with left-distrib
           ;; + right-annihilator (passed as hypotheses) — no Nat. The Nat law is its instantiation.
-          (thm! "List.foldl_const_mul_pull_generic" (rp/prove-foldl-const-mul-pull-generic))
-          (thm! "List.foldl_const_mul_pull" (rp/prove-foldl-const-mul-pull))
+          (thm! "List.foldl_const_mul_pull_generic" (rpf/prove-foldl-const-mul-pull-generic))
+          (thm! "List.foldl_const_mul_pull" (rpf/prove-foldl-const-mul-pull))
           ;; THE FAQ FRAME RULE: separable two-sided weight f(x)·g(y) over a join factorizes through the
           ;; SAME pre-aggregated index — Σ_{x⋈y} f(x)·g(y) = Σ_x f(x)·(Σ bucket g). Generalizes
           ;; foldl_join_sum_factor (its f≡1 instance); the SPN/FAQ product node over Map.join.
-          (thm! "Map.foldl_join_frame_generic" (rp/prove-foldl-join-frame-generic))
-          (thm! "Map.foldl_join_frame"      (rp/prove-foldl-join-frame))
+          (thm! "Map.foldl_join_frame_generic" (rpf/prove-foldl-join-frame-generic))
+          (thm! "Map.foldl_join_frame"      (rpf/prove-foldl-join-frame))
           ;; CONDITIONAL SEPARATION (the dependent-types win): a separable conjunctive guard P(x)∧Q(y)
           ;; factors a weighted product — cond(a&&b)(u·v)0 = (cond a u 0)·(cond b v 0) — so once split
           ;; f'=[P]·f, g'=[Q]·g are closed and the frame rule fires.
-          (thm! "Nat.cond_and_mul_split_generic" (rp/prove-cond-and-mul-split-generic))
-          (thm! "Nat.cond_and_mul_split"    (rp/prove-cond-and-mul-split))
+          (thm! "Nat.cond_and_mul_split_generic" (rpf/prove-cond-and-mul-split-generic))
+          (thm! "Nat.cond_and_mul_split"    (rpf/prove-cond-and-mul-split))
           ;; FD SCOPE QUOTIENT foundation: on a group_by bucket (= the keyed filter), every element has
           ;; lf y = k, so substituting the join key k for (lf y) is sound. A key-dependent build-side
           ;; factor can therefore float to whichever side is cheaper (e.g. into the per-key index).
-          (thm! "Map.bucket_key_subst"      (rp/prove-bucket-key-subst))
+          (thm! "Map.bucket_key_subst"      (rpf/prove-bucket-key-subst))
           ;; FD factor-pull: a key-dependent build-side factor w(lf y) is constant on the bucket, so it
           ;; pulls OUT of the per-bucket sum (computed once per key). The certificate for floating a
           ;; key-factor into the per-key pre-aggregated index. Assembly: bucket_key_subst ∘ foldl_map ∘
           ;; foldl_const_mul_pull.
-          (thm! "Map.bucket_factor_pull_generic" (rp/prove-bucket-factor-pull-generic))
-          (thm! "Map.bucket_factor_pull"    (rp/prove-bucket-factor-pull))
+          (thm! "Map.bucket_factor_pull_generic" (rpf/prove-bucket-factor-pull-generic))
+          (thm! "Map.bucket_factor_pull"    (rpf/prove-bucket-factor-pull))
           ;; FD float-into-index: a key-factor w(kf x) multiplying a per-key index lookup can be BAKED
           ;; into the index (each entry reweighted by w of its key), since the lookup key is k so
           ;; w(fst entry)=w(k). Lets the optimizer float a key-factor off the per-row x-side into the
           ;; O(distinct-keys) index — the Phase-5 cost win when ndv ≪ |xs|.
-          (thm! "List.lookup_reweight_generic" (rp/prove-lookup-reweight-generic))
-          (thm! "List.lookup_reweight"      (rp/prove-lookup-reweight))
+          (thm! "List.lookup_reweight_generic" (rpf/prove-lookup-reweight-generic))
+          (thm! "List.lookup_reweight"      (rpf/prove-lookup-reweight))
           ;; the optimizer-facing float law: a key-factor w(kf x) over a per-key index lookup floats INTO
           ;; the index, over an ARBITRARY index — composes directly with the frame's output (idx := the
           ;; pre-aggregated index). foldl_congr ∘ lookup_reweight.
-          (thm! "Map.foldl_keyfactor_float_generic" (rp/prove-keyfactor-float-generic))
-          (thm! "Map.foldl_keyfactor_float" (rp/prove-keyfactor-float))
+          (thm! "Map.foldl_keyfactor_float_generic" (rpf/prove-keyfactor-float-generic))
+          (thm! "Map.foldl_keyfactor_float" (rpf/prove-keyfactor-float))
           ;; loop-invariant distributive law (1-variable elimination): a multiplicative x-free factor
           ;; distributes out of the sum — the certificate for hoisting an invariant fold out of a map.
-          (thm! "List.sum_map_mul_const"  (rp/prove-sum-map-mul-const))
+          (thm! "List.sum_map_mul_const"  (rpf/prove-sum-map-mul-const))
           ;; left-invariant mirror (c * f x): the optimizer matches both multiplication orders.
-          (thm! "List.sum_map_const_mul"  (rp/prove-sum-map-const-mul))
+          (thm! "List.sum_map_const_mul"  (rpf/prove-sum-map-const-mul))
           ;; sum-semiring LINEARITY: the additive structure for FAQ elimination (∑ distributes over +,
           ;; ∑ of zeros = 0, fold init extracts). The e-graph composes these for sum-product rewriting.
-          (thm! "List.sum_map_add_distrib" (rp/prove-sum-map-add-distrib))
-          (thm! "List.sum_map_zero"        (rp/prove-sum-map-zero))
-          (thm! "List.foldl_add_pull"      (rp/prove-foldl-add-pull))
+          (thm! "List.sum_map_add_distrib" (rpf/prove-sum-map-add-distrib))
+          (thm! "List.sum_map_zero"        (rpf/prove-sum-map-zero))
+          (thm! "List.foldl_add_pull"      (rpf/prove-foldl-add-pull))
           (reset! cache @acc)))))
 
 (defn install!

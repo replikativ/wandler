@@ -16,7 +16,7 @@
             [ansatz.core :as a]
             [wandler.kmap :as km]
             [wandler.laws.relational :as rl]
-            [wandler.laws.proofs :as rp]
+            [wandler.laws.proofs.frame :as rp]
             [wandler.test-env :as test-env]
             [ansatz.kernel.env :as kenv]
             [ansatz.kernel.tc :as tc]
