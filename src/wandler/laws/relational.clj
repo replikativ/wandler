@@ -748,6 +748,9 @@
           (thm! "Map.foldl_join_sum_factor" (rp/prove-foldl-join-sum-factor))
           ;; element-polymorphic foldl-form const-factor pull (the FAQ frame rule needs it: a bucket is
           ;; List Y with weight g:Y→Nat, where the Nat-only sum_map_const_mul does not apply).
+          ;; SEMIRING-GENERIC version first: the product-pull holds for ANY (S,+,·,0) with left-distrib
+          ;; + right-annihilator (passed as hypotheses) — no Nat. The Nat law is its instantiation.
+          (thm! "List.foldl_const_mul_pull_generic" (rp/prove-foldl-const-mul-pull-generic))
           (thm! "List.foldl_const_mul_pull" (rp/prove-foldl-const-mul-pull))
           ;; THE FAQ FRAME RULE: separable two-sided weight f(x)·g(y) over a join factorizes through the
           ;; SAME pre-aggregated index — Σ_{x⋈y} f(x)·g(y) = Σ_x f(x)·(Σ bucket g). Generalizes

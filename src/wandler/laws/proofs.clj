@@ -1551,22 +1551,58 @@
 ;;   G : ∀ a, foldl (λp y. p + c·g y) (c·a) l = c · foldl (λp y. p + g y) a l
 ;; cons closes by Nat.mul_add (left distributivity) + the ∀a IH; the a=0 instance + Nat.mul_zero
 ;; gives the headline. (No map round-trip — directly in foldl form.)
-(defn prove-foldl-const-mul-pull []
-  (let [alpha (e/fvar 1) c1 (e/fvar 2) g1 (e/fvar 3) l1 (e/fvar 4) a1 (e/fvar 5)
-        cstepf (fn [c g] (e/lam "a" (gh-natT)
-                           (e/lam "y" alpha (gh-addN (e/bvar 1) (smc-mul c (e/app g (e/bvar 0)))) :default) :default))
-        gstepf (fn [g] (gh-stepfn alpha g))
-        foldlA (fn [stp init l] (gh-foldlN alpha stp init l))   ; List.foldl [Nat, alpha]
-        conclG (smc-eqN (foldlA (cstepf c1 g1) (smc-mul c1 a1) l1)
-                        (smc-mul c1 (foldlA (gstepf g1) a1 l1)))
+;; ── List.foldl_const_mul_pull_generic (SEMIRING-GENERIC product-pull) ─────────────
+;; ∀ (S:Type)(add mul:S→S→S)(zero:S)
+;;   (hMA:∀a b c, mul a (add b c) = add (mul a b) (mul a c))   -- LEFT distributivity
+;;   (hMZ:∀a, mul a zero = zero)                               -- right annihilator
+;;   (α:Type)(c:S)(g:α→S)(l:List α),
+;;   foldl (λa y. add a (mul c (g y))) zero l = mul c (foldl (λa y. add a (g y)) zero l).
+;; This lemma carries ALL of the value-algebra of the FAQ frame rule's product-pull step — and it needs
+;; ONLY a `·` that left-distributes over `+` and annihilates the additive zero, i.e. ANY semiring (no
+;; commutativity, no associativity, no multiplicative identity). The Nat law below is its instantiation
+;; at (Nat,+,·,0,Nat.mul_add,Nat.mul_zero); the SAME proof term certifies Bool, tropical, Float-trusted,
+;; … semirings. The induction/rewrite skeleton is type-generic (only List.foldl_cons/nil + the two
+;; hypotheses fire) — see the PoC note in [[faq-variable-elimination]]. Returns the FULLY-quantified
+;; (sem-params included) [goal proof]; the Nat law instantiates the proof term directly.
+(defn prove-foldl-const-mul-pull-generic []
+  (let [S (e/fvar 10) addF (e/fvar 11) mulF (e/fvar 12) zeroF (e/fvar 13) hMA (e/fvar 14) hMZ (e/fvar 15)
+        addG (fn [x y] (e/app* addF x y)) mulG (fn [x y] (e/app* mulF x y))
+        eqS (fn [x y] (e/app* (e/const' (nm "Eq") [L1]) S x y))
+        foldlS (fn [stp init l alpha] (e/app* (e/const' (nm "List.foldl") [z z]) S alpha stp init l))
+        cstepf (fn [c g alpha] (e/lam "a" S (e/lam "y" alpha (addG (e/bvar 1) (mulG c (e/app g (e/bvar 0)))) :default) :default))
+        gstepf (fn [g alpha] (e/lam "a" S (e/lam "y" alpha (addG (e/bvar 1) (e/app g (e/bvar 0))) :default) :default))
+        ;; the semiring-parameter telescope (S add mul zero hMA hMZ), S outermost — shared by goal & proof
+        hMZ-ty (e/forall' "a" S (eqS (mulG (e/bvar 0) zeroF) zeroF) :default)
+        hMA-ty (e/forall' "a" S (e/forall' "b" S (e/forall' "c" S
+                  (eqS (mulG (e/bvar 2) (addG (e/bvar 1) (e/bvar 0)))
+                       (addG (mulG (e/bvar 2) (e/bvar 1)) (mulG (e/bvar 2) (e/bvar 0)))) :default) :default) :default)
+        sem-pi (fn [t] (-> t
+                  (#(e/forall' "hMZ" hMZ-ty (e/abstract1 % 15) :default))
+                  (#(e/forall' "hMA" hMA-ty (e/abstract1 % 14) :default))
+                  (#(e/forall' "zero" S (e/abstract1 % 13) :default))
+                  (#(e/forall' "mul" (sf-arrow S (sf-arrow S S)) (e/abstract1 % 12) :default))
+                  (#(e/forall' "add" (sf-arrow S (sf-arrow S S)) (e/abstract1 % 11) :default))
+                  (#(e/forall' "S" type0 (e/abstract1 % 10) :default))))
+        sem-lam (fn [t] (-> t
+                  (#(e/lam "hMZ" hMZ-ty (e/abstract1 % 15) :default))
+                  (#(e/lam "hMA" hMA-ty (e/abstract1 % 14) :default))
+                  (#(e/lam "zero" S (e/abstract1 % 13) :default))
+                  (#(e/lam "mul" (sf-arrow S (sf-arrow S S)) (e/abstract1 % 12) :default))
+                  (#(e/lam "add" (sf-arrow S (sf-arrow S S)) (e/abstract1 % 11) :default))
+                  (#(e/lam "S" type0 (e/abstract1 % 10) :default))))
+        ;; ---- G (accumulator-generalized), proved by induction on l ----
+        alpha (e/fvar 1) c1 (e/fvar 2) g1 (e/fvar 3) l1 (e/fvar 4) a1 (e/fvar 5)
+        conclG (eqS (foldlS (cstepf c1 g1 alpha) (mulG c1 a1) l1 alpha)
+                    (mulG c1 (foldlS (gstepf g1 alpha) a1 l1 alpha)))
         goalG (-> conclG
-                  (#(e/forall' "a"  (gh-natT) (e/abstract1 % 5) :default))
+                  (#(e/forall' "a"  S (e/abstract1 % 5) :default))
                   (#(e/forall' "l"  (listOf alpha) (e/abstract1 % 4) :default))
-                  (#(e/forall' "g"  (sf-arrow alpha (gh-natT)) (e/abstract1 % 3) :default))
-                  (#(e/forall' "c"  (gh-natT) (e/abstract1 % 2) :default))
-                  (#(e/forall' "α"  type0 (e/abstract1 % 1) :default)))
+                  (#(e/forall' "g"  (sf-arrow alpha S) (e/abstract1 % 3) :default))
+                  (#(e/forall' "c"  S (e/abstract1 % 2) :default))
+                  (#(e/forall' "α"  type0 (e/abstract1 % 1) :default))
+                  sem-pi)
         [ps _] (proof/start-proof (a/env) goalG)
-        ps (basic/intros ps ["α" "c" "g" "l"])
+        ps (basic/intros ps ["S" "add" "mul" "zero" "hMA" "hMZ" "α" "c" "g" "l"])
         ps (basic/induction ps (fvid ps "l"))
         ps (reduce
             (fn [ps gid]
@@ -1574,22 +1610,59 @@
                     cons? (some (fn [[_ d]] (= "tail" (:name d))) (:lctx (proof/current-goal psg)))
                     psg (basic/intros psg ["a"])]
                 (if cons?
-                  (let [a (gf psg "a") c (gf psg "c") g (gf psg "g") head (gf psg "head")
+                  (let [Sp (gf psg "S") a (gf psg "a") c (gf psg "c") g (gf psg "g") head (gf psg "head")
+                        addp (gf psg "add") mulp (gf psg "mul") hma (gf psg "hMA")
+                        ad (fn [x y] (e/app* addp x y)) mu (fn [x y] (e/app* mulp x y))
                         psg (simp/simp psg ['List.foldl_cons])
                         gh (e/app g head)
                         ;; c·(a+gh) = c·a + c·gh ; rewrite the accumulator c·a + c·gh ← c·(a+gh)
-                        muladd (e/app* (e/const' (nm "Nat.mul_add") []) c a gh)
-                        sym (e/app* (e/const' (nm "Eq.symm") [L1]) (gh-natT)
-                                    (smc-mul c (smc-add a gh))
-                                    (smc-add (smc-mul c a) (smc-mul c gh)) muladd)
+                        muladd (e/app* hma c a gh)
+                        sym (e/app* (e/const' (nm "Eq.symm") [L1]) Sp
+                                    (mu c (ad a gh)) (ad (mu c a) (mu c gh)) muladd)
                         psg (basic/rewrite psg sym)
                         ih (e/fvar (or (smc-fvidH psg "ih_tail'") (smc-fvidH psg "ih_tail") (smc-fvidH psg "ih")))]
-                    (basic/exact psg (e/app ih (smc-add a gh))))
+                    (basic/exact psg (e/app ih (ad a gh))))
                   (simp/simp psg ['List.foldl_nil]))))
             ps (vec (:goals ps)))
         pfG (when (proof/solved? ps) (extract/extract ps))
-        ;; headline at a := 0
+        ;; ---- headline at a := zero (generic) ----
+        alpha (e/fvar 1) c (e/fvar 2) g (e/fvar 3) l (e/fvar 4)
+        cstep (cstepf c g alpha) gstep (gstepf g alpha)
+        lhs0 (foldlS cstep zeroF l alpha)
+        rhs0 (mulG c (foldlS gstep zeroF l alpha))
+        goal0 (-> (eqS lhs0 rhs0)
+                  (#(e/forall' "l" (listOf alpha) (e/abstract1 % 4) :default))
+                  (#(e/forall' "g" (sf-arrow alpha S) (e/abstract1 % 3) :default))
+                  (#(e/forall' "c" S (e/abstract1 % 2) :default))
+                  (#(e/forall' "α" type0 (e/abstract1 % 1) :default))
+                  sem-pi)
+        pf0 (when pfG
+              (let [ginst (e/app* pfG S addF mulF zeroF hMA hMZ alpha c g l zeroF) ; foldl cstep (c·0) l = c·foldl gstep 0 l
+                    mz (e/app* hMZ c)                                              ; c·0 = 0
+                    mzsym (e/app* (e/const' (nm "Eq.symm") [L1]) S (mulG c zeroF) zeroF mz)  ; 0 = c·0
+                    motive (e/lam "i" S (foldlS cstep (e/bvar 0) l alpha) :default)
+                    coer (e/app* (e/const' (nm "congrArg") [L1 L1]) S S
+                                 zeroF (mulG c zeroF) motive mzsym)                ; foldl cstep 0 l = foldl cstep (c·0) l
+                    body (e/app* (e/const' (nm "Eq.trans") [L1]) S
+                                 lhs0 (foldlS cstep (mulG c zeroF) l alpha) rhs0 coer ginst)]
+                (-> body
+                    (#(e/lam "l" (listOf alpha) (e/abstract1 % 4) :default))
+                    (#(e/lam "g" (sf-arrow alpha S) (e/abstract1 % 3) :default))
+                    (#(e/lam "c" S (e/abstract1 % 2) :default))
+                    (#(e/lam "α" type0 (e/abstract1 % 1) :default))
+                    sem-lam)))]
+    [goal0 pf0]))
+
+;; The Nat law (registered as List.foldl_const_mul_pull, consumed by the frame proof) is now a thin
+;; INSTANTIATION of the semiring-generic lemma at (Nat,+,·,0,Nat.mul_add,Nat.mul_zero). The goal is
+;; byte-identical to the previous Nat-specific construction; only the proof term changed (it is the
+;; generic proof applied to the Nat semiring witnesses), so all downstream consumers are unaffected.
+(defn prove-foldl-const-mul-pull []
+  (let [[_ pGen] (prove-foldl-const-mul-pull-generic)
         alpha (e/fvar 1) c (e/fvar 2) g (e/fvar 3) l (e/fvar 4) zeroN (gh-zeroN)
+        cstepf (fn [c g] (e/lam "a" (gh-natT)
+                           (e/lam "y" alpha (gh-addN (e/bvar 1) (smc-mul c (e/app g (e/bvar 0)))) :default) :default))
+        gstepf (fn [g] (gh-stepfn alpha g))
         cstep (cstepf c g) gstep (gstepf g)
         lhs0 (gh-foldlN alpha cstep zeroN l)
         rhs0 (smc-mul c (gh-foldlN alpha gstep zeroN l))
@@ -1598,20 +1671,9 @@
                   (#(e/forall' "g" (sf-arrow alpha (gh-natT)) (e/abstract1 % 3) :default))
                   (#(e/forall' "c" (gh-natT) (e/abstract1 % 2) :default))
                   (#(e/forall' "α" type0 (e/abstract1 % 1) :default)))
-        pf0 (when pfG
-              (let [ginst (e/app* pfG alpha c g l zeroN)               ; foldl cstep (c·0) l = c·foldl gstep 0 l
-                    mz (e/app* (e/const' (nm "Nat.mul_zero") []) c)     ; c·0 = 0
-                    mzsym (e/app* (e/const' (nm "Eq.symm") [L1]) (gh-natT) (smc-mul c zeroN) zeroN mz)  ; 0 = c·0
-                    motive (e/lam "i" (gh-natT) (gh-foldlN alpha cstep (e/bvar 0) l) :default)
-                    coer (e/app* (e/const' (nm "congrArg") [(lvl/succ z) (lvl/succ z)]) (gh-natT) (gh-natT)
-                                 zeroN (smc-mul c zeroN) motive mzsym)  ; foldl cstep 0 l = foldl cstep (c·0) l
-                    body (e/app* (e/const' (nm "Eq.trans") [L1]) (gh-natT)
-                                 lhs0 (gh-foldlN alpha cstep (smc-mul c zeroN) l) rhs0 coer ginst)]
-                (-> body
-                    (#(e/lam "l" (listOf alpha) (e/abstract1 % 4) :default))
-                    (#(e/lam "g" (sf-arrow alpha (gh-natT)) (e/abstract1 % 3) :default))
-                    (#(e/lam "c" (gh-natT) (e/abstract1 % 2) :default))
-                    (#(e/lam "α" type0 (e/abstract1 % 1) :default)))))]
+        pf0 (when pGen
+              (e/app* pGen (gh-natT) (e/const' (nm "Nat.add") []) (e/const' (nm "Nat.mul") []) (gh-zeroN)
+                      (e/const' (nm "Nat.mul_add") []) (e/const' (nm "Nat.mul_zero") [])))]
     [goal0 pf0]))
 
 ;; ── Map.foldl_join_frame (the FAQ FRAME RULE — two-sided separable weight) ────────

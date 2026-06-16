@@ -19,6 +19,7 @@
             [wandler.laws.proofs :as rp]
             [wandler.test-env :as test-env]
             [ansatz.kernel.env :as kenv]
+            [ansatz.kernel.tc :as tc]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.expr :as e]))
 
@@ -35,6 +36,30 @@
       (let [[g p] (rp/prove-foldl-const-mul-pull)]
         (is (some? p) "proof extracted")
         (is (true? (kenv/verifies? (a/env) g p)) "passes check-constant")))))
+
+(deftest foldl-const-mul-pull-is-semiring-generic
+  (when (ready?)
+    (testing "the product-pull step is NOT Nat-specific: it holds over any (S,+,·,0) with left
+             distributivity + a right annihilator, supplied as hypotheses (no built-in algebra)."
+      (let [[g p] (rp/prove-foldl-const-mul-pull-generic)]
+        (is (some? p) "generic proof extracted")
+        (is (true? (kenv/verifies? (a/env) g p))
+            "the semiring-generic product-pull passes check-constant on its own"))
+      (testing "Nat is just one instantiation — and so is the Boolean semiring (∨,∧,⊥)"
+        (let [k (fn [s] (e/const' (nm s) []))
+              ;; instantiate the generic at (Bool, or, and, false) with Init's Bool distributivity
+              ;; (a ∧ (b ∨ c) = (a∧b) ∨ (a∧c)) and right annihilator (a ∧ false = false).
+              bool-pull (e/app* (k "List.foldl_const_mul_pull_generic")
+                                (k "Bool") (k "Bool.or") (k "Bool.and") (k "Bool.false")
+                                (k "Bool.and_or_distrib_left") (k "Bool.and_false"))
+              st (tc/mk-tc-state (a/env))
+              t (tc/infer-type st bool-pull)
+              s (e/->string t)]
+          (is (some? t) "Bool product-pull is a well-typed instance of the generic lemma")
+          ;; the instantiated conclusion is the SAME law with ∨ for +, ∧ for ·, ⊥ for 0
+          (is (re-find #"Bool\.or" s) "additive op is Bool.or in the Bool instance")
+          (is (re-find #"Bool\.and" s) "product op is Bool.and in the Bool instance")
+          (is (re-find #"Bool\.false" s) "additive zero is Bool.false in the Bool instance"))))))
 
 (deftest foldl-join-frame-verifies
   (when (ready?)
