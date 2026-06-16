@@ -2405,10 +2405,93 @@
 (def ^:private lrw-LEM
   ['List.lookup_nil 'List.lookup_cons 'List.lookup_cons_self 'List.map_nil 'List.map_cons
    'Option.getD 'cond 'cond_true 'cond_false 'Nat.mul_zero])
+;; SEMIRING-GENERIC reweight: the only value-algebra is the absent-key (nil) case `mul (w k) 0 = 0`
+;; (every cons branch closes structurally + beq_iff_eq + IH), so the generic carries just (S,mul,zero) +
+;; a right-annihilator hMZ. The structural simp set drops Nat.mul_zero; the nil goal is closed via hMZ.
+(defn prove-lookup-reweight-generic []
+  (let [S (e/fvar 10) mulF (e/fvar 12) zeroF (e/fvar 13) hMZ (e/fvar 15)
+        mulG (fn [a b] (e/app* mulF a b))
+        arrow (fn [a b] (e/forall' "_" a b :default))
+        eqAt (fn [ty x y] (e/app* (e/const' (nm "Eq") [L1]) ty x y))
+        hMZ-ty (e/forall' "a" S (eqAt S (mulG (e/bvar 0) zeroF) zeroF) :default)
+        sem-pi (fn [t] (-> t
+                  (#(e/forall' "hMZ" hMZ-ty (e/abstract1 % 15) :default))
+                  (#(e/forall' "zero" S (e/abstract1 % 13) :default))
+                  (#(e/forall' "mul" (arrow S (arrow S S)) (e/abstract1 % 12) :default))
+                  (#(e/forall' "S" type0 (e/abstract1 % 10) :default))))
+        lrw-struct (vec (remove #(= 'Nat.mul_zero %) lrw-LEM))
+        K (e/fvar 1) dec (e/fvar 2) w (e/fvar 3) k (e/fvar 4) idx (e/fvar 5)
+        KN (prodT K S)
+        instB (fn [kk dd] (e/app* (e/const' (nm "instBEqOfDecidableEq") [z]) kk dd))
+        lookupN (fn [kk dd key l] (e/app* (e/const' (nm "List.lookup") [z z]) kk S (instB kk dd) key l))
+        getD (fn [o] (e/app* (e/const' (nm "Option.getD") [z]) S o zeroF))
+        rwf (fn [ww KK] (e/lam "p" (prodT KK S)
+                          (mkP KK S (fstOf KK S (e/bvar 0)) (mulG (e/app ww (fstOf KK S (e/bvar 0))) (sndOf KK S (e/bvar 0)))) :default))
+        mapped (fn [ww KK dd l] (e/app* (e/const' (nm "List.map") [z z]) (prodT KK S) (prodT KK S) (rwf ww KK) l))
+        lhs (mulG (e/app w k) (getD (lookupN K dec k idx)))
+        rhs (getD (lookupN K dec k (mapped w K dec idx)))
+        goal (-> (eqAt S lhs rhs)
+                 (#(e/forall' "idx" (listOf KN) (e/abstract1 % 5) :default))
+                 (#(e/forall' "k" K (e/abstract1 % 4) :default))
+                 (#(e/forall' "w" (arrow K S) (e/abstract1 % 3) :default))
+                 (#(e/forall' "dec" (e/app (e/const' (nm "DecidableEq") [L1]) K) (e/abstract1 % 2) :default))
+                 (#(e/forall' "K" type0 (e/abstract1 % 1) :default))
+                 sem-pi)
+        [ps _] (proof/start-proof (a/env) goal)
+        ps (basic/intros ps ["S" "mul" "zero" "hMZ" "K" "dec" "w" "k" "idx"])
+        ps (basic/induction ps (fvid ps "idx"))
+        ps (reduce
+            (fn [ps gid]
+              (let [psg (focus ps gid)
+                    cons? (some (fn [[_ d]] (= "head" (:name d))) (:lctx (proof/current-goal psg)))]
+                (if cons?
+                  (let [Sp (gf psg "S") hd (gf psg "head") Kp (gf psg "K") dp (gf psg "dec") wp (gf psg "w") kp (gf psg "k")
+                        etaSymm (e/app* (e/const' (nm "Eq.symm") [L1]) (prodT Kp Sp)
+                                        (mkP Kp Sp (fstOf Kp Sp hd) (sndOf Kp Sp hd)) hd
+                                        (e/app* (e/const' (nm "Prod.eta") [z z]) Kp Sp hd))
+                        psg (basic/rewrite psg etaSymm)
+                        ihid (or (fvid psg "ih_tail'") (fvid psg "ih_tail") (fvid psg "ih"))
+                        ih (e/fvar ihid)
+                        beqhd (e/app* (e/const' (nm "BEq.beq") [z]) Kp (instB Kp dp) kp (fstOf Kp Sp hd))
+                        br (basic/by-cases psg beqhd)
+                        bids (new-goals (:goals psg) (:goals br))]
+                    (reduce (fn [qq bid]
+                              (let [qb (focus qq bid)
+                                    hc (fvid qb "hc")
+                                    hctype (:type (some (fn [[_ d]] (when (= "hc" (:name d)) d)) (:lctx (proof/current-goal qb))))
+                                    pos? (= "Bool.true" (name/->string (e/const-name (nth (second (e/get-app-fn-args hctype)) 2))))
+                                    r (try (simp/simp-all qb lrw-struct) (catch Throwable _ qb))
+                                    r (try (basic/rewrite r (e/fvar hc)) (catch Throwable _ r))
+                                    r (try (simp/simp-all r lrw-struct) (catch Throwable _ r))
+                                    r (if pos?
+                                        (let [Sp (gf r "S") Kp (gf r "K") dp (gf r "dec") wp (gf r "w") kp (gf r "k")
+                                              lawful (e/app* (e/const' (nm "instLawfulBEqOfDecidableEq") []) Kp dp)
+                                              biff (e/app* (e/const' (nm "beq_iff_eq") [z]) Kp (instB Kp dp) lawful kp (fstOf Kp Sp hd))
+                                              hfeq (e/app* (e/const' (nm "Iff.mp") [])
+                                                           (e/app* (e/const' (nm "Eq") [L1]) (e/const' (nm "Bool") [])
+                                                                   (e/app* (e/const' (nm "BEq.beq") [z]) Kp (instB Kp dp) kp (fstOf Kp Sp hd))
+                                                                   (e/const' (nm "Bool.true") []))
+                                                           (e/app* (e/const' (nm "Eq") [L1]) Kp kp (fstOf Kp Sp hd)) biff (e/fvar hc))
+                                              wkeq (e/app* (e/const' (nm "congrArg") [L1 L1]) Kp Sp kp (fstOf Kp Sp hd) wp hfeq)
+                                              r2 (try (basic/rewrite r wkeq) (catch Throwable _ r))]
+                                          (try (simp/simp-all r2 lrw-struct) (catch Throwable _ r2)))
+                                        (let [r2 (try (basic/rewrite r ih) (catch Throwable _ r))]
+                                          (try (simp/simp-all r2 lrw-struct) (catch Throwable _ r2))))]
+                                (if (proof/solved? r) r (try (basic/rfl r) (catch Throwable _ r)))))
+                            br bids))
+                  ;; NIL: structural simp reduces to `mul (w k) zero = zero`; close via hMZ (w k).
+                  (let [q (try (simp/simp-all psg lrw-struct) (catch Throwable _ psg))]
+                    (if (proof/solved? q) q
+                        (let [wp (gf q "w") kp (gf q "k") hmz (gf q "hMZ")]
+                          (or (try (basic/exact q (e/app* hmz (e/app wp kp))) (catch Throwable _ nil))
+                              (try (basic/rfl q) (catch Throwable _ q)))))))))
+            ps (vec (:goals ps)))]
+    [goal (when (proof/solved? ps) (extract/extract ps))]))
+
 (defn prove-lookup-reweight []
-  (let [K (e/fvar 1) dec (e/fvar 2) w (e/fvar 3) k (e/fvar 4) idx (e/fvar 5)
-        natT (gh-natT) zeroN (gh-zeroN)
-        KN (prodT K natT)
+  (let [[_ pGen] (prove-lookup-reweight-generic)
+        K (e/fvar 1) dec (e/fvar 2) w (e/fvar 3) k (e/fvar 4) idx (e/fvar 5)
+        natT (gh-natT) zeroN (gh-zeroN) KN (prodT K natT)
         instB (fn [kk dd] (e/app* (e/const' (nm "instBEqOfDecidableEq") [z]) kk dd))
         lookupN (fn [kk dd key l] (e/app* (e/const' (nm "List.lookup") [z z]) kk natT (instB kk dd) key l))
         getD (fn [o] (e/app* (e/const' (nm "Option.getD") [z]) natT o zeroN))
@@ -2424,52 +2507,10 @@
                  (#(e/forall' "w" (e/forall' "_" K natT :default) (e/abstract1 % 3) :default))
                  (#(e/forall' "dec" (e/app (e/const' (nm "DecidableEq") [L1]) K) (e/abstract1 % 2) :default))
                  (#(e/forall' "K" type0 (e/abstract1 % 1) :default)))
-        [ps _] (proof/start-proof (a/env) goal)
-        ps (basic/intros ps ["K" "dec" "w" "k" "idx"])
-        ps (basic/induction ps (fvid ps "idx"))
-        ps (reduce
-            (fn [ps gid]
-              (let [psg (focus ps gid)
-                    cons? (some (fn [[_ d]] (= "head" (:name d))) (:lctx (proof/current-goal psg)))]
-                (if cons?
-                  (let [hd (gf psg "head") Kp (gf psg "K") dp (gf psg "dec") wp (gf psg "w") kp (gf psg "k")
-                        etaSymm (e/app* (e/const' (nm "Eq.symm") [L1]) (prodT Kp natT)
-                                        (mkP Kp natT (fstOf Kp natT hd) (sndOf Kp natT hd)) hd
-                                        (e/app* (e/const' (nm "Prod.eta") [z z]) Kp natT hd))
-                        psg (basic/rewrite psg etaSymm)
-                        ihid (or (fvid psg "ih_tail'") (fvid psg "ih_tail") (fvid psg "ih"))
-                        ih (e/fvar ihid)
-                        beqhd (e/app* (e/const' (nm "BEq.beq") [z]) Kp (instB Kp dp) kp (fstOf Kp natT hd))
-                        br (basic/by-cases psg beqhd)
-                        bids (new-goals (:goals psg) (:goals br))]
-                    (reduce (fn [qq bid]
-                              (let [qb (focus qq bid)
-                                    hc (fvid qb "hc")
-                                    hctype (:type (some (fn [[_ d]] (when (= "hc" (:name d)) d)) (:lctx (proof/current-goal qb))))
-                                    pos? (= "Bool.true" (name/->string (e/const-name (nth (second (e/get-app-fn-args hctype)) 2))))
-                                    r (try (simp/simp-all qb lrw-LEM) (catch Throwable _ qb))      ; expose the matcher
-                                    r (try (basic/rewrite r (e/fvar hc)) (catch Throwable _ r))     ; discriminant → true/false
-                                    r (try (simp/simp-all r lrw-LEM) (catch Throwable _ r))        ; iota-reduce
-                                    r (if pos?
-                                        (let [Kp (gf r "K") dp (gf r "dec") wp (gf r "w") kp (gf r "k")
-                                              lawful (e/app* (e/const' (nm "instLawfulBEqOfDecidableEq") []) Kp dp)
-                                              biff (e/app* (e/const' (nm "beq_iff_eq") [z]) Kp (instB Kp dp) lawful kp (fstOf Kp natT hd))
-                                              hfeq (e/app* (e/const' (nm "Iff.mp") [])
-                                                           (e/app* (e/const' (nm "Eq") [L1]) (e/const' (nm "Bool") [])
-                                                                   (e/app* (e/const' (nm "BEq.beq") [z]) Kp (instB Kp dp) kp (fstOf Kp natT hd))
-                                                                   (e/const' (nm "Bool.true") []))
-                                                           (e/app* (e/const' (nm "Eq") [L1]) Kp kp (fstOf Kp natT hd)) biff (e/fvar hc))
-                                              wkeq (e/app* (e/const' (nm "congrArg") [L1 L1]) Kp natT kp (fstOf Kp natT hd) wp hfeq) ; w k = w (fst head)
-                                              r2 (try (basic/rewrite r wkeq) (catch Throwable _ r))]
-                                          (try (simp/simp-all r2 lrw-LEM) (catch Throwable _ r2)))
-                                        (let [r2 (try (basic/rewrite r ih) (catch Throwable _ r))]
-                                          (try (simp/simp-all r2 lrw-LEM) (catch Throwable _ r2))))]
-                                (if (proof/solved? r) r (try (basic/rfl r) (catch Throwable _ r)))))
-                            br bids))
-                  (let [q (try (simp/simp-all psg lrw-LEM) (catch Throwable _ psg))]
-                    (if (proof/solved? q) q (try (basic/rfl q) (catch Throwable _ q)))))))
-            ps (vec (:goals ps)))]
-    [goal (when (proof/solved? ps) (extract/extract ps))]))
+        ;; thin instantiation of the generic at (Nat,·,0,Nat.mul_zero). Goal byte-identical.
+        proof (when pGen
+                (e/app* pGen natT (e/const' (nm "Nat.mul") []) zeroN (e/const' (nm "Nat.mul_zero") [])))]
+    [goal proof]))
 
 ;; ── Map.foldl_keyfactor_float (FD scope quotient — the optimizer float law, Phase 5 layer 3) ─
 ;; foldl (λacc x. acc + (w (kf x)) · getD (lookup (kf x) idx) 0) e xs
@@ -2478,8 +2519,70 @@
 ;; entry by w of its key) — over an ARBITRARY index, so it composes directly with the frame's output
 ;; (idx := the frame's pre-aggregated index). Moves w from per-row (|xs|) to per-key (|distinct-keys|).
 ;; Pure assembly: List.foldl_congr lifts the per-x List.lookup_reweight identity (congrArg under acc+·).
+;; SEMIRING-GENERIC: pure assembly (foldl_congr lifting the per-x lookup_reweight_generic identity).
+;; No add/mul LAWS used here beyond what lookup_reweight needs (hMZ); add/mul/zero are just ops.
+(defn prove-keyfactor-float-generic []
+  (let [S (e/fvar 10) addF (e/fvar 11) mulF (e/fvar 12) zeroF (e/fvar 13) hMZ (e/fvar 15)
+        addG (fn [a b] (e/app* addF a b)) mulG (fn [a b] (e/app* mulF a b))
+        arrow (fn [a b] (e/forall' "_" a b :default))
+        eqAt (fn [ty x y] (e/app* (e/const' (nm "Eq") [L1]) ty x y))
+        hMZ-ty (e/forall' "a" S (eqAt S (mulG (e/bvar 0) zeroF) zeroF) :default)
+        sem-pi (fn [t] (-> t
+                  (#(e/forall' "hMZ" hMZ-ty (e/abstract1 % 15) :default))
+                  (#(e/forall' "zero" S (e/abstract1 % 13) :default))
+                  (#(e/forall' "mul" (arrow S (arrow S S)) (e/abstract1 % 12) :default))
+                  (#(e/forall' "add" (arrow S (arrow S S)) (e/abstract1 % 11) :default))
+                  (#(e/forall' "S" type0 (e/abstract1 % 10) :default))))
+        sem-lam (fn [t] (-> t
+                  (#(e/lam "hMZ" hMZ-ty (e/abstract1 % 15) :default))
+                  (#(e/lam "zero" S (e/abstract1 % 13) :default))
+                  (#(e/lam "mul" (arrow S (arrow S S)) (e/abstract1 % 12) :default))
+                  (#(e/lam "add" (arrow S (arrow S S)) (e/abstract1 % 11) :default))
+                  (#(e/lam "S" type0 (e/abstract1 % 10) :default))))
+        K (e/fvar 1) X (e/fvar 2) dec (e/fvar 3) w (e/fvar 4) kf (e/fvar 5) e (e/fvar 6) xs (e/fvar 7) idx (e/fvar 8)
+        KN (prodT K S)
+        instB (e/app* (e/const' (nm "instBEqOfDecidableEq") [z]) K dec)
+        lookupN (fn [key l] (e/app* (e/const' (nm "List.lookup") [z z]) K S instB key l))
+        getD (fn [o] (e/app* (e/const' (nm "Option.getD") [z]) S o zeroF))
+        reweight (e/lam "p" KN (mkP K S (fstOf K S (e/bvar 0)) (mulG (e/app w (fstOf K S (e/bvar 0))) (sndOf K S (e/bvar 0)))) :default)
+        mappedIdx (e/app* (e/const' (nm "List.map") [z z]) KN KN reweight idx)
+        R1step (e/lam "acc" S (e/lam "x" X (addG (e/bvar 1) (mulG (e/app w (e/app kf (e/bvar 0))) (getD (lookupN (e/app kf (e/bvar 0)) idx)))) :default) :default)
+        R2step (e/lam "acc" S (e/lam "x" X (addG (e/bvar 1) (getD (lookupN (e/app kf (e/bvar 0)) mappedIdx))) :default) :default)
+        foldlX (fn [step] (e/app* (e/const' (nm "List.foldl") [z z]) S X step e xs))
+        af 201 xf 202 acc (e/fvar af) x (e/fvar xf)
+        lrw (e/app* (e/const' (nm "List.lookup_reweight_generic") []) S mulF zeroF hMZ K dec w (e/app kf x) idx)
+        accPlus (e/lam "v" S (addG acc (e/bvar 0)) :default)
+        hbody (e/app* (e/const' (nm "congrArg") [L1 L1]) S S
+                      (mulG (e/app w (e/app kf x)) (getD (lookupN (e/app kf x) idx)))
+                      (getD (lookupN (e/app kf x) mappedIdx))
+                      accPlus lrw)
+        hyp (e/lam "acc" S (e/abstract1 (e/lam "x" X (e/abstract1 hbody xf) :default) af) :default)
+        proof (e/app* (e/const' (nm "List.foldl_congr") []) S X R1step R2step xs e hyp)
+        goal (-> (eqAt S (foldlX R1step) (foldlX R2step))
+                 (#(e/forall' "idx" (listOf KN) (e/abstract1 % 8) :default))
+                 (#(e/forall' "xs" (listOf X) (e/abstract1 % 7) :default))
+                 (#(e/forall' "e" S (e/abstract1 % 6) :default))
+                 (#(e/forall' "kf" (arrow X K) (e/abstract1 % 5) :default))
+                 (#(e/forall' "w" (arrow K S) (e/abstract1 % 4) :default))
+                 (#(e/forall' "dec" (e/app (e/const' (nm "DecidableEq") [L1]) K) (e/abstract1 % 3) :default))
+                 (#(e/forall' "X" type0 (e/abstract1 % 2) :default))
+                 (#(e/forall' "K" type0 (e/abstract1 % 1) :default))
+                 sem-pi)
+        fproof (-> proof
+                   (#(e/lam "idx" (listOf KN) (e/abstract1 % 8) :default))
+                   (#(e/lam "xs" (listOf X) (e/abstract1 % 7) :default))
+                   (#(e/lam "e" S (e/abstract1 % 6) :default))
+                   (#(e/lam "kf" (arrow X K) (e/abstract1 % 5) :default))
+                   (#(e/lam "w" (arrow K S) (e/abstract1 % 4) :default))
+                   (#(e/lam "dec" (e/app (e/const' (nm "DecidableEq") [L1]) K) (e/abstract1 % 3) :default))
+                   (#(e/lam "X" type0 (e/abstract1 % 2) :default))
+                   (#(e/lam "K" type0 (e/abstract1 % 1) :default))
+                   sem-lam)]
+    [goal fproof]))
+
 (defn prove-keyfactor-float []
-  (let [K (e/fvar 1) X (e/fvar 2) dec (e/fvar 3) w (e/fvar 4) kf (e/fvar 5) e (e/fvar 6) xs (e/fvar 7) idx (e/fvar 8)
+  (let [[_ pGen] (prove-keyfactor-float-generic)
+        K (e/fvar 1) X (e/fvar 2) dec (e/fvar 3) w (e/fvar 4) kf (e/fvar 5) e (e/fvar 6) xs (e/fvar 7) idx (e/fvar 8)
         natT (gh-natT) zeroN (gh-zeroN) KN (prodT K natT)
         instB (e/app* (e/const' (nm "instBEqOfDecidableEq") [z]) K dec)
         lookupN (fn [key l] (e/app* (e/const' (nm "List.lookup") [z z]) K natT instB key l))
@@ -2489,15 +2592,6 @@
         R1step (e/lam "acc" natT (e/lam "x" X (gh-addN (e/bvar 1) (smc-mul (e/app w (e/app kf (e/bvar 0))) (getD (lookupN (e/app kf (e/bvar 0)) idx)))) :default) :default)
         R2step (e/lam "acc" natT (e/lam "x" X (gh-addN (e/bvar 1) (getD (lookupN (e/app kf (e/bvar 0)) mappedIdx))) :default) :default)
         foldlX (fn [step] (e/app* (e/const' (nm "List.foldl") [z z]) natT X step e xs))
-        af 201 xf 202 acc (e/fvar af) x (e/fvar xf)
-        lrw (e/app* (e/const' (nm "List.lookup_reweight") []) K dec w (e/app kf x) idx)
-        accPlus (e/lam "v" natT (gh-addN acc (e/bvar 0)) :default)
-        hbody (e/app* (e/const' (nm "congrArg") [L1 L1]) natT natT
-                      (smc-mul (e/app w (e/app kf x)) (getD (lookupN (e/app kf x) idx)))
-                      (getD (lookupN (e/app kf x) mappedIdx))
-                      accPlus lrw)
-        hyp (e/lam "acc" natT (e/abstract1 (e/lam "x" X (e/abstract1 hbody xf) :default) af) :default)
-        proof (e/app* (e/const' (nm "List.foldl_congr") []) natT X R1step R2step xs e hyp)
         concl (lk-eqAt natT (foldlX R1step) (foldlX R2step))
         goal (-> concl
                  (#(e/forall' "idx" (listOf KN) (e/abstract1 % 8) :default))
@@ -2508,13 +2602,8 @@
                  (#(e/forall' "dec" (e/app (e/const' (nm "DecidableEq") [L1]) K) (e/abstract1 % 3) :default))
                  (#(e/forall' "X" type0 (e/abstract1 % 2) :default))
                  (#(e/forall' "K" type0 (e/abstract1 % 1) :default)))
-        fproof (-> proof
-                   (#(e/lam "idx" (listOf KN) (e/abstract1 % 8) :default))
-                   (#(e/lam "xs" (listOf X) (e/abstract1 % 7) :default))
-                   (#(e/lam "e" natT (e/abstract1 % 6) :default))
-                   (#(e/lam "kf" (e/forall' "_" X K :default) (e/abstract1 % 5) :default))
-                   (#(e/lam "w" (e/forall' "_" K natT :default) (e/abstract1 % 4) :default))
-                   (#(e/lam "dec" (e/app (e/const' (nm "DecidableEq") [L1]) K) (e/abstract1 % 3) :default))
-                   (#(e/lam "X" type0 (e/abstract1 % 2) :default))
-                   (#(e/lam "K" type0 (e/abstract1 % 1) :default)))]
+        ;; thin instantiation of the generic at (Nat,+,·,0,Nat.mul_zero). Goal byte-identical.
+        fproof (when pGen
+                 (e/app* pGen natT (e/const' (nm "Nat.add") []) (e/const' (nm "Nat.mul") []) zeroN
+                         (e/const' (nm "Nat.mul_zero") [])))]
     [goal fproof]))

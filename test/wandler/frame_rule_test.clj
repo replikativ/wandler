@@ -94,6 +94,23 @@
           ;; the carrier, ops, zero, and all laws are bound variables — not a single Nat constant.
           (is (not (re-find #"Nat" s)) "the generic frame statement is entirely Nat-free"))))))
 
+(deftest entire-frame-family-is-semiring-generic
+  (when (ready?)
+    (testing "ALL eight frame-family laws have a semiring/monoid-generic version that check-constant
+             verifies and a Nat law derived from it by instantiation — the FAQ factorization (frame +
+             f=1 sum-factor + the FD keyfactor-float layer) is Nat-free at the kernel level."
+      (doseq [gen-fn [rp/prove-foldl-const-mul-pull-generic
+                      rp/prove-foldl-add-init-generic
+                      rp/prove-cond-and-mul-split-generic
+                      rp/prove-foldl-join-sum-factor-generic
+                      rp/prove-foldl-join-frame-generic
+                      rp/prove-bucket-factor-pull-generic
+                      rp/prove-lookup-reweight-generic
+                      rp/prove-keyfactor-float-generic]]
+        (let [[g p] (gen-fn)]
+          (is (true? (kenv/verifies? (a/env) g p))
+              (str "generic law verifies; Nat-free? " (not (re-find #"Nat" (e/->string g))))))))))
+
 (deftest both-laws-installed
   (when (ready?)
     (testing "install! lands both new laws (each check-constant'd as it builds)"
@@ -101,7 +118,11 @@
         (is (boolean (kenv/lookup (a/env) (nm "List.foldl_const_mul_pull_generic"))))
         (is (boolean (kenv/lookup (a/env) (nm "List.foldl_add_init_generic"))))
         (is (boolean (kenv/lookup (a/env) (nm "Nat.cond_and_mul_split_generic"))))
-        (is (boolean (kenv/lookup (a/env) (nm "Map.foldl_join_frame_generic")))))
+        (is (boolean (kenv/lookup (a/env) (nm "Map.foldl_join_sum_factor_generic"))))
+        (is (boolean (kenv/lookup (a/env) (nm "Map.foldl_join_frame_generic"))))
+        (is (boolean (kenv/lookup (a/env) (nm "Map.bucket_factor_pull_generic"))))
+        (is (boolean (kenv/lookup (a/env) (nm "List.lookup_reweight_generic"))))
+        (is (boolean (kenv/lookup (a/env) (nm "Map.foldl_keyfactor_float_generic")))))
       (is (boolean (kenv/lookup (a/env) (nm "List.foldl_const_mul_pull"))))
       (is (boolean (kenv/lookup (a/env) (nm "Map.foldl_join_frame"))))
       (testing "the frame GENERALIZES the f≡1 sum-factor (both present, same pre-agg foundation)"

@@ -778,10 +778,12 @@
           ;; into the index (each entry reweighted by w of its key), since the lookup key is k so
           ;; w(fst entry)=w(k). Lets the optimizer float a key-factor off the per-row x-side into the
           ;; O(distinct-keys) index — the Phase-5 cost win when ndv ≪ |xs|.
+          (thm! "List.lookup_reweight_generic" (rp/prove-lookup-reweight-generic))
           (thm! "List.lookup_reweight"      (rp/prove-lookup-reweight))
           ;; the optimizer-facing float law: a key-factor w(kf x) over a per-key index lookup floats INTO
           ;; the index, over an ARBITRARY index — composes directly with the frame's output (idx := the
           ;; pre-aggregated index). foldl_congr ∘ lookup_reweight.
+          (thm! "Map.foldl_keyfactor_float_generic" (rp/prove-keyfactor-float-generic))
           (thm! "Map.foldl_keyfactor_float" (rp/prove-keyfactor-float))
           ;; loop-invariant distributive law (1-variable elimination): a multiplicative x-free factor
           ;; distributes out of the sum — the certificate for hoisting an invariant fold out of a map.
