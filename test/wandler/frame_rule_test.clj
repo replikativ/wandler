@@ -76,9 +76,32 @@
             (is (some? (re-find #"Option.getD" s)) "RHS probes the pre-aggregated index")
             (is (some? (re-find #"List.lookup" s)) "RHS reads via a key lookup")))))))
 
+(deftest foldl-join-frame-is-semiring-generic
+  (when (ready?)
+    (testing "the WHOLE frame rule is semiring-generic: Map.foldl_join_frame_generic factorizes a
+             separable two-sided weight over ANY left-distributive semiring (S,+,·,0) passed as
+             ops + axiom hypotheses — the Nat frame law is now its instantiation."
+      (let [[g p] (rp/prove-foldl-join-frame-generic)]
+        (is (some? p) "generic frame proof extracted")
+        (is (true? (kenv/verifies? (a/env) g p))
+            "the semiring-generic frame rule passes check-constant"))
+      (testing "the Nat frame law instantiates the generic at (Nat,+,·,0) — same law, derived not reproven"
+        (let [[gN pN] (rp/prove-foldl-join-frame)]
+          (is (true? (kenv/verifies? (a/env) gN pN))
+              "Nat frame proof (= generic applied to the Nat semiring witnesses) check-constant'd")))
+      (testing "the generic abstracts over the value algebra — NO Nat anywhere in the statement"
+        (let [s (e/->string (first (rp/prove-foldl-join-frame-generic)))]
+          ;; the carrier, ops, zero, and all laws are bound variables — not a single Nat constant.
+          (is (not (re-find #"Nat" s)) "the generic frame statement is entirely Nat-free"))))))
+
 (deftest both-laws-installed
   (when (ready?)
     (testing "install! lands both new laws (each check-constant'd as it builds)"
+      (testing "the semiring-generic variants are installed alongside the Nat laws"
+        (is (boolean (kenv/lookup (a/env) (nm "List.foldl_const_mul_pull_generic"))))
+        (is (boolean (kenv/lookup (a/env) (nm "List.foldl_add_init_generic"))))
+        (is (boolean (kenv/lookup (a/env) (nm "Nat.cond_and_mul_split_generic"))))
+        (is (boolean (kenv/lookup (a/env) (nm "Map.foldl_join_frame_generic")))))
       (is (boolean (kenv/lookup (a/env) (nm "List.foldl_const_mul_pull"))))
       (is (boolean (kenv/lookup (a/env) (nm "Map.foldl_join_frame"))))
       (testing "the frame GENERALIZES the f≡1 sum-factor (both present, same pre-agg foundation)"

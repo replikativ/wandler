@@ -756,6 +756,7 @@
           ;; THE FAQ FRAME RULE: separable two-sided weight f(x)·g(y) over a join factorizes through the
           ;; SAME pre-aggregated index — Σ_{x⋈y} f(x)·g(y) = Σ_x f(x)·(Σ bucket g). Generalizes
           ;; foldl_join_sum_factor (its f≡1 instance); the SPN/FAQ product node over Map.join.
+          (thm! "Map.foldl_join_frame_generic" (rp/prove-foldl-join-frame-generic))
           (thm! "Map.foldl_join_frame"      (rp/prove-foldl-join-frame))
           ;; CONDITIONAL SEPARATION (the dependent-types win): a separable conjunctive guard P(x)∧Q(y)
           ;; factors a weighted product — cond(a&&b)(u·v)0 = (cond a u 0)·(cond b v 0) — so once split
