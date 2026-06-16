@@ -1906,3 +1906,81 @@
                    (#(e/lam "Y" type0 (e/abstract1 % 2) :default))
                    (#(e/lam "K" type0 (e/abstract1 % 1) :default)))]
     [goal fproof]))
+
+;; ── List.lookup_reweight (FD scope quotient — float a key-factor into the index) ─
+;; (w k) · getD (lookup k idx) 0 = getD (lookup k (map (λp. (fst p, w(fst p)·snd p)) idx)) 0
+;; A key-factor that multiplies a per-key index lookup can be BAKED INTO the index (each entry's value
+;; reweighted by w of its key), because the lookup key IS k so w(fst entry) = w(k) on the found entry
+;; (and 0·w = 0 when absent). This is the certificate for FLOATING a key-factor `w(kf x)` out of the
+;; per-row x-side and into the O(distinct-keys) pre-aggregated index — the Phase-5 win when ndv ≪ |xs|.
+;; Proof: induction on idx; cons eta-expands the head (so List.lookup reduces on the literal pair), then
+;; by-cases on (k == fst head) — simp exposes the matcher, rewriting hc reduces it, and the
+;; (k == fst head)=true branch closes via beq_iff_eq → w k = w(fst head); the false branch is the IH.
+(def ^:private lrw-LEM
+  ['List.lookup_nil 'List.lookup_cons 'List.lookup_cons_self 'List.map_nil 'List.map_cons
+   'Option.getD 'cond 'cond_true 'cond_false 'Nat.mul_zero])
+(defn prove-lookup-reweight []
+  (let [K (e/fvar 1) dec (e/fvar 2) w (e/fvar 3) k (e/fvar 4) idx (e/fvar 5)
+        natT (gh-natT) zeroN (gh-zeroN)
+        KN (prodT K natT)
+        instB (fn [kk dd] (e/app* (e/const' (nm "instBEqOfDecidableEq") [z]) kk dd))
+        lookupN (fn [kk dd key l] (e/app* (e/const' (nm "List.lookup") [z z]) kk natT (instB kk dd) key l))
+        getD (fn [o] (e/app* (e/const' (nm "Option.getD") [z]) natT o zeroN))
+        rwf (fn [ww KK] (e/lam "p" (prodT KK natT)
+                          (mkP KK natT (fstOf KK natT (e/bvar 0)) (smc-mul (e/app ww (fstOf KK natT (e/bvar 0))) (sndOf KK natT (e/bvar 0)))) :default))
+        mapped (fn [ww KK dd l] (e/app* (e/const' (nm "List.map") [z z]) (prodT KK natT) (prodT KK natT) (rwf ww KK) l))
+        lhs (smc-mul (e/app w k) (getD (lookupN K dec k idx)))
+        rhs (getD (lookupN K dec k (mapped w K dec idx)))
+        concl (lk-eqAt natT lhs rhs)
+        goal (-> concl
+                 (#(e/forall' "idx" (listOf KN) (e/abstract1 % 5) :default))
+                 (#(e/forall' "k" K (e/abstract1 % 4) :default))
+                 (#(e/forall' "w" (e/forall' "_" K natT :default) (e/abstract1 % 3) :default))
+                 (#(e/forall' "dec" (e/app (e/const' (nm "DecidableEq") [L1]) K) (e/abstract1 % 2) :default))
+                 (#(e/forall' "K" type0 (e/abstract1 % 1) :default)))
+        [ps _] (proof/start-proof (a/env) goal)
+        ps (basic/intros ps ["K" "dec" "w" "k" "idx"])
+        ps (basic/induction ps (fvid ps "idx"))
+        ps (reduce
+            (fn [ps gid]
+              (let [psg (focus ps gid)
+                    cons? (some (fn [[_ d]] (= "head" (:name d))) (:lctx (proof/current-goal psg)))]
+                (if cons?
+                  (let [hd (gf psg "head") Kp (gf psg "K") dp (gf psg "dec") wp (gf psg "w") kp (gf psg "k")
+                        etaSymm (e/app* (e/const' (nm "Eq.symm") [L1]) (prodT Kp natT)
+                                        (mkP Kp natT (fstOf Kp natT hd) (sndOf Kp natT hd)) hd
+                                        (e/app* (e/const' (nm "Prod.eta") [z z]) Kp natT hd))
+                        psg (basic/rewrite psg etaSymm)
+                        ihid (or (fvid psg "ih_tail'") (fvid psg "ih_tail") (fvid psg "ih"))
+                        ih (e/fvar ihid)
+                        beqhd (e/app* (e/const' (nm "BEq.beq") [z]) Kp (instB Kp dp) kp (fstOf Kp natT hd))
+                        br (basic/by-cases psg beqhd)
+                        bids (new-goals (:goals psg) (:goals br))]
+                    (reduce (fn [qq bid]
+                              (let [qb (focus qq bid)
+                                    hc (fvid qb "hc")
+                                    hctype (:type (some (fn [[_ d]] (when (= "hc" (:name d)) d)) (:lctx (proof/current-goal qb))))
+                                    pos? (= "Bool.true" (name/->string (e/const-name (nth (second (e/get-app-fn-args hctype)) 2))))
+                                    r (try (simp/simp-all qb lrw-LEM) (catch Throwable _ qb))      ; expose the matcher
+                                    r (try (basic/rewrite r (e/fvar hc)) (catch Throwable _ r))     ; discriminant → true/false
+                                    r (try (simp/simp-all r lrw-LEM) (catch Throwable _ r))        ; iota-reduce
+                                    r (if pos?
+                                        (let [Kp (gf r "K") dp (gf r "dec") wp (gf r "w") kp (gf r "k")
+                                              lawful (e/app* (e/const' (nm "instLawfulBEqOfDecidableEq") []) Kp dp)
+                                              biff (e/app* (e/const' (nm "beq_iff_eq") [z]) Kp (instB Kp dp) lawful kp (fstOf Kp natT hd))
+                                              hfeq (e/app* (e/const' (nm "Iff.mp") [])
+                                                           (e/app* (e/const' (nm "Eq") [L1]) (e/const' (nm "Bool") [])
+                                                                   (e/app* (e/const' (nm "BEq.beq") [z]) Kp (instB Kp dp) kp (fstOf Kp natT hd))
+                                                                   (e/const' (nm "Bool.true") []))
+                                                           (e/app* (e/const' (nm "Eq") [L1]) Kp kp (fstOf Kp natT hd)) biff (e/fvar hc))
+                                              wkeq (e/app* (e/const' (nm "congrArg") [L1 L1]) Kp natT kp (fstOf Kp natT hd) wp hfeq) ; w k = w (fst head)
+                                              r2 (try (basic/rewrite r wkeq) (catch Throwable _ r))]
+                                          (try (simp/simp-all r2 lrw-LEM) (catch Throwable _ r2)))
+                                        (let [r2 (try (basic/rewrite r ih) (catch Throwable _ r))]
+                                          (try (simp/simp-all r2 lrw-LEM) (catch Throwable _ r2))))]
+                                (if (proof/solved? r) r (try (basic/rfl r) (catch Throwable _ r)))))
+                            br bids))
+                  (let [q (try (simp/simp-all psg lrw-LEM) (catch Throwable _ psg))]
+                    (if (proof/solved? q) q (try (basic/rfl q) (catch Throwable _ q)))))))
+            ps (vec (:goals ps)))]
+    [goal (when (proof/solved? ps) (extract/extract ps))]))

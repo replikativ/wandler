@@ -766,6 +766,11 @@
           ;; key-factor into the per-key pre-aggregated index. Assembly: bucket_key_subst ∘ foldl_map ∘
           ;; foldl_const_mul_pull.
           (thm! "Map.bucket_factor_pull"    (rp/prove-bucket-factor-pull))
+          ;; FD float-into-index: a key-factor w(kf x) multiplying a per-key index lookup can be BAKED
+          ;; into the index (each entry reweighted by w of its key), since the lookup key is k so
+          ;; w(fst entry)=w(k). Lets the optimizer float a key-factor off the per-row x-side into the
+          ;; O(distinct-keys) index — the Phase-5 cost win when ndv ≪ |xs|.
+          (thm! "List.lookup_reweight"      (rp/prove-lookup-reweight))
           ;; loop-invariant distributive law (1-variable elimination): a multiplicative x-free factor
           ;; distributes out of the sum — the certificate for hoisting an invariant fold out of a map.
           (thm! "List.sum_map_mul_const"  (rp/prove-sum-map-mul-const))

@@ -97,3 +97,16 @@
             (is (some? (re-find #"Nat.mul" s)) "the key-factor product")
             (is (some? (re-find #"List.foldl" s)) "summed via foldl"))))
       (is (boolean (kenv/lookup (a/env) (nm "Map.bucket_factor_pull"))) "installed by build-all"))))
+
+(deftest lookup-reweight-verifies
+  (when (ready?)
+    (testing "List.lookup_reweight (float a key-factor into the index) kernel-verifies"
+      (let [[g p] (rp/prove-lookup-reweight)]
+        (is (some? p) "proof extracted")
+        (is (true? (kenv/verifies? (a/env) g p)) "passes check-constant")
+        (let [s (e/->string g)]
+          (testing "w(k)·getD(lookup k idx) = getD(lookup k (reweight w idx))"
+            (is (some? (re-find #"List.lookup" s)) "operates on a key lookup")
+            (is (some? (re-find #"List.map" s)) "reweights the index by map")
+            (is (some? (re-find #"Nat.mul" s)) "the key-factor product"))))
+      (is (boolean (kenv/lookup (a/env) (nm "List.lookup_reweight"))) "installed by build-all"))))
