@@ -382,6 +382,14 @@
             "Int.neg" (list '- (nth ca 0))
             "Float.ofNat" (list 'double (nth ca 0))
             "Bool.not" (list 'not (nth ca 0))
+            ;; Bool.and/or : the two Bool args lower to Clojure booleans (Nat.ble/beq, Bool.true/false
+            ;; are ansatz-native). Short-circuit form keeps it a boolean.
+            "Bool.and" (list 'and (nth ca 0) (nth ca 1))
+            "Bool.or"  (list 'or  (nth ca 0) (nth ca 1))
+            ;; cond α c x y (the Bool eliminator, `bif`) → (if c x y). ca[0]=α erases. Used by the
+            ;; conditional FAQ frame's guarded weight (cond (P x) (f x) 0). NB: Clojure `cond` is a macro,
+            ;; so this MUST be emitted as `if`.
+            "cond" (list 'if (nth ca 1) (nth ca 2) (nth ca 3))
             ;; Function.comp α β γ f g [x] → (comp f g) or (f (g x)). Produced by
             ;; map∘map fusion (List.map_map rewrites to map (f ∘ g)).
             "Function.comp" (if (>= (count ca) 6)

@@ -95,3 +95,49 @@
             lctx {72001 {:name "xs" :type (listOf Nat)} 72002 {:name "ys" :type (listOf Nat)}}
             res (opt/try-frame-index (a/env) term :lctx lctx :ndv {72002 5.0})]
         (is (nil? res) "frame correctly declines a bare (non-product) separable sum")))))
+
+;; conditionally-weighted join: Σ (if (1≤x ∧ 1≤y) then x·y else 0), kf=lf=id, P=Q=(λn. 1≤n), f=g=id.
+(defn- cond-frame-join-term []
+  (let [Nat (natT) PXY (prodT Nat Nat)
+        dec (e/const' (nm "instDecidableEqNat") [])
+        idf (e/lam "n" Nat (e/bvar 0) :default)
+        ble1 (e/lam "n" Nat (e/app* (e/const' (nm "Nat.ble") []) (e/lit-nat 1) (e/bvar 0)) :default)
+        xs (e/fvar 73001) ys (e/fvar 73002)
+        fstp (e/app* (e/const' (nm "Prod.fst") [z z]) Nat Nat (e/bvar 0))
+        sndp (e/app* (e/const' (nm "Prod.snd") [z z]) Nat Nat (e/bvar 0))
+        guard (e/app* (e/const' (nm "Bool.and") []) (e/app ble1 fstp) (e/app ble1 sndp))
+        wt (e/app* (e/const' (nm "Nat.mul") []) (e/app idf fstp) (e/app idf sndp))
+        op (e/lam "acc" Nat (e/lam "p" PXY
+             (e/app* (e/const' (nm "Nat.add") []) (e/bvar 1)
+                     (e/app* (e/const' (nm "cond") [(lvl/succ z)]) Nat guard wt (e/const' (nm "Nat.zero") []))) :default) :default)
+        e0 (e/const' (nm "Nat.zero") [])
+        join (e/app* (e/const' (nm "Map.join") []) Nat Nat Nat dec idf idf xs ys)
+        term (e/app* (e/const' (nm "List.foldl") [z z]) Nat PXY op e0 join)
+        lctx {73001 {:name "xs" :type (listOf Nat)} 73002 {:name "ys" :type (listOf Nat)}}]
+    {:term term :lctx lctx}))
+
+(deftest cond-frame-index-auto-selected
+  (when (ready?)
+    (testing "optimize-cost auto-selects the CONDITIONAL frame for a separable-guarded weighted join"
+      (let [{:keys [term lctx]} (cond-frame-join-term)
+            res (opt/optimize-cost (a/env) term :lctx lctx :ndv {73002 5.0})]
+        (is (:verified? res) "conditional frame rewrite kernel-certified (split ∘ frame)")
+        (is (some #{:frame-index-cond} (:rewrites res)) "frame-index-cond adopted")
+        (is (= :in-memory-hash (get-in res [:physical :strategy])))))))
+
+(deftest cond-frame-index-executes-correctly
+  (when (ready?)
+    (testing "the conditional frame plan RUNS and equals the naive guarded Σ over the join"
+      (let [{:keys [term lctx]} (cond-frame-join-term)
+            res (opt/optimize-cost (a/env) term :lctx lctx :ndv {73002 5.0})
+            mk-fn (fn [t] (let [t1 (e/abstract1 t 73002)
+                                ly (e/lam "ys" (listOf (natT)) t1 :default)
+                                t2 (e/abstract1 ly 73001)
+                                lx (e/lam "xs" (listOf (natT)) t2 :default)]
+                            (eval (a/ansatz->clj (a/env) lx []))))
+            cf (mk-fn (:term res)) nf (mk-fn term)
+            ;; x=0→{0}: guard false→0 ; x=1→{1,1}: 1·1+1·1=2 ; x=2→{2,2}: 2·2+2·2=8 ⇒ 10
+            XS [0 1 2] YS [0 1 1 2 2]]
+        (is (:verified? res) "conditional frame certified")
+        (is (= 10 (long ((nf XS) YS))) "naive guarded Σ over join")
+        (is (= 10 (long ((cf XS) YS))) "conditional frame plan equals naive")))))

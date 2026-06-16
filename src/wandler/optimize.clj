@@ -39,6 +39,7 @@
 (def try-grace-hash phys/try-grace-hash)
 (def try-pre-agg-index phys/try-pre-agg-index)
 (def try-frame-index phys/try-frame-index)
+(def try-frame-index-cond phys/try-frame-index-cond)
 (def hoist-invariant-indices phys/hoist-invariant-indices)
 
 
@@ -116,6 +117,11 @@
         frame (when (not skip-reorder?)
                 (phys/try-frame-index env term :lctx lctx :selectivity selectivity :sizes sizes
                                       :memory-budget memory-budget :ndv ndv))
+        ;; CONDITIONAL frame: a separable guard P(x)∧Q(y) over a weighted join — split the guard
+        ;; (Nat.cond_and_mul_split) to f'=[P]·f, g'=[Q]·g, then the frame index. Disjoint matcher (cond).
+        frame-cond (when (not skip-reorder?)
+                     (phys/try-frame-index-cond env term :lctx lctx :selectivity selectivity :sizes sizes
+                                                :memory-budget memory-budget :ndv ndv))
         ;; PHYSICAL grace-hash: if a memory budget is set and the join index would exceed it, spill
         ;; the build side into budget-sized blocks BEFORE factorization (grace-hash is an ALTERNATIVE
         ;; to the in-memory hash/factor, operating on the raw foldl-over-join). Certified rewrite.
@@ -143,6 +149,10 @@
       (and frame (:verified? frame)
            (<= (double (:index-est (:physical frame))) (double (or memory-budget 1.0e8))))
       frame
+      ;; conditional frame index (separable guard) — same held-index gate.
+      (and frame-cond (:verified? frame-cond)
+           (<= (double (:index-est (:physical frame-cond))) (double (or memory-budget 1.0e8))))
+      frame-cond
       (:verified? gh) gh
       (and reorder (:verified? reorder))
       ;; a pre-rewrite fired → fuse its result, then compose proofs (pre ∘ fuse).

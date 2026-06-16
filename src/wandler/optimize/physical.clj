@@ -423,6 +423,107 @@
         (and (e/const? h) (= "OfNat.ofNat" (name/->string (e/const-name h))) (>= (count args) 2)
              (nat-zero? (nth args 1))))))
 
+;; ---- CONDITIONAL SEPARATION: a separable guard over the join (Phase 4b) ---------
+(defn- guarded-proj
+  "If `t` is `(h (Prod.PROJ X Y (bvar 0)))` with `h` CLOSED and PROJ matching `proj-name`, return h;
+   else nil. The closed `h` reads ONLY one side of the pair through the projection."
+  [t proj-name]
+  (when (e/app? t)
+    (let [h (e/app-fn t)
+          [ph pargs] (e/get-app-fn-args (e/app-arg t))]
+      (when (and (e/const? ph) (= proj-name (name/->string (e/const-name ph)))
+                 (= 3 (count pargs)) (e/bvar? (nth pargs 2)) (= 0 (e/bvar-idx (nth pargs 2)))
+                 (not (e/has-loose-bvars? h)))
+        h))))
+
+(defn- separable-guarded-fpg
+  "Detect a CONDITIONALLY-separable two-sided aggregate op (FAQ frame with a separable guard):
+     λacc:Nat. λp:(X×Y). Nat.add acc (cond (P (fst p) && Q (snd p)) (f (fst p) · g (snd p)) 0)
+   with P:X→Bool, Q:Y→Bool, f:X→Nat, g:Y→Nat all CLOSED. Returns {:P :Q :f :g} or nil. By
+   Nat.cond_and_mul_split this op is POINTWISE-equal to the product op with f'=[P]·f, g'=[Q]·g — so
+   the frame rule applies once the guard is split."
+  [op]
+  (when (e/lam? op)
+    (let [b1 (e/lam-body op)]
+      (when (e/lam? b1)
+        (let [body (e/lam-body b1)
+              [h args] (e/get-app-fn-args body)]
+          (when (and (e/const? h) (= "Nat.add" (name/->string (e/const-name h))) (= 2 (count args))
+                     (e/bvar? (first args)) (= 1 (e/bvar-idx (first args)))
+                     (e/app? (second args)))
+            (let [[ch cargs] (e/get-app-fn-args (second args))]
+              (when (and (e/const? ch) (= "cond" (name/->string (e/const-name ch))) (= 4 (count cargs))
+                         (e/app? (nth cargs 1)) (e/app? (nth cargs 2)) (nat-zero? (nth cargs 3)))
+                (let [[gh gargs] (e/get-app-fn-args (nth cargs 1))    ; guard = Bool.and (P fst) (Q snd)
+                      [mh margs] (e/get-app-fn-args (nth cargs 2))]   ; weight = Nat.mul (f fst) (g snd)
+                  (when (and (e/const? gh) (= "Bool.and" (name/->string (e/const-name gh))) (= 2 (count gargs))
+                             (e/const? mh) (= "Nat.mul" (name/->string (e/const-name mh))) (= 2 (count margs)))
+                    (let [P (guarded-proj (nth gargs 0) "Prod.fst")
+                          Q (guarded-proj (nth gargs 1) "Prod.snd")
+                          f (guarded-proj (nth margs 0) "Prod.fst")
+                          g (guarded-proj (nth margs 1) "Prod.snd")]
+                      (when (and P Q f g) {:P P :Q Q :f f :g g}))))))))))))
+
+(defn try-frame-index-cond
+  "PHYSICAL conditional FAQ frame: a SEPARABLE GUARD `P(x) ∧ Q(y)` over a weighted join factorizes
+   through the pre-aggregated index. When `foldl (λacc p. acc + cond (P(fst p) && Q(snd p)) (f(fst p) ·
+   g(snd p)) 0) e (Map.join … xs ys)`, first split the guard via `Nat.cond_and_mul_split` (proven) to the
+   product op with f'=[P]·f, g'=[Q]·g (a `List.foldl_congr` step), then apply `Map.foldl_join_frame` —
+   composing the two into one certified rewrite. The probe side keeps its guard f', the build side
+   pre-sums g' once. Same ndv gate / certification as `try-frame-index`."
+  [^Env env term & {:keys [lctx selectivity sizes memory-budget ndv]}]
+  (when (cost/mentions-const? term "Map.join")
+    (let [fused  (cert/optimize env term :lctx lctx)
+          fterm  (if (:verified? fused) (:term fused) term)
+          fproof (when (:verified? fused) (:proof fused))]
+      (when-let [{:keys [S op e jargs]} (fold-join fterm)]
+        (when (and (e/const? S) (= "Nat" (name/->string (e/const-name S))))
+          (when-let [{:keys [P Q f g]} (separable-guarded-fpg op)]
+            (let [[K X Y dec kf lf xs ys] jargs
+                  build-mem (:memory (cost/pipeline-resources fterm {:selectivity selectivity :sizes sizes}))
+                  ndv-est (when (and ndv (e/fvar? ys)) (get ndv (e/fvar-id ys)))]
+              (when (and ndv-est (< (double ndv-est) (double build-mem)))
+                (let [nm   (fn [s] (name/from-string s))
+                      z    lvl/zero  L1 (lvl/succ z)
+                      natT (e/const' (nm "Nat") []) zeroN (e/const' (nm "Nat.zero") [])
+                      PXY  (e/app* (e/const' (nm "Prod") [z z]) X Y)
+                      condN (fn [c x y] (e/app* (e/const' (nm "cond") [L1]) natT c x y))
+                      fstp (fn [p] (e/app* (e/const' (nm "Prod.fst") [z z]) X Y p))
+                      sndp (fn [p] (e/app* (e/const' (nm "Prod.snd") [z z]) X Y p))
+                      addN (fn [x y] (e/app* (e/const' (nm "Nat.add") []) x y))
+                      mulN (fn [x y] (e/app* (e/const' (nm "Nat.mul") []) x y))
+                      andB (fn [x y] (e/app* (e/const' (nm "Bool.and") []) x y))
+                      f'  (e/lam "x" X (condN (e/app P (e/bvar 0)) (e/app f (e/bvar 0)) zeroN) :default)
+                      g'  (e/lam "y" Y (condN (e/app Q (e/bvar 0)) (e/app g (e/bvar 0)) zeroN) :default)
+                      op-s (e/lam "acc" natT (e/lam "p" PXY
+                             (addN (e/bvar 1) (mulN (e/app f' (fstp (e/bvar 0))) (e/app g' (sndp (e/bvar 0))))) :default) :default)
+                      X1 (fn [p] (condN (andB (e/app P (fstp p)) (e/app Q (sndp p))) (mulN (e/app f (fstp p)) (e/app g (sndp p))) zeroN))
+                      X2 (fn [p] (mulN (condN (e/app P (fstp p)) (e/app f (fstp p)) zeroN) (condN (e/app Q (sndp p)) (e/app g (sndp p)) zeroN)))
+                      splitPf (fn [p] (e/app* (e/const' (nm "Nat.cond_and_mul_split") [])
+                                              (e/app P (fstp p)) (e/app Q (sndp p)) (e/app f (fstp p)) (e/app g (sndp p))))
+                      hyp (e/lam "acc" natT (e/lam "p" PXY
+                            (e/app* (e/const' (nm "congrArg") [L1 L1]) natT natT (X1 (e/bvar 0)) (X2 (e/bvar 0))
+                                    (e/lam "w" natT (addN (e/bvar 2) (e/bvar 0)) :default)
+                                    (splitPf (e/bvar 0))) :default) :default)
+                      join (e/app* (e/const' (nm "Map.join") []) K X Y dec kf lf xs ys)
+                      foldlJ (fn [o] (e/app* (e/const' (nm "List.foldl") [z z]) natT PXY o e join))
+                      congrEq (e/app* (e/const' (nm "List.foldl_congr") []) natT PXY op op-s join e hyp)
+                      frameEq (e/app* (e/const' (nm "Map.foldl_join_frame") []) K X Y dec f' g' kf lf e xs ys)
+                      st (cert/mk-st env lctx)
+                      ftype (try (tc/infer-type st frameEq) (catch Throwable _ nil))   ; nil if law absent
+                      [_ eqargs] (when ftype (e/get-app-fn-args ftype))]
+                  (when (and eqargs (>= (count eqargs) 3))
+                    (let [rhs (nth eqargs 2)
+                          rwPf (e/app* (e/const' (nm "Eq.trans") [L1]) natT (foldlJ op) (foldlJ op-s) rhs congrEq frameEq)
+                          proof (compose-trans env lctx term fterm rhs fproof rwPf)
+                          res {:term rhs :proof proof :changed? true :rewrites [:frame-index-cond]
+                               :physical {:strategy :in-memory-hash :index-est (double ndv-est) :budget (or memory-budget 1.0e8)}
+                               :cost (cost/pipeline-cost rhs {:selectivity selectivity :sizes sizes})}]
+                      (when (and (< (cost/pipeline-cost rhs {:selectivity selectivity :sizes sizes})
+                                    (cost/pipeline-cost term {:selectivity selectivity :sizes sizes}))
+                                 (cert/verified-rewrite? env term res :lctx lctx))
+                        (assoc res :verified? true)))))))))))))
+
 (def ^:private soac-heads
   "Heads whose presence in an invariant `c` makes hoisting it out of a row-loop worthwhile (the cost
    that matters is a per-row recompute of a collection traversal). A heuristic worth-it gate, NOT a
