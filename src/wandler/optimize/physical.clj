@@ -211,26 +211,51 @@
                     (assoc res :verified? true)))))))))))
 
 
+;; ── semiring instance registry (the last mile: route the carrier-generic laws by carrier) ───────────
+;; carrier const-name → its ops + the axiom-PROOF const-names the generic frame-family laws require. A
+;; recognizer reads the carrier S off the fold op's binder type and looks the entry up here; the emitter
+;; instantiates the `_generic` law with the entry's ops + proofs (instead of the Nat-specific alias). Add
+;; a row — with that carrier's Init-proven distributive/annihilator/monoid lemmas — and its queries
+;; factorize through the pre-aggregated index end-to-end. Nat = counting/SUM; Bool = boolean provenance /
+;; reachability (∨ = ∃, ∧ = ∧). Soundness still rests entirely on `cert/verified-rewrite?` (check-constant);
+;; a bad registry row cannot pass the kernel gate.
+(def ^:private semiring-registry
+  {"Nat"  {:add "Nat.add" :mul "Nat.mul" :zero "Nat.zero"
+           :hAA "Nat.add_assoc" :hZA "Nat.zero_add" :hAZ "Nat.add_zero"
+           :hMA "Nat.mul_add" :hMZ "Nat.mul_zero" :hZM "Nat.zero_mul"}
+   "Bool" {:add "Bool.or" :mul "Bool.and" :zero "Bool.false"
+           :hAA "Bool.or_assoc" :hZA "Bool.false_or" :hAZ "Bool.or_false"
+           :hMA "Bool.and_or_distrib_left" :hMZ "Bool.and_false" :hZM "Bool.false_and"}})
+
+(defn- sr-entry
+  "The semiring entry for carrier type `S` (a const), or nil if S is not a registered carrier."
+  [S] (when (e/const? S) (semiring-registry (name/->string (e/const-name S)))))
+
+(defn- sr-c
+  "Build the const term for entry field `kw` (e.g. :add → Nat.add / Bool.or)."
+  [entry kw] (e/const' (name/from-string (get entry kw)) []))
+
 (defn- separable-sum-g
-  "Detect a SEPARABLE additive aggregate op: `λacc:Nat. λp:(X×Y). Nat.add acc (g (Prod.snd X Y p))`
-   where `g : Y → Nat` reads only the right (build) side. Returns g (a CLOSED Y→Nat term, i.e. no
-   dependence on acc/p) or nil. This is the exact op shape `Map.foldl_join_sum_factor` is stated for,
-   so a match means the law's LHS is def-eq to the term and the pre-aggregated index applies."
+  "Detect a SEPARABLE additive aggregate op: `λacc:S. λp:(X×Y). add acc (g (Prod.snd X Y p))` over any
+   registered semiring carrier S (add = the carrier's additive op), where `g : Y → S` reads only the right
+   (build) side. Returns g (a CLOSED Y→S term, no dependence on acc/p) or nil. This is the exact op shape
+   `Map.foldl_join_sum_factor[_generic]` is stated for, so a match means the law's LHS is def-eq."
   [op]
   (when (e/lam? op)
-    (let [b1 (e/lam-body op)]
-      (when (e/lam? b1)
-        (let [body (e/lam-body b1)
-              [h args] (e/get-app-fn-args body)]
-          (when (and (e/const? h) (= "Nat.add" (name/->string (e/const-name h))) (= 2 (count args))
-                     (e/bvar? (first args)) (= 1 (e/bvar-idx (first args)))
-                     (e/app? (second args)))
-            (let [a2 (second args) G (e/app-fn a2) sndt (e/app-arg a2)
-                  [sh sargs] (e/get-app-fn-args sndt)]
-              (when (and (e/const? sh) (= "Prod.snd" (name/->string (e/const-name sh)))
-                         (= 3 (count sargs)) (e/bvar? (nth sargs 2)) (= 0 (e/bvar-idx (nth sargs 2)))
-                         (not (e/has-loose-bvars? G)))
-                G))))))))
+    (when-let [entry (sr-entry (e/lam-type op))]
+      (let [b1 (e/lam-body op)]
+        (when (e/lam? b1)
+          (let [body (e/lam-body b1)
+                [h args] (e/get-app-fn-args body)]
+            (when (and (e/const? h) (= (:add entry) (name/->string (e/const-name h))) (= 2 (count args))
+                       (e/bvar? (first args)) (= 1 (e/bvar-idx (first args)))
+                       (e/app? (second args)))
+              (let [a2 (second args) G (e/app-fn a2) sndt (e/app-arg a2)
+                    [sh sargs] (e/get-app-fn-args sndt)]
+                (when (and (e/const? sh) (= "Prod.snd" (name/->string (e/const-name sh)))
+                           (= 3 (count sargs)) (e/bvar? (nth sargs 2)) (= 0 (e/bvar-idx (nth sargs 2)))
+                           (not (e/has-loose-bvars? G)))
+                  G)))))))))
 
 
 (defn- separable-frame-fg
@@ -242,16 +267,17 @@
    pre-aggregated index applies to the separable y-side weight g, with the x-side weight f factored out."
   [op]
   (when (e/lam? op)
-    (let [b1 (e/lam-body op)]
-      (when (e/lam? b1)
+    (when-let [entry (sr-entry (e/lam-type op))]
+      (let [b1 (e/lam-body op)]
+       (when (e/lam? b1)
         (let [body (e/lam-body b1)
               [h args] (e/get-app-fn-args body)]
-          (when (and (e/const? h) (= "Nat.add" (name/->string (e/const-name h))) (= 2 (count args))
+          (when (and (e/const? h) (= (:add entry) (name/->string (e/const-name h))) (= 2 (count args))
                      (e/bvar? (first args)) (= 1 (e/bvar-idx (first args)))
                      (e/app? (second args)))
             (let [mult (second args)
                   [mh margs] (e/get-app-fn-args mult)]
-              (when (and (e/const? mh) (= "Nat.mul" (name/->string (e/const-name mh))) (= 2 (count margs))
+              (when (and (e/const? mh) (= (:mul entry) (name/->string (e/const-name mh))) (= 2 (count margs))
                          (e/app? (nth margs 0)) (e/app? (nth margs 1)))
                 (let [fa (nth margs 0) ga (nth margs 1)
                       f (e/app-fn fa) g (e/app-fn ga)
@@ -262,7 +288,7 @@
                              (e/const? gh) (= "Prod.snd" (name/->string (e/const-name gh)))
                              (= 3 (count gargs)) (e/bvar? (nth gargs 2)) (= 0 (e/bvar-idx (nth gargs 2)))
                              (not (e/has-loose-bvars? f)) (not (e/has-loose-bvars? g)))
-                    [f g]))))))))))
+                    [f g])))))))))))
 
 
 (defn try-pre-agg-index
@@ -281,7 +307,7 @@
           fterm  (if (:verified? fused) (:term fused) term)
           fproof (when (:verified? fused) (:proof fused))]
       (when-let [{:keys [S op e jargs]} (fold-join fterm)]
-        (when (and (e/const? S) (= "Nat" (name/->string (e/const-name S))))
+        (when-let [entry (sr-entry S)]
           (when-let [g (separable-sum-g op)]
             (let [[K X Y dec kf lf xs ys] jargs
                   ;; PRE-AGG is an ndv-DRIVEN choice (DuckDB PerfectHashAggregate gating): adopt only
@@ -291,7 +317,9 @@
                   build-mem (:memory (cost/pipeline-resources fterm {:selectivity selectivity :sizes sizes}))
                   ndv-est (when (and ndv (e/fvar? ys)) (get ndv (e/fvar-id ys)))]
               (when (and ndv-est (< (double ndv-est) (double build-mem)))
-                (let [law (e/app* (e/const' (name/from-string "Map.foldl_join_sum_factor") [])
+                (let [law (e/app* (e/const' (name/from-string "Map.foldl_join_sum_factor_generic") [])
+                                  S (sr-c entry :add) (sr-c entry :zero)
+                                  (sr-c entry :hAA) (sr-c entry :hZA) (sr-c entry :hAZ)
                                   K X Y dec g kf lf e xs ys)
                       st (cert/mk-st env lctx)
                       ptype (try (tc/infer-type st law) (catch Throwable _ nil))   ; nil if law absent
@@ -359,21 +387,22 @@
    composed frame∘float proof only typechecks when the left read IS def-eq to `kf (fst p)`."
   [op X Y]
   (when (e/lam? op)
-    (let [b1 (e/lam-body op)]
-      (when (e/lam? b1)
+    (when-let [entry (sr-entry (e/lam-type op))]
+      (let [b1 (e/lam-body op)]
+       (when (e/lam? b1)
         (let [body (e/lam-body b1)
               [h args] (e/get-app-fn-args body)]
-          (when (and (e/const? h) (= "Nat.add" (name/->string (e/const-name h))) (= 2 (count args))
+          (when (and (e/const? h) (= (:add entry) (name/->string (e/const-name h))) (= 2 (count args))
                      (e/bvar? (first args)) (= 1 (e/bvar-idx (first args)))
                      (e/app? (second args)))
             (let [[mh margs] (e/get-app-fn-args (second args))]
-              (when (and (e/const? mh) (= "Nat.mul" (name/->string (e/const-name mh))) (= 2 (count margs))
+              (when (and (e/const? mh) (= (:mul entry) (name/->string (e/const-name mh))) (= 2 (count margs))
                          (e/app? (nth margs 0)))                                  ; left = w applied to a read
                 (let [w (e/app-fn (nth margs 0)) kfx (e/app-arg (nth margs 0))   ; w (read-of (fst p))
                       g (abstract-read (nth margs 1) "Prod.snd" Y)]              ; g = λy. (snd-read)[snd p↦y]
                   (when (and (not (e/has-loose-bvars? w)) (some? g)
                              (reads-fst? kfx))                                    ; left factor reads the probe side
-                    [w g]))))))))))
+                    [w g])))))))))))
 
 (defn- extract-frame-preidx
   "Navigate a frame output `foldl Nat X step e xs` to the index the per-x lookup probes (the pre-aggregated
@@ -406,13 +435,16 @@
           fterm  (if (:verified? fused) (:term fused) term)
           fproof (when (:verified? fused) (:proof fused))]
       (when-let [{:keys [S op e jargs]} (fold-join fterm)]
-        (when (and (e/const? S) (= "Nat" (name/->string (e/const-name S))))
+        (when-let [entry (sr-entry S)]
           (when-let [[f g] (separable-frame-fg op)]
             (let [[K X Y dec kf lf xs ys] jargs
                   build-mem (:memory (cost/pipeline-resources fterm {:selectivity selectivity :sizes sizes}))
                   ndv-est (when (and ndv (e/fvar? ys)) (get ndv (e/fvar-id ys)))]
               (when (and ndv-est (< (double ndv-est) (double build-mem)))
-                (let [law (e/app* (e/const' (name/from-string "Map.foldl_join_frame") [])
+                (let [law (e/app* (e/const' (name/from-string "Map.foldl_join_frame_generic") [])
+                                  S (sr-c entry :add) (sr-c entry :mul) (sr-c entry :zero)
+                                  (sr-c entry :hAA) (sr-c entry :hZA) (sr-c entry :hAZ)
+                                  (sr-c entry :hMA) (sr-c entry :hMZ)
                                   K X Y dec f g kf lf e xs ys)
                       st (cert/mk-st env lctx)
                       ptype (try (tc/infer-type st law) (catch Throwable _ nil))   ; nil if law absent
@@ -525,25 +557,27 @@
    the frame rule applies once the guard is split."
   [op]
   (when (e/lam? op)
-    (let [b1 (e/lam-body op)]
-      (when (e/lam? b1)
+    (when-let [entry (sr-entry (e/lam-type op))]
+      (let [b1 (e/lam-body op)]
+       (when (e/lam? b1)
         (let [body (e/lam-body b1)
               [h args] (e/get-app-fn-args body)]
-          (when (and (e/const? h) (= "Nat.add" (name/->string (e/const-name h))) (= 2 (count args))
+          (when (and (e/const? h) (= (:add entry) (name/->string (e/const-name h))) (= 2 (count args))
                      (e/bvar? (first args)) (= 1 (e/bvar-idx (first args)))
                      (e/app? (second args)))
             (let [[ch cargs] (e/get-app-fn-args (second args))]
               (when (and (e/const? ch) (= "cond" (name/->string (e/const-name ch))) (= 4 (count cargs))
-                         (e/app? (nth cargs 1)) (e/app? (nth cargs 2)) (nat-zero? (nth cargs 3)))
+                         (e/app? (nth cargs 1)) (e/app? (nth cargs 2))
+                         (or (nat-zero? (nth cargs 3)) (cn? (nth cargs 3) (:zero entry))))
                 (let [[gh gargs] (e/get-app-fn-args (nth cargs 1))    ; guard = Bool.and (P fst) (Q snd)
-                      [mh margs] (e/get-app-fn-args (nth cargs 2))]   ; weight = Nat.mul (f fst) (g snd)
+                      [mh margs] (e/get-app-fn-args (nth cargs 2))]   ; weight = (carrier mul) (f fst) (g snd)
                   (when (and (e/const? gh) (= "Bool.and" (name/->string (e/const-name gh))) (= 2 (count gargs))
-                             (e/const? mh) (= "Nat.mul" (name/->string (e/const-name mh))) (= 2 (count margs)))
+                             (e/const? mh) (= (:mul entry) (name/->string (e/const-name mh))) (= 2 (count margs)))
                     (let [P (guarded-proj (nth gargs 0) "Prod.fst")
                           Q (guarded-proj (nth gargs 1) "Prod.snd")
                           f (guarded-proj (nth margs 0) "Prod.fst")
                           g (guarded-proj (nth margs 1) "Prod.snd")]
-                      (when (and P Q f g) {:P P :Q Q :f f :g g}))))))))))))
+                      (when (and P Q f g) {:P P :Q Q :f f :g g})))))))))))))
 
 (defn try-frame-index-cond
   "PHYSICAL conditional FAQ frame: a SEPARABLE GUARD `P(x) ∧ Q(y)` over a weighted join factorizes
@@ -558,7 +592,7 @@
           fterm  (if (:verified? fused) (:term fused) term)
           fproof (when (:verified? fused) (:proof fused))]
       (when-let [{:keys [S op e jargs]} (fold-join fterm)]
-        (when (and (e/const? S) (= "Nat" (name/->string (e/const-name S))))
+        (when-let [entry (sr-entry S)]
           (when-let [{:keys [P Q f g]} (separable-guarded-fpg op)]
             (let [[K X Y dec kf lf xs ys] jargs
                   build-mem (:memory (cost/pipeline-resources fterm {:selectivity selectivity :sizes sizes}))
@@ -566,13 +600,13 @@
               (when (and ndv-est (< (double ndv-est) (double build-mem)))
                 (let [nm   (fn [s] (name/from-string s))
                       z    lvl/zero  L1 (lvl/succ z)
-                      natT (e/const' (nm "Nat") []) zeroN (e/const' (nm "Nat.zero") [])
+                      natT S zeroN (sr-c entry :zero)            ; carrier-generic (natT name kept for diff)
                       PXY  (e/app* (e/const' (nm "Prod") [z z]) X Y)
                       condN (fn [c x y] (e/app* (e/const' (nm "cond") [L1]) natT c x y))
                       fstp (fn [p] (e/app* (e/const' (nm "Prod.fst") [z z]) X Y p))
                       sndp (fn [p] (e/app* (e/const' (nm "Prod.snd") [z z]) X Y p))
-                      addN (fn [x y] (e/app* (e/const' (nm "Nat.add") []) x y))
-                      mulN (fn [x y] (e/app* (e/const' (nm "Nat.mul") []) x y))
+                      addN (fn [x y] (e/app* (sr-c entry :add) x y))
+                      mulN (fn [x y] (e/app* (sr-c entry :mul) x y))
                       andB (fn [x y] (e/app* (e/const' (nm "Bool.and") []) x y))
                       f'  (e/lam "x" X (condN (e/app P (e/bvar 0)) (e/app f (e/bvar 0)) zeroN) :default)
                       g'  (e/lam "y" Y (condN (e/app Q (e/bvar 0)) (e/app g (e/bvar 0)) zeroN) :default)
@@ -580,7 +614,8 @@
                              (addN (e/bvar 1) (mulN (e/app f' (fstp (e/bvar 0))) (e/app g' (sndp (e/bvar 0))))) :default) :default)
                       X1 (fn [p] (condN (andB (e/app P (fstp p)) (e/app Q (sndp p))) (mulN (e/app f (fstp p)) (e/app g (sndp p))) zeroN))
                       X2 (fn [p] (mulN (condN (e/app P (fstp p)) (e/app f (fstp p)) zeroN) (condN (e/app Q (sndp p)) (e/app g (sndp p)) zeroN)))
-                      splitPf (fn [p] (e/app* (e/const' (nm "Nat.cond_and_mul_split") [])
+                      splitPf (fn [p] (e/app* (e/const' (nm "Nat.cond_and_mul_split_generic") [])
+                                              natT (sr-c entry :mul) zeroN (sr-c entry :hZM) (sr-c entry :hMZ)
                                               (e/app P (fstp p)) (e/app Q (sndp p)) (e/app f (fstp p)) (e/app g (sndp p))))
                       hyp (e/lam "acc" natT (e/lam "p" PXY
                             (e/app* (e/const' (nm "congrArg") [L1 L1]) natT natT (X1 (e/bvar 0)) (X2 (e/bvar 0))
@@ -589,7 +624,11 @@
                       join (e/app* (e/const' (nm "Map.join") []) K X Y dec kf lf xs ys)
                       foldlJ (fn [o] (e/app* (e/const' (nm "List.foldl") [z z]) natT PXY o e join))
                       congrEq (e/app* (e/const' (nm "List.foldl_congr") []) natT PXY op op-s join e hyp)
-                      frameEq (e/app* (e/const' (nm "Map.foldl_join_frame") []) K X Y dec f' g' kf lf e xs ys)
+                      frameEq (e/app* (e/const' (nm "Map.foldl_join_frame_generic") [])
+                                      natT (sr-c entry :add) (sr-c entry :mul) zeroN
+                                      (sr-c entry :hAA) (sr-c entry :hZA) (sr-c entry :hAZ)
+                                      (sr-c entry :hMA) (sr-c entry :hMZ)
+                                      K X Y dec f' g' kf lf e xs ys)
                       st (cert/mk-st env lctx)
                       ftype (try (tc/infer-type st frameEq) (catch Throwable _ nil))   ; nil if law absent
                       [_ eqargs] (when ftype (e/get-app-fn-args ftype))]
@@ -618,23 +657,29 @@
           fterm  (if (:verified? fused) (:term fused) term)
           fproof (when (:verified? fused) (:proof fused))]
       (when-let [{:keys [S op e jargs]} (fold-join fterm)]
-        (when (and (e/const? S) (= "Nat" (name/->string (e/const-name S))))
+        (when-let [entry (sr-entry S)]
           (let [[K X Y dec kf lf xs ys] jargs]
             (when-let [[w g] (separable-keyfactor-wg op X Y)]
               (let [build-mem (:memory (cost/pipeline-resources fterm {:selectivity selectivity :sizes sizes}))
                     ndv-est (when (and ndv (e/fvar? ys)) (get ndv (e/fvar-id ys)))]
                 (when (and ndv-est (< (double ndv-est) (double build-mem)))
                   (let [nm   (fn [s] (name/from-string s))
-                        z    lvl/zero  L1 (lvl/succ z)  natT (e/const' (nm "Nat") [])
+                        z    lvl/zero  L1 (lvl/succ z)  natT S
                         f'   (e/lam "x" X (e/app w (e/app kf (e/bvar 0))) :default)
-                        frameEq (e/app* (e/const' (nm "Map.foldl_join_frame") []) K X Y dec f' g kf lf e xs ys)
+                        frameEq (e/app* (e/const' (nm "Map.foldl_join_frame_generic") [])
+                                        natT (sr-c entry :add) (sr-c entry :mul) (sr-c entry :zero)
+                                        (sr-c entry :hAA) (sr-c entry :hZA) (sr-c entry :hAZ)
+                                        (sr-c entry :hMA) (sr-c entry :hMZ)
+                                        K X Y dec f' g kf lf e xs ys)
                         st (cert/mk-st env lctx)
                         feT (try (tc/infer-type st frameEq) (catch Throwable _ nil))
                         [_ feA] (when feT (e/get-app-fn-args feT))
                         R1 (when (and feA (>= (count feA) 3)) (nth feA 2))
                         preidx (when R1 (extract-frame-preidx R1))]
                     (when preidx
-                      (let [floatEq (e/app* (e/const' (nm "Map.foldl_keyfactor_float") []) K X dec w kf e xs preidx)
+                      (let [floatEq (e/app* (e/const' (nm "Map.foldl_keyfactor_float_generic") [])
+                                            natT (sr-c entry :add) (sr-c entry :mul) (sr-c entry :zero) (sr-c entry :hMZ)
+                                            K X dec w kf e xs preidx)
                             flT (try (tc/infer-type st floatEq) (catch Throwable _ nil))
                             [_ flA] (when flT (e/get-app-fn-args flT))
                             R2 (when (and flA (>= (count flA) 3)) (nth flA 2))]

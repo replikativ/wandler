@@ -160,6 +160,39 @@
         lctx {74001 {:name "xs" :type (listOf Nat)} 74002 {:name "ys" :type (listOf Nat)}}]
     {:term term :lctx lctx}))
 
+;; ── NON-Nat carrier: the BOOLEAN semiring (∨,∧,⊥) ── boolean-provenance / reachability aggregation ──
+;; foldl (λacc p. acc ∨ (f(fst p) ∧ g(snd p))) false (join …) — "does ANY matching pair satisfy f∧g?".
+;; The recognizer reads the carrier (Bool) off the op's binder, the registry routes the GENERIC frame
+;; law instantiated at (Bool, ∨, ∧, ⊥), and verified-rewrite? certifies it — the SAME pre-aggregated
+;; index machinery, now over a non-Nat semiring. This is the payoff of the carrier-generic frame family.
+(defn- bool-frame-join-term []
+  (let [Nat (natT) Bool (e/const' (nm "Bool") []) PXY (prodT Nat Nat)
+        dec (e/const' (nm "instDecidableEqNat") [])
+        idf (e/lam "n" Nat (e/bvar 0) :default)
+        ;; f = g = (λn. 1 ≤ n) : Nat → Bool
+        ble1 (e/lam "n" Nat (e/app* (e/const' (nm "Nat.ble") []) (e/lit-nat 1) (e/bvar 0)) :default)
+        xs (e/fvar 75001) ys (e/fvar 75002)
+        fstp (e/app* (e/const' (nm "Prod.fst") [z z]) Nat Nat (e/bvar 0))
+        sndp (e/app* (e/const' (nm "Prod.snd") [z z]) Nat Nat (e/bvar 0))
+        op (e/lam "acc" Bool (e/lam "p" PXY
+             (e/app* (e/const' (nm "Bool.or") []) (e/bvar 1)
+                     (e/app* (e/const' (nm "Bool.and") []) (e/app ble1 fstp) (e/app ble1 sndp))) :default) :default)
+        e0 (e/const' (nm "Bool.false") [])
+        join (e/app* (e/const' (nm "Map.join") []) Nat Nat Nat dec idf idf xs ys)
+        term (e/app* (e/const' (nm "List.foldl") [z z]) Bool PXY op e0 join)
+        lctx {75001 {:name "xs" :type (listOf Nat)} 75002 {:name "ys" :type (listOf Nat)}}]
+    {:term term :lctx lctx}))
+
+(deftest bool-frame-index-auto-selected
+  (when (ready?)
+    (testing "the FRAME index fires over a NON-Nat carrier: a boolean-provenance (∨/∧) weighted join
+             factorizes through the pre-aggregated index via the generic frame law instantiated at Bool"
+      (let [{:keys [term lctx]} (bool-frame-join-term)
+            res (opt/optimize-cost (a/env) term :lctx lctx :ndv {75002 5.0})]
+        (is (:verified? res) "Bool-carrier frame rewrite kernel-certified (generic frame @ Bool)")
+        (is (some #{:frame-index} (:rewrites res)) "frame-index adopted for the boolean semiring")
+        (is (= :in-memory-hash (get-in res [:physical :strategy])))))))
+
 (deftest keyfactor-float-auto-selected
   (when (ready?)
     (testing "optimize-cost floats a key-factor w(kf x) into the per-key index (FD scope quotient)"
