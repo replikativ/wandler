@@ -126,6 +126,43 @@
     @c))
 
 
+(defn soac-depth-cost
+  "Honest cost for the e-graph's NON-CONFLUENT reorder/hoist search: a SOAC op is charged
+   `base^depth`, where `depth` is the number of enclosing SOAC step-λs. A fold/map nested inside
+   a `map`/`filter`/`foldl` step-λ runs ONCE PER ELEMENT of the outer collection, so its true cost
+   is exponential in the nesting — exactly the signal `soac-cost` (flat count) and `pipeline-cost`
+   (which doesn't descend step-λs, to keep factorization gates intact) both miss. This is what lets
+   extraction PREFER a loop-invariant HOIST: pulling an inner fold out of a map's step-λ drops it
+   from depth 1 (base¹) to depth 0 (1).
+
+     foldl + 0 (map (λx. x * foldl + 0 ys) xs)   →  1 (foldl) + 1 (map) + base¹ (inner fold)  ≈ 12
+     (foldl + 0 (map id xs)) * (foldl + 0 ys)    →  1 + 1 + 1                                  =  3
+
+   A λ ARGUMENT of a SOAC is a per-element step ⇒ its body is costed at depth+1; any other λ (a
+   let-bound function value) does not multiply work, so its body stays at the same depth. Used ONLY
+   as the e-graph extraction/adopt cost — `pipeline-cost` remains the cardinality gate for the
+   confluent/factorization path, so that invariant is untouched. `base` > 1 is all that matters for
+   ranking; 10 keeps the numbers legible."
+  [term & {:keys [base] :or {base 10.0}}]
+  (letfn [(walk [e depth]
+            (cond
+              (e/app? e)
+              (let [[h args] (e/get-app-fn-args e)
+                    soac? (and (e/const? h) (cert/soac-names (name/->string (e/const-name h))))]
+                (+ (if soac? (Math/pow (double base) (double depth)) 0.0)
+                   (reduce + 0.0
+                           (map (fn [a]
+                                  (if (and soac? (e/lam? a))
+                                    (walk (e/lam-body a) (inc depth))  ; per-element step body
+                                    (walk a depth)))
+                                args))))
+              (e/lam? e)    (walk (e/lam-body e) depth)   ; non-SOAC λ: does not multiply
+              (e/forall? e) (walk (e/forall-body e) depth)
+              (e/let? e)    (+ (walk (e/let-value e) depth) (walk (e/let-body e) depth))
+              :else 0.0))]
+    (walk term 0)))
+
+
 ;; ── cardinality-propagation cost (datahike's estimate.cljc, made static) ──────
 ;; soac-cost counts ops; it can't tell a filter that runs BEFORE a join (small
 ;; input) from one that runs AFTER it (large input) — both are 2 ops. The cost
