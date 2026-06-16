@@ -226,6 +226,16 @@
 (defn- sr-entry [S] (sreg/entry S))
 (defn- sr-c [entry kw] (sreg/const entry kw))
 
+(defn- adopt-if-improved
+  "Shared frame-emitter tail: adopt the rewrite `res` (whose :term is the rewritten RHS) iff it strictly
+   lowers pipeline-cost AND passes the kernel gate cert/verified-rewrite?. The single place the cost
+   improvement and the soundness check are made jointly — kept here so the frame emitters can't drift."
+  [^Env env term res lctx selectivity sizes]
+  (when (and (< (cost/pipeline-cost (:term res) {:selectivity selectivity :sizes sizes})
+                (cost/pipeline-cost term {:selectivity selectivity :sizes sizes}))
+             (cert/verified-rewrite? env term res :lctx lctx))
+    (assoc res :verified? true)))
+
 (defn- separable-sum-g
   "Detect a SEPARABLE additive aggregate op: `λacc:S. λp:(X×Y). add acc (g (Prod.snd X Y p))` over any
    registered semiring carrier S (add = the carrier's additive op), where `g : Y → S` reads only the right
@@ -321,10 +331,7 @@
                           res {:term rhs :proof proof :changed? true :rewrites [:pre-agg-index]
                                :physical {:strategy :in-memory-hash :index-est (double ndv-est) :budget (or memory-budget 1.0e8)}
                                :cost (cost/pipeline-cost rhs {:selectivity selectivity :sizes sizes})}]
-                      (when (and (< (cost/pipeline-cost rhs {:selectivity selectivity :sizes sizes})
-                                    (cost/pipeline-cost term {:selectivity selectivity :sizes sizes}))
-                                 (cert/verified-rewrite? env term res :lctx lctx))
-                        (assoc res :verified? true)))))))))))))
+                      (adopt-if-improved env term res lctx selectivity sizes))))))))))))
 
 
 (defn- reads-fst?
@@ -446,10 +453,7 @@
                           res {:term rhs :proof proof :changed? true :rewrites [:frame-index]
                                :physical {:strategy :in-memory-hash :index-est (double ndv-est) :budget (or memory-budget 1.0e8)}
                                :cost (cost/pipeline-cost rhs {:selectivity selectivity :sizes sizes})}]
-                      (when (and (< (cost/pipeline-cost rhs {:selectivity selectivity :sizes sizes})
-                                    (cost/pipeline-cost term {:selectivity selectivity :sizes sizes}))
-                                 (cert/verified-rewrite? env term res :lctx lctx))
-                        (assoc res :verified? true)))))))))))))
+                      (adopt-if-improved env term res lctx selectivity sizes))))))))))))
 
 
 ;; ---- physical: loop-invariant index hoisting (LICM), memory-gated ----------------
@@ -630,10 +634,7 @@
                           res {:term rhs :proof proof :changed? true :rewrites [:frame-index-cond]
                                :physical {:strategy :in-memory-hash :index-est (double ndv-est) :budget (or memory-budget 1.0e8)}
                                :cost (cost/pipeline-cost rhs {:selectivity selectivity :sizes sizes})}]
-                      (when (and (< (cost/pipeline-cost rhs {:selectivity selectivity :sizes sizes})
-                                    (cost/pipeline-cost term {:selectivity selectivity :sizes sizes}))
-                                 (cert/verified-rewrite? env term res :lctx lctx))
-                        (assoc res :verified? true)))))))))))))
+                      (adopt-if-improved env term res lctx selectivity sizes))))))))))))
 
 (defn try-frame-index-keyfactor
   "PHYSICAL FD SCOPE QUOTIENT: a KEY-FACTOR weight `w(kf x)·g(y)` over a join FLOATS the key-factor into
@@ -680,10 +681,7 @@
                                 res {:term R2 :proof proof :changed? true :rewrites [:frame-index-keyfactor]
                                      :physical {:strategy :in-memory-hash :index-est (double ndv-est) :budget (or memory-budget 1.0e8)}
                                      :cost (cost/pipeline-cost R2 {:selectivity selectivity :sizes sizes})}]
-                            (when (and (< (cost/pipeline-cost R2 {:selectivity selectivity :sizes sizes})
-                                          (cost/pipeline-cost term {:selectivity selectivity :sizes sizes}))
-                                       (cert/verified-rewrite? env term res :lctx lctx))
-                              (assoc res :verified? true))))))))))))))))
+                            (adopt-if-improved env term res lctx selectivity sizes)))))))))))))))
 
 (def ^:private soac-heads
   "Heads whose presence in an invariant `c` makes hoisting it out of a row-loop worthwhile (the cost
