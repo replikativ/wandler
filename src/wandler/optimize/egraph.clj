@@ -58,24 +58,24 @@
   (vec (concat hoist-laws reorder-laws)))
 
 (defn- saturate-once
-  "One saturation round on `term`: build a fresh e-graph, internalize, E-match all
-   `laws`, extract the cheapest materialized member by `cost-fn`, and build a
-   kernel proof `term = extracted` from the e-graph. Returns
-   {:term :proof :cost :members} or nil if extraction found nothing better/usable.
-   `proof` is nil when the cheapest member IS `term` (no change)."
+  "One saturation round on `term`: build a fresh e-graph, internalize, E-match all `laws`, then
+   RECURSIVELY extract the cheapest equivalent term by `cost-fn` together with its kernel proof
+   `term = extracted` (`proof/extract-and-prove`, #35). Recursive (egg-style) extraction rebuilds the
+   ENCLOSING term from a rewritten subterm — so a rewrite that fires under an application (e.g. a
+   loop-invariant hoist in-context) is extractable, which flat `extract-min-cost` could not reach.
+   Returns {:term :proof :cost} or nil if extraction found nothing usable. `proof` is nil when the
+   cheapest term IS `term` (no change)."
   [^Env env st term laws cost-fn]
   (let [thms (ematch/prepare-theorems env laws)
         gs (-> (eg/mk-grind-state env) (eg/internalize term 0))
         gs (if (seq thms) (:gs (ematch/run-ematch gs thms #{})) gs)
-        best (eg/extract-min-cost gs term cost-fn)]
-    (when best
-      (if (.equals ^Object (:term best) term)
-        {:term term :proof nil :cost (:cost best) :members (:members best)}
-        (let [proof (try (egproof/mk-eq-proof gs st term (:term best))
-                         (catch Throwable _ nil))]
-          (when proof
-            {:term (:term best) :proof proof
-             :cost (:cost best) :members (:members best)}))))))
+        rec (try (egproof/extract-and-prove gs st term cost-fn)
+                 (catch Throwable _ nil))]
+    (when (and rec (:term rec))
+      (if (.equals ^Object (:term rec) term)
+        {:term term :proof nil :cost (:cost rec)}
+        (when (:proof rec)
+          {:term (:term rec) :proof (:proof rec) :cost (:cost rec)})))))
 
 (defn- advance
   "Fold one verified rewrite step into the running [term proof] state.
