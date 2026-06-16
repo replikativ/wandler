@@ -772,6 +772,7 @@
           ;; pulls OUT of the per-bucket sum (computed once per key). The certificate for floating a
           ;; key-factor into the per-key pre-aggregated index. Assembly: bucket_key_subst ∘ foldl_map ∘
           ;; foldl_const_mul_pull.
+          (thm! "Map.bucket_factor_pull_generic" (rp/prove-bucket-factor-pull-generic))
           (thm! "Map.bucket_factor_pull"    (rp/prove-bucket-factor-pull))
           ;; FD float-into-index: a key-factor w(kf x) multiplying a per-key index lookup can be BAKED
           ;; into the index (each entry reweighted by w of its key), since the lookup key is k so
