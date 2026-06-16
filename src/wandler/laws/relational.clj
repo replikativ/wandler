@@ -746,6 +746,7 @@
           ;; pointwise foldl congruence (lifts the per-bucket identity to the whole outer fold).
           (thm! "List.foldl_congr"        (rp/prove-foldl-congr))
           ;; THE pre-aggregated (FAQ) join index for separable SUM aggregates — O(distinct keys).
+          (thm! "Map.foldl_join_sum_factor_generic" (rp/prove-foldl-join-sum-factor-generic))
           (thm! "Map.foldl_join_sum_factor" (rp/prove-foldl-join-sum-factor))
           ;; element-polymorphic foldl-form const-factor pull (the FAQ frame rule needs it: a bucket is
           ;; List Y with weight g:Y→Nat, where the Nat-only sum_map_const_mul does not apply).
