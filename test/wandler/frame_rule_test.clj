@@ -71,3 +71,16 @@
             (is (some? (re-find #"cond" s)) "indicator/guard expressed via cond")
             (is (some? (re-find #"Nat.mul" s)) "factors a product u·v"))))
       (is (boolean (kenv/lookup (a/env) (nm "Nat.cond_and_mul_split"))) "installed by build-all"))))
+
+(deftest bucket-key-subst-verifies
+  (when (ready?)
+    (testing "Map.bucket_key_subst (FD scope quotient foundation) kernel-verifies"
+      (let [[g p] (rp/prove-bucket-key-subst)]
+        (is (some? p) "proof extracted")
+        (is (true? (kenv/verifies? (a/env) g p)) "passes check-constant")
+        (let [s (e/->string g)]
+          (testing "a key-function is constant on the bucket = keyed filter"
+            (is (some? (re-find #"List.filter" s)) "the domain is the keyed filter (the bucket)")
+            (is (some? (re-find #"List.map" s)) "substituting the key inside the mapped fn")
+            (is (some? (re-find #"BEq.beq" s)) "the filter keys on equality k == lf y"))))
+      (is (boolean (kenv/lookup (a/env) (nm "Map.bucket_key_subst"))) "installed by build-all"))))

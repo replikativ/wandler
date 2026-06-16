@@ -757,6 +757,10 @@
           ;; factors a weighted product — cond(a&&b)(u·v)0 = (cond a u 0)·(cond b v 0) — so once split
           ;; f'=[P]·f, g'=[Q]·g are closed and the frame rule fires.
           (thm! "Nat.cond_and_mul_split"    (rp/prove-cond-and-mul-split))
+          ;; FD SCOPE QUOTIENT foundation: on a group_by bucket (= the keyed filter), every element has
+          ;; lf y = k, so substituting the join key k for (lf y) is sound. A key-dependent build-side
+          ;; factor can therefore float to whichever side is cheaper (e.g. into the per-key index).
+          (thm! "Map.bucket_key_subst"      (rp/prove-bucket-key-subst))
           ;; loop-invariant distributive law (1-variable elimination): a multiplicative x-free factor
           ;; distributes out of the sum — the certificate for hoisting an invariant fold out of a map.
           (thm! "List.sum_map_mul_const"  (rp/prove-sum-map-mul-const))

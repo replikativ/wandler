@@ -1764,3 +1764,81 @@
                   (#(e/lam "b" boolT (e/abstract1 % 2) :default))
                   (#(e/lam "a" boolT (e/abstract1 % 1) :default)))]
     [goal proof]))
+
+;; ── Map.bucket_key_subst (the FD SCOPE QUOTIENT foundation) ───────────────────────
+;; map (λy. h (lf y) y) (filter (λy. k == lf y) ys) = map (λy. h k y) (filter (λy. k == lf y) ys)
+;; A key-FUNCTIONAL-DEPENDENCY fact: on a group_by bucket (= the keyed filter, by Map.bucket_content),
+;; every element y satisfies lf y = k, so substituting the JOIN KEY k for (lf y) anywhere is sound. This
+;; is the dependent-types scope quotient: the matched key is SHARED scope across the two join sides, so a
+;; build-side factor that reads the key (h (lf y) y) equals one that reads it as the constant k = kf x —
+;; letting a key-dependent weight FLOAT to whichever side is cheaper (e.g. into the per-key pre-aggregated
+;; index instead of per row). Proof: induction on ys; cons splits by-cases on (k == lf head) — the
+;; filter_cons_of_pos branch gets `(k == lf head) = true`, so beq_iff_eq gives k = lf head and
+;; congrArg (λkey. h key head) closes the head while the IH closes the tail; filter_cons_of_neg drops the
+;; head to the IH. (h : K → Y → W is fully general, so it covers a key-factor × residual w(lf y)·g(y).)
+(def ^:private bks-LEM
+  ['List.map_nil 'List.map_cons 'List.filter_nil 'List.filter_cons_of_pos 'List.filter_cons_of_neg
+   'cond 'cond_true 'cond_false])
+(defn prove-bucket-key-subst []
+  (let [K (e/fvar 1) W (e/fvar 2) Y (e/fvar 3) dec (e/fvar 4) lf (e/fvar 5) h (e/fvar 6) k (e/fvar 7) ys (e/fvar 8)
+        beqK (fn [x y] (e/app* (e/const' (nm "BEq.beq") [z]) K (e/app* (e/const' (nm "instBEqOfDecidableEq") [z]) K dec) x y))
+        filtP (e/lam "y" Y (beqK k (e/app lf (e/bvar 0))) :default)
+        filt (fn [l] (e/app* (e/const' (nm "List.filter") [z]) Y filtP l))
+        lhsFn (e/lam "y" Y (e/app* h (e/app lf (e/bvar 0)) (e/bvar 0)) :default)
+        rhsFn (e/lam "y" Y (e/app* h k (e/bvar 0)) :default)
+        mapW (fn [fn l] (e/app* (e/const' (nm "List.map") [z z]) Y W fn l))
+        concl (e/app* (e/const' (nm "Eq") [L1]) (listOf W) (mapW lhsFn (filt ys)) (mapW rhsFn (filt ys)))
+        goal (-> concl
+                 (#(e/forall' "ys" (listOf Y) (e/abstract1 % 8) :default))
+                 (#(e/forall' "k" K (e/abstract1 % 7) :default))
+                 (#(e/forall' "h" (e/forall' "_" K (e/forall' "_" Y W :default) :default) (e/abstract1 % 6) :default))
+                 (#(e/forall' "lf" (e/forall' "_" Y K :default) (e/abstract1 % 5) :default))
+                 (#(e/forall' "dec" (e/app (e/const' (nm "DecidableEq") [L1]) K) (e/abstract1 % 4) :default))
+                 (#(e/forall' "Y" type0 (e/abstract1 % 3) :default))
+                 (#(e/forall' "W" type0 (e/abstract1 % 2) :default))
+                 (#(e/forall' "K" type0 (e/abstract1 % 1) :default)))
+        [ps _] (proof/start-proof (a/env) goal)
+        ps (basic/intros ps ["K" "W" "Y" "dec" "lf" "h" "k" "ys"])
+        ps (basic/induction ps (fvid ps "ys"))
+        ps (reduce
+            (fn [ps gid]
+              (let [psg (focus ps gid)
+                    cons? (some (fn [[_ d]] (= "head" (:name d))) (:lctx (proof/current-goal psg)))]
+                (if cons?
+                  (let [hd (gf psg "head")
+                        Kp (gf psg "K") dp (gf psg "dec") lfp (gf psg "lf")
+                        ihid (or (fvid psg "ih_tail'") (fvid psg "ih_tail") (fvid psg "ih"))
+                        ih (e/fvar ihid)
+                        beqhd (e/app* (e/const' (nm "BEq.beq") [z]) Kp (e/app* (e/const' (nm "instBEqOfDecidableEq") [z]) Kp dp) (gf psg "k") (e/app lfp hd))
+                        br (basic/by-cases psg beqhd)
+                        bids (new-goals (:goals psg) (:goals br))]
+                    (reduce (fn [qq bid]
+                              (let [qb (focus qq bid)
+                                    hc (fvid qb "hc")
+                                    hctype (:type (some (fn [[_ d]] (when (= "hc" (:name d)) d)) (:lctx (proof/current-goal qb))))
+                                    pos? (= "Bool.true" (name/->string (e/const-name (nth (second (e/get-app-fn-args hctype)) 2))))
+                                    r (try (basic/rewrite qb (e/fvar hc)) (catch Throwable _ qb))
+                                    r (try (simp/simp-all r bks-LEM) (catch Throwable _ r))
+                                    r (if pos?
+                                        (let [Kp (gf r "K") dp (gf r "dec") lfp (gf r "lf") hp (gf r "h") kp (gf r "k") Wp (gf r "W")
+                                              lawful (e/app* (e/const' (nm "instLawfulBEqOfDecidableEq") []) Kp dp)
+                                              biff (e/app* (e/const' (nm "beq_iff_eq") [z]) Kp (e/app* (e/const' (nm "instBEqOfDecidableEq") [z]) Kp dp) lawful kp (e/app lfp hd))
+                                              hfeq (e/app* (e/const' (nm "Iff.mp") [])
+                                                           (e/app* (e/const' (nm "Eq") [L1]) (e/const' (nm "Bool") [])
+                                                                   (e/app* (e/const' (nm "BEq.beq") [z]) Kp (e/app* (e/const' (nm "instBEqOfDecidableEq") [z]) Kp dp) kp (e/app lfp hd))
+                                                                   (e/const' (nm "Bool.true") []))
+                                                           (e/app* (e/const' (nm "Eq") [L1]) Kp kp (e/app lfp hd)) biff (e/fvar hc))
+                                              symh (e/app* (e/const' (nm "Eq.symm") [L1]) Kp kp (e/app lfp hd) hfeq)       ; lf head = k
+                                              hmot (e/lam "key" Kp (e/app* hp (e/bvar 0) hd) :default)                    ; λkey. h key head
+                                              wheq (e/app* (e/const' (nm "congrArg") [L1 L1]) Kp Wp (e/app lfp hd) kp hmot symh) ; h(lf head) head = h k head
+                                              r2 (try (basic/rewrite r wheq) (catch Throwable _ r))
+                                              r2 (try (basic/rewrite r2 ih) (catch Throwable _ r2))]
+                                          (try (simp/simp-all r2 bks-LEM) (catch Throwable _ r2)))
+                                        (let [r2 (try (basic/rewrite r ih) (catch Throwable _ r))]
+                                          (try (simp/simp-all r2 bks-LEM) (catch Throwable _ r2))))]
+                                (if (proof/solved? r) r (try (basic/rfl r) (catch Throwable _ r)))))
+                            br bids))
+                  (let [q (try (simp/simp-all psg bks-LEM) (catch Throwable _ psg))]
+                    (if (proof/solved? q) q (try (basic/rfl q) (catch Throwable _ q)))))))
+            ps (vec (:goals ps)))]
+    [goal (when (proof/solved? ps) (extract/extract ps))]))
