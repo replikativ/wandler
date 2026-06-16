@@ -1542,3 +1542,182 @@
                     (#(e/lam "c"  (gh-natT) (e/abstract1 % 2) :default))
                     (#(e/lam "f"  (smc-arrowNN) (e/abstract1 % 1) :default)))))]
     [goal0 pf0]))
+
+;; ── List.foldl_const_mul_pull (polymorphic foldl-form const-factor pull) ──────────
+;; foldl (λa y. a + c·(g y)) 0 l  =  c · foldl (λa y. a + g y) 0 l   (c is loop-invariant).
+;; The element-POLYMORPHIC, foldl-form sibling of List.sum_map_const_mul (which is Nat→Nat,
+;; List Nat only). Needed by the FAQ frame rule: a bucket is `List Y` with weight `g : Y → Nat`,
+;; so the Nat-only sum_map_const_mul does not apply. Same accumulator-generalized induction:
+;;   G : ∀ a, foldl (λp y. p + c·g y) (c·a) l = c · foldl (λp y. p + g y) a l
+;; cons closes by Nat.mul_add (left distributivity) + the ∀a IH; the a=0 instance + Nat.mul_zero
+;; gives the headline. (No map round-trip — directly in foldl form.)
+(defn prove-foldl-const-mul-pull []
+  (let [alpha (e/fvar 1) c1 (e/fvar 2) g1 (e/fvar 3) l1 (e/fvar 4) a1 (e/fvar 5)
+        cstepf (fn [c g] (e/lam "a" (gh-natT)
+                           (e/lam "y" alpha (gh-addN (e/bvar 1) (smc-mul c (e/app g (e/bvar 0)))) :default) :default))
+        gstepf (fn [g] (gh-stepfn alpha g))
+        foldlA (fn [stp init l] (gh-foldlN alpha stp init l))   ; List.foldl [Nat, alpha]
+        conclG (smc-eqN (foldlA (cstepf c1 g1) (smc-mul c1 a1) l1)
+                        (smc-mul c1 (foldlA (gstepf g1) a1 l1)))
+        goalG (-> conclG
+                  (#(e/forall' "a"  (gh-natT) (e/abstract1 % 5) :default))
+                  (#(e/forall' "l"  (listOf alpha) (e/abstract1 % 4) :default))
+                  (#(e/forall' "g"  (sf-arrow alpha (gh-natT)) (e/abstract1 % 3) :default))
+                  (#(e/forall' "c"  (gh-natT) (e/abstract1 % 2) :default))
+                  (#(e/forall' "α"  type0 (e/abstract1 % 1) :default)))
+        [ps _] (proof/start-proof (a/env) goalG)
+        ps (basic/intros ps ["α" "c" "g" "l"])
+        ps (basic/induction ps (fvid ps "l"))
+        ps (reduce
+            (fn [ps gid]
+              (let [psg (focus ps gid)
+                    cons? (some (fn [[_ d]] (= "tail" (:name d))) (:lctx (proof/current-goal psg)))
+                    psg (basic/intros psg ["a"])]
+                (if cons?
+                  (let [a (gf psg "a") c (gf psg "c") g (gf psg "g") head (gf psg "head")
+                        psg (simp/simp psg ['List.foldl_cons])
+                        gh (e/app g head)
+                        ;; c·(a+gh) = c·a + c·gh ; rewrite the accumulator c·a + c·gh ← c·(a+gh)
+                        muladd (e/app* (e/const' (nm "Nat.mul_add") []) c a gh)
+                        sym (e/app* (e/const' (nm "Eq.symm") [L1]) (gh-natT)
+                                    (smc-mul c (smc-add a gh))
+                                    (smc-add (smc-mul c a) (smc-mul c gh)) muladd)
+                        psg (basic/rewrite psg sym)
+                        ih (e/fvar (or (smc-fvidH psg "ih_tail'") (smc-fvidH psg "ih_tail") (smc-fvidH psg "ih")))]
+                    (basic/exact psg (e/app ih (smc-add a gh))))
+                  (simp/simp psg ['List.foldl_nil]))))
+            ps (vec (:goals ps)))
+        pfG (when (proof/solved? ps) (extract/extract ps))
+        ;; headline at a := 0
+        alpha (e/fvar 1) c (e/fvar 2) g (e/fvar 3) l (e/fvar 4) zeroN (gh-zeroN)
+        cstep (cstepf c g) gstep (gstepf g)
+        lhs0 (gh-foldlN alpha cstep zeroN l)
+        rhs0 (smc-mul c (gh-foldlN alpha gstep zeroN l))
+        goal0 (-> (smc-eqN lhs0 rhs0)
+                  (#(e/forall' "l" (listOf alpha) (e/abstract1 % 4) :default))
+                  (#(e/forall' "g" (sf-arrow alpha (gh-natT)) (e/abstract1 % 3) :default))
+                  (#(e/forall' "c" (gh-natT) (e/abstract1 % 2) :default))
+                  (#(e/forall' "α" type0 (e/abstract1 % 1) :default)))
+        pf0 (when pfG
+              (let [ginst (e/app* pfG alpha c g l zeroN)               ; foldl cstep (c·0) l = c·foldl gstep 0 l
+                    mz (e/app* (e/const' (nm "Nat.mul_zero") []) c)     ; c·0 = 0
+                    mzsym (e/app* (e/const' (nm "Eq.symm") [L1]) (gh-natT) (smc-mul c zeroN) zeroN mz)  ; 0 = c·0
+                    motive (e/lam "i" (gh-natT) (gh-foldlN alpha cstep (e/bvar 0) l) :default)
+                    coer (e/app* (e/const' (nm "congrArg") [(lvl/succ z) (lvl/succ z)]) (gh-natT) (gh-natT)
+                                 zeroN (smc-mul c zeroN) motive mzsym)  ; foldl cstep 0 l = foldl cstep (c·0) l
+                    body (e/app* (e/const' (nm "Eq.trans") [L1]) (gh-natT)
+                                 lhs0 (gh-foldlN alpha cstep (smc-mul c zeroN) l) rhs0 coer ginst)]
+                (-> body
+                    (#(e/lam "l" (listOf alpha) (e/abstract1 % 4) :default))
+                    (#(e/lam "g" (sf-arrow alpha (gh-natT)) (e/abstract1 % 3) :default))
+                    (#(e/lam "c" (gh-natT) (e/abstract1 % 2) :default))
+                    (#(e/lam "α" type0 (e/abstract1 % 1) :default)))))]
+    [goal0 pf0]))
+
+;; ── Map.foldl_join_frame (the FAQ FRAME RULE — two-sided separable weight) ────────
+;; foldl (λacc p. acc + (f (fst p)) · (g (snd p))) e (Map.join kf lf xs ys)
+;;   = foldl (λacc x. acc + (f x) · getD (lookup (kf x) PREIDX) 0) e xs
+;; where PREIDX is the SAME g-only O(distinct-keys) pre-aggregated index as Map.foldl_join_sum_factor.
+;; This GENERALIZES Map.foldl_join_sum_factor (its f≡1 instance): the FRAME separates the x-side weight
+;; `f x` from the pre-summed y-side `Σ g`. It is the aggregation frame rule — the SPN/FAQ "product node"
+;; expressed over Map.join: Σ_{x⋈y} f(x)·g(y) = Σ_x f(x)·(Σ_{y∈bucket(x)} g(y)). Same assembly as
+;; foldl_join_sum_factor (Map.foldl_join_factor ∘ List.foldl_congr), with the per-x identity splicing
+;; the f(x)-extraction (List.foldl_const_mul_pull) between foldl_add_init and the preAgg rewrite.
+(defn- ff-op [X Y f g]
+  (e/lam "acc" (gh-natT)
+    (e/lam "p" (prodT X Y)
+      (gh-addN (e/bvar 1) (smc-mul (e/app f (fstOf X Y (e/bvar 0)))
+                                   (e/app g (sndOf X Y (e/bvar 0))))) :default) :default))
+
+(defn- ff-parts [K X Y dec f g kf lf e xs ys]
+  (let [P (sf-parts K X Y dec g kf lf e xs ys)        ; g-only preidx/idx/entries/bucketSumFn/llookupNat
+        op (ff-op X Y f g)]
+    (assoc P :op op :lhs (gh-foldlN' (gh-natT) (prodT X Y) op e (:join P)))))
+
+(defn- ff-f-outer [K X Y dec f g kf lf e xs ys]
+  (let [P (ff-parts K X Y dec f g kf lf e xs ys)
+        af 101 xf 102 acc (e/fvar af) x (e/fvar xf)
+        BKT (sf-getD (:LY P) (e/app* (e/const' (nm "Map.lookup") []) K (:LY P) dec (e/app kf x) (:idx P)) (nilOf Y))
+        innerStep (e/lam "a" (gh-natT) (e/lam "y" Y (e/app* (:op P) (e/bvar 1) (mkP X Y x (e/bvar 0))) :default) :default)
+        body (gh-foldlN' (gh-natT) Y innerStep acc BKT)]
+    (e/lam "acc" (gh-natT) (e/abstract1 (e/lam "x" X (e/abstract1 body xf) :default) af) :default)))
+
+(defn- ff-g-outer [K X Y dec f g kf lf e xs ys]
+  (let [P (ff-parts K X Y dec f g kf lf e xs ys)
+        af 101 xf 102 acc (e/fvar af) x (e/fvar xf)
+        body (gh-addN acc (smc-mul (e/app f x)
+                                   (sf-getD (gh-natT) ((:llookupNat P) (e/app kf x)) (gh-zeroN))))]
+    (e/lam "acc" (gh-natT) (e/abstract1 (e/lam "x" X (e/abstract1 body xf) :default) af) :default)))
+
+(defn- ff-hyp [K X Y dec f g kf lf e xs ys]
+  (let [P (ff-parts K X Y dec f g kf lf e xs ys)
+        LY (:LY P) af 101 xf 102 acc (e/fvar af) x (e/fvar xf)
+        kfx (e/app kf x) fx (e/app f x)
+        BKT (sf-getD LY (e/app* (e/const' (nm "Map.lookup") []) K LY dec kfx (:idx P)) (nilOf Y))
+        h (e/lam "y" Y (smc-mul fx (e/app g (e/bvar 0))) :default)               ; λy. (f x)·(g y)
+        hstep (e/lam "a" (gh-natT) (e/lam "y" Y (gh-addN (e/bvar 1) (smc-mul fx (e/app g (e/bvar 0)))) :default) :default)
+        bsBKT (gh-foldlN' (gh-natT) Y (:stepAdd P) (gh-zeroN) BKT)               ; foldl (λa y. a + g y) 0 BKT
+        hBKT0 (gh-foldlN' (gh-natT) Y hstep (gh-zeroN) BKT)                      ; foldl hstep 0 BKT
+        addInitEq (e/app* (e/const' (nm "List.foldl_add_init") []) Y h BKT acc) ; foldl hstep acc BKT = acc + hBKT0
+        pull (e/app* (e/const' (nm "List.foldl_const_mul_pull") []) Y fx g BKT) ; hBKT0 = (f x)·bsBKT
+        ;; presum (reuse sf machinery): symPresum : bsBKT = targetRHS
+        Oprime (e/app* (e/const' (nm "List.lookup") [z z]) K LY (:beq P) kfx (:entries P))
+        lmkv (e/app* (e/const' (nm "List.lookup_map_kv") []) K LY (gh-natT) (:beq P) (:bucketSumFn P) kfx (:entries P))
+        optMapB (fn [o] (e/app* (e/const' (nm "Option.map") [z z]) LY (gh-natT) (:bucketSumFn P) o))
+        lookPre ((:llookupNat P) kfx)
+        optNat (e/app (e/const' (nm "Option") [z]) (gh-natT))
+        getDNfn (e/lam "o" optNat (sf-getD (gh-natT) (e/bvar 0) (gh-zeroN)) :default)
+        congGetD (e/app* (e/const' (nm "congrArg") [L1 L1]) optNat (gh-natT)
+                         lookPre (optMapB Oprime) getDNfn lmkv)
+        getdMap (e/app* (e/const' (nm "Option.getD_map") [z z]) LY (gh-natT) (:bucketSumFn P) (nilOf Y) Oprime)
+        targetRHS (sf-getD (gh-natT) lookPre (gh-zeroN))
+        presumQ (e/app* (e/const' (nm "Eq.trans") [L1]) (gh-natT)
+                        targetRHS (sf-getD (gh-natT) (optMapB Oprime) (gh-zeroN)) bsBKT congGetD getdMap)
+        symPresum (e/app* (e/const' (nm "Eq.symm") [L1]) (gh-natT) targetRHS bsBKT presumQ)   ; bsBKT = targetRHS
+        ;; hBKT0 = (f x)·targetRHS  via pull then congrArg (mul fx ·) symPresum
+        mulFx (e/lam "w" (gh-natT) (smc-mul fx (e/bvar 0)) :default)
+        congMulPresum (e/app* (e/const' (nm "congrArg") [L1 L1]) (gh-natT) (gh-natT) bsBKT targetRHS mulFx symPresum)
+        hBKT0ToFxTarget (e/app* (e/const' (nm "Eq.trans") [L1]) (gh-natT)
+                                hBKT0 (smc-mul fx bsBKT) (smc-mul fx targetRHS) pull congMulPresum)
+        ;; wrap acc + · :  acc + hBKT0 = acc + (f x)·targetRHS
+        accPlus (e/lam "w" (gh-natT) (gh-addN acc (e/bvar 0)) :default)
+        congAcc (e/app* (e/const' (nm "congrArg") [L1 L1]) (gh-natT) (gh-natT) hBKT0 (smc-mul fx targetRHS) accPlus hBKT0ToFxTarget)
+        proofBody (e/app* (e/const' (nm "Eq.trans") [L1]) (gh-natT)
+                          (gh-foldlN' (gh-natT) Y hstep acc BKT)
+                          (gh-addN acc hBKT0)
+                          (gh-addN acc (smc-mul fx targetRHS))
+                          addInitEq congAcc)]
+    (e/lam "acc" (gh-natT) (e/abstract1 (e/lam "x" X (e/abstract1 proofBody xf) :default) af) :default)))
+
+(defn prove-foldl-join-frame []
+  (let [K (e/fvar 1) X (e/fvar 2) Y (e/fvar 3) dec (e/fvar 4) f (e/fvar 5) g (e/fvar 6)
+        kf (e/fvar 7) lf (e/fvar 8) e (e/fvar 9) xs (e/fvar 10) ys (e/fvar 11)
+        P (ff-parts K X Y dec f g kf lf e xs ys)
+        concl (lk-eqAt (gh-natT) (:lhs P) (gh-foldlN' (gh-natT) X (ff-g-outer K X Y dec f g kf lf e xs ys) e xs))
+        goal (-> concl
+                 (#(e/forall' "ys" (listOf Y) (e/abstract1 % 11) :default))
+                 (#(e/forall' "xs" (listOf X) (e/abstract1 % 10) :default))
+                 (#(e/forall' "e" (gh-natT) (e/abstract1 % 9) :default))
+                 (#(e/forall' "lf" (sf-arrow Y K) (e/abstract1 % 8) :default))
+                 (#(e/forall' "kf" (sf-arrow X K) (e/abstract1 % 7) :default))
+                 (#(e/forall' "g" (sf-arrow Y (gh-natT)) (e/abstract1 % 6) :default))
+                 (#(e/forall' "f" (sf-arrow X (gh-natT)) (e/abstract1 % 5) :default))
+                 (#(e/forall' "dec" (e/app (e/const' (nm "DecidableEq") [L1]) K) (e/abstract1 % 4) :default))
+                 (#(e/forall' "Y" type0 (e/abstract1 % 3) :default))
+                 (#(e/forall' "X" type0 (e/abstract1 % 2) :default))
+                 (#(e/forall' "K" type0 (e/abstract1 % 1) :default)))
+        [ps _] (proof/start-proof (a/env) goal)
+        ps (basic/intros ps ["K" "X" "Y" "dec" "f" "g" "kf" "lf" "e" "xs" "ys"])
+        K (gf ps "K") X (gf ps "X") Y (gf ps "Y") dec (gf ps "dec") f (gf ps "f") g (gf ps "g")
+        kf (gf ps "kf") lf (gf ps "lf") e (gf ps "e") xs (gf ps "xs") ys (gf ps "ys")
+        P (ff-parts K X Y dec f g kf lf e xs ys)
+        f-outer (ff-f-outer K X Y dec f g kf lf e xs ys)
+        g-outer (ff-g-outer K X Y dec f g kf lf e xs ys)
+        hyp (ff-hyp K X Y dec f g kf lf e xs ys)
+        factorEq (e/app* (e/const' (nm "Map.foldl_join_factor") []) K X Y (gh-natT) dec (:op P) e kf lf xs ys)
+        congrEq (e/app* (e/const' (nm "List.foldl_congr") []) (gh-natT) X f-outer g-outer xs e hyp)
+        proof (e/app* (e/const' (nm "Eq.trans") [L1]) (gh-natT) (:lhs P)
+                      (gh-foldlN' (gh-natT) X f-outer e xs) (gh-foldlN' (gh-natT) X g-outer e xs)
+                      factorEq congrEq)
+        ps (basic/exact ps proof)]
+    [goal (when (proof/solved? ps) (extract/extract ps))]))

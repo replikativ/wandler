@@ -1,0 +1,60 @@
+(ns wandler.frame-rule-test
+  "The FAQ FRAME RULE for Map.join (Phase 1). A SEPARABLE two-sided weight over a keyed join
+
+     foldl (λacc p. acc + f(fst p)·g(snd p)) e (Map.join kf lf xs ys)
+       = foldl (λacc x. acc + f(x)·getD (lookup (kf x) PREIDX) 0) e xs
+
+   factorizes through the SAME g-only O(distinct-keys) pre-aggregated index as
+   Map.foldl_join_sum_factor — which is exactly its f≡1 instance. This is the SPN / FAQ
+   `product node` expressed over Map.join: Σ_{x⋈y} f(x)·g(y) = Σ_x f(x)·(Σ_{y∈bucket(x)} g(y)).
+   The x-side weight f(x) is separated from the pre-summed y-side, NEVER materializing the
+   |xs|·|ys| pairs. The supporting element-polymorphic foldl-form pull law
+   List.foldl_const_mul_pull is checked too. Both are authoritatively kernel-verified
+   (kenv/verifies? = check-constant, not the lenient inferType). Gated on Init.
+   See [[faq-variable-elimination]], [[programming-model-4-structures]]."
+  (:require [clojure.test :refer [deftest is testing use-fixtures]]
+            [ansatz.core :as a]
+            [wandler.kmap :as km]
+            [wandler.laws.relational :as rl]
+            [wandler.laws.proofs :as rp]
+            [wandler.test-env :as test-env]
+            [ansatz.kernel.env :as kenv]
+            [ansatz.kernel.name :as name]
+            [ansatz.kernel.expr :as e]))
+
+(defn- nm [s] (name/from-string s))
+(defn- setup [f]
+  (when-let [k @test-env/init-full-env] (reset! a/ansatz-env k) (km/install!) (rl/install!))
+  (f))
+(use-fixtures :once setup)
+(defn- ready? [] (some? @test-env/init-full-env))
+
+(deftest foldl-const-mul-pull-verifies
+  (when (ready?)
+    (testing "List.foldl_const_mul_pull (polymorphic foldl-form const-factor pull) kernel-verifies"
+      (let [[g p] (rp/prove-foldl-const-mul-pull)]
+        (is (some? p) "proof extracted")
+        (is (true? (kenv/verifies? (a/env) g p)) "passes check-constant")))))
+
+(deftest foldl-join-frame-verifies
+  (when (ready?)
+    (testing "Map.foldl_join_frame (the FAQ frame rule) kernel-verifies"
+      (let [[g p] (rp/prove-foldl-join-frame)]
+        (is (some? p) "proof extracted")
+        (is (true? (kenv/verifies? (a/env) g p)) "passes check-constant")
+        (let [s (e/->string g)]
+          (testing "the goal is the separable two-sided weight factorized through the pre-agg index"
+            (is (some? (re-find #"Map.join" s)) "LHS aggregates over a Map.join")
+            (is (some? (re-find #"Nat.mul" s)) "the weight is a product f·g")
+            (is (some? (re-find #"Prod.fst" s)) "f is applied to the LEFT projection")
+            (is (some? (re-find #"Prod.snd" s)) "g is applied to the RIGHT projection")
+            (is (some? (re-find #"Option.getD" s)) "RHS probes the pre-aggregated index")
+            (is (some? (re-find #"List.lookup" s)) "RHS reads via a key lookup")))))))
+
+(deftest both-laws-installed
+  (when (ready?)
+    (testing "install! lands both new laws (each check-constant'd as it builds)"
+      (is (boolean (kenv/lookup (a/env) (nm "List.foldl_const_mul_pull"))))
+      (is (boolean (kenv/lookup (a/env) (nm "Map.foldl_join_frame"))))
+      (testing "the frame GENERALIZES the f≡1 sum-factor (both present, same pre-agg foundation)"
+        (is (boolean (kenv/lookup (a/env) (nm "Map.foldl_join_sum_factor"))))))))

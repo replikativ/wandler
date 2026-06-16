@@ -746,6 +746,13 @@
           (thm! "List.foldl_congr"        (rp/prove-foldl-congr))
           ;; THE pre-aggregated (FAQ) join index for separable SUM aggregates — O(distinct keys).
           (thm! "Map.foldl_join_sum_factor" (rp/prove-foldl-join-sum-factor))
+          ;; element-polymorphic foldl-form const-factor pull (the FAQ frame rule needs it: a bucket is
+          ;; List Y with weight g:Y→Nat, where the Nat-only sum_map_const_mul does not apply).
+          (thm! "List.foldl_const_mul_pull" (rp/prove-foldl-const-mul-pull))
+          ;; THE FAQ FRAME RULE: separable two-sided weight f(x)·g(y) over a join factorizes through the
+          ;; SAME pre-aggregated index — Σ_{x⋈y} f(x)·g(y) = Σ_x f(x)·(Σ bucket g). Generalizes
+          ;; foldl_join_sum_factor (its f≡1 instance); the SPN/FAQ product node over Map.join.
+          (thm! "Map.foldl_join_frame"      (rp/prove-foldl-join-frame))
           ;; loop-invariant distributive law (1-variable elimination): a multiplicative x-free factor
           ;; distributes out of the sum — the certificate for hoisting an invariant fold out of a map.
           (thm! "List.sum_map_mul_const"  (rp/prove-sum-map-mul-const))
