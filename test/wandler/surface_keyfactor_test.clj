@@ -32,12 +32,13 @@
 (deftest surface-keyfactor-floats-and-certifies
   (when (ready?)
     (testing "a surface a/defn key-factor join auto-adopts :frame-index-keyfactor (FD scope quotient)"
+      ;; malli :map schemas — `def-record` is the malli surface (the [:and :int [:>= 0]] constraints).
       (wrec/def-record SkfCustomer [:map [:cid [:and :int [:>= 0]]] [:region [:and :int [:>= 0]]]])
       (wrec/def-record SkfOrder    [:map [:cid [:and :int [:>= 0]]] [:amount [:and :int [:>= 0]]]])
-      ;; Σ over (custs ⋈ orders on cid):  (succ (:cid customer)) · (:amount order)
-      ;; the LEFT factor reads :cid — the join key — so it floats into the per-key index.
+      ;; idiomatic Clojure: Σ over (custs ⋈ orders on :cid) of  (inc (:cid customer)) * (:amount order).
+      ;; The LEFT factor reads :cid — the join key — so it floats into the per-key index.
       (a/defn skfq [custs :- (List SkfCustomer) orders :- (List SkfOrder)] Nat
-        (reduce + 0 (map (fn [p] (Nat.mul (Nat.succ (:cid (first p))) (:amount (second p))))
+        (reduce + 0 (map (fn [[c o]] (* (inc (:cid c)) (:amount o)))
                          (join (fn [c] (:cid c)) (fn [o] (:cid o)) custs orders))))
       (let [body (.value (env/lookup (a/env) (nm "skfq")))
             custT (e/const' (nm "SkfCustomer") []) ordT (e/const' (nm "SkfOrder") [])
