@@ -18,6 +18,7 @@
             [ansatz.tactic.extract :as extract]
             [wandler.laws.proofs :as rp]    ; the perm/bucket/join_comm proof chain (clean src home)
             [wandler.laws.semiring :as sreg]    ; the carrier registry the optimizer's frame index reads
+            [wandler.semiring-class :as sc]     ; WAddMonoid ⊂ WSemiring typeclasses (L4 front door)
             [wandler.laws.proofs.frame :as rpf]))   ; the FAQ frame-rule + semiring-generic proof family
 
 (defn- nm [s] (name/from-string s))
@@ -805,6 +806,10 @@
    (optimize-cost / a/defn) auto-adopts them. Requires kmap/install!. The first call proves
    everything (~1s); later calls (after an env reset) replay the memoized, already-verified CIs."
   []
+  ;; Install the algebra typeclasses (WAddMonoid ⊂ WSemiring) first — the generic frame-family
+  ;; laws are stated over a `[s : WSemiring S]` instance, so the classes must exist before build-all
+  ;; proves them. Idempotent + cheap (two single-ctor inductives).
+  (sc/install-classes!)
   (when-not (kenv/lookup (a/env) (nm "Map.join_length_comm"))
     (if @cache
       ;; replay through the same strict gate as the first build — the cache is

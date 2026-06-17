@@ -96,3 +96,23 @@
   [carrier]
   (let [n (:semiring (instance-names carrier))]
     (when (has? n) (kconst n))))
+
+;; ── Inline instance TERMS (built straight from a registry row, no env mutation) ──────────────
+;; These are what the migrated laws' application sites pass instead of 6 bare consts. The kernel
+;; checks the term when it checks the law application, so a bad row simply fails to typecheck.
+
+(defn mk-addmonoid-instance
+  "WAddMonoid.mk S add zero add_assoc zero_add add_zero — a `WAddMonoid S` term from a registry row.
+   `S` is a kernel const term (e.g. (kconst \"Nat\"))."
+  [S row]
+  (e/app* (kconst "WAddMonoid.mk") S
+          (kconst (:add row)) (kconst (:zero row))
+          (kconst (:hAA row)) (kconst (:hZA row)) (kconst (:hAZ row))))
+
+(defn mk-semiring-instance
+  "WSemiring.mk S <WAddMonoid inst> mul mul_add mul_zero zero_mul — a `WSemiring S` term from a row.
+   The parent WAddMonoid instance is built inline (compositional, like Lean's subobject ctor)."
+  [S row]
+  (e/app* (kconst "WSemiring.mk") S
+          (mk-addmonoid-instance S row)
+          (kconst (:mul row)) (kconst (:hMA row)) (kconst (:hMZ row)) (kconst (:hZM row))))
