@@ -54,8 +54,19 @@
 ;;   foldl (λa y. add a (g y)) acc l = add acc (foldl (λa y. add a (g y)) zero l).
 ;; The init-pull needs exactly the ADDITIVE MONOID (associativity + both identities) — no product, no
 ;; comm. The Nat law instantiates at (Nat,+,0,Nat.add_assoc,Nat.zero_add,Nat.add_zero).
+;; pj: project a WAddMonoid/WSemiring field accessor at carrier S and instance inst (kernel terms).
+;; The migrated laws are stated over ONE `[inst : WAddMonoid S]` and read add/zero/axioms as `pj`s.
+(defn- pj [accessor S inst] (e/app* (e/const' (nm accessor) []) S inst))
+
+;; mk-am: build a `WAddMonoid S` instance term from explicit ops+axioms. Used where a NOT-yet-migrated
+;; law (bare hyps) applies a migrated `[inst : WAddMonoid S]` law — it packs its hyps into an instance.
+;; (Once the enclosing law is itself migrated it passes its own inst / a subobject projection instead.)
+(defn- mk-am [S add zero hAA hZA hAZ]
+  (e/app* (e/const' (nm "WAddMonoid.mk") []) S add zero hAA hZA hAZ))
+
 (defn prove-foldl-add-init-generic []
-  (let [S (e/fvar 10) addF (e/fvar 11) zeroF (e/fvar 13) hAA (e/fvar 14) hZA (e/fvar 16) hAZ (e/fvar 17)
+  (let [S (e/fvar 10) inst (e/fvar 11)
+        addF (pj "WAddMonoid.add" S inst) zeroF (pj "WAddMonoid.zero" S inst)
         addG (fn [x y] (e/app* addF x y))
         eqS (fn [x y] (e/app* (e/const' (nm "Eq") [L1]) S x y))
         gstepf (fn [Y g] (e/lam "a" S (e/lam "y" Y (addG (e/bvar 1) (e/app g (e/bvar 0))) :default) :default))
@@ -66,12 +77,10 @@
         hZA-ty (e/forall' "a" S (eqS (addG zeroF (e/bvar 0)) (e/bvar 0)) :default)
         hAZ-ty (e/forall' "a" S (eqS (addG (e/bvar 0) zeroF) (e/bvar 0)) :default)
         arrow (fn [a b] (e/forall' "_" a b :default))
+        ;; Telescope collapses 6→2: ∀ (S : Type) (inst : WAddMonoid S), … Ops/axioms PROJECT from inst,
+        ;; so the conclusion is built over the projections automatically. (hAA-ty/hZA-ty/hAZ-ty unused now.)
         sem-pi (fn [t] (-> t
-                  (#(e/forall' "hAZ" hAZ-ty (e/abstract1 % 17) :default))
-                  (#(e/forall' "hZA" hZA-ty (e/abstract1 % 16) :default))
-                  (#(e/forall' "hAA" hAA-ty (e/abstract1 % 14) :default))
-                  (#(e/forall' "zero" S (e/abstract1 % 13) :default))
-                  (#(e/forall' "add" (arrow S (arrow S S)) (e/abstract1 % 11) :default))
+                  (#(e/forall' "inst" (e/app (e/const' (nm "WAddMonoid") []) S) (e/abstract1 % 11) :default))
                   (#(e/forall' "S" type0 (e/abstract1 % 10) :default))))
         Y (e/fvar 1) g (e/fvar 2) l (e/fvar 3) stp (gstepf Y g)
         goal (-> (e/forall' "acc" S
@@ -81,7 +90,7 @@
                  (#(e/forall' "Y" type0 (e/abstract1 % 1) :default))
                  sem-pi)
         [ps _] (proof/start-proof (a/env) goal)
-        ps (basic/intros ps ["S" "add" "zero" "hAA" "hZA" "hAZ" "Y" "g" "l"])
+        ps (basic/intros ps ["S" "inst" "Y" "g" "l"])
         ps (basic/induction ps (fvid ps "l"))
         ps (reduce
             (fn [ps gid]
@@ -92,8 +101,9 @@
                   (let [psg (basic/intros psg ["acc"])
                         ihid (or (fvid psg "ih_tail'") (fvid psg "ih_tail") (fvid psg "ih"))
                         ih (e/fvar ihid)
-                        Sp (gf psg "S") addp (gf psg "add") zerop (gf psg "zero")
-                        haa (gf psg "hAA") hza (gf psg "hZA")
+                        Sp (gf psg "S") instp (gf psg "inst")
+                        addp (pj "WAddMonoid.add" Sp instp) zerop (pj "WAddMonoid.zero" Sp instp)
+                        haa (pj "WAddMonoid.add_assoc" Sp instp) hza (pj "WAddMonoid.zero_add" Sp instp)
                         ad (fn [x y] (e/app* addp x y))
                         g (gf psg "g") head (gf psg "head") acc (gf psg "acc")
                         Y (gf psg "Y") tail (gf psg "tail")
@@ -116,10 +126,12 @@
                                        (ad acc (ad (ad zerop gh) F)) addAssoc p2)]
                     (basic/exact q result))
                   (let [psg (basic/intros psg ["acc"])
-                        Sp (gf psg "S") acc (gf psg "acc") zerop (gf psg "zero") haz (gf psg "hAZ")
+                        Sp (gf psg "S") instp (gf psg "inst") acc (gf psg "acc")
+                        zerop (pj "WAddMonoid.zero" Sp instp) haz (pj "WAddMonoid.add_zero" Sp instp)
+                        addp (pj "WAddMonoid.add" Sp instp)
                         q (simp/simp psg ['List.foldl_nil])
                         ;; goal now: acc = add acc zero  (RHS inner foldl reduced to zero)
-                        symAZ (e/app* (e/const' (nm "Eq.symm") [L1]) Sp (e/app* (gf psg "add") acc zerop) acc
+                        symAZ (e/app* (e/const' (nm "Eq.symm") [L1]) Sp (e/app* addp acc zerop) acc
                                       (e/app* haz acc))]
                     (basic/exact q symAZ)))))
             ps (vec (:goals ps)))]
@@ -136,10 +148,13 @@
                  (#(e/forall' "l" (listOf Y) (e/abstract1 % 3) :default))
                  (#(e/forall' "g" (e/forall' "_" Y (gh-natT) :default) (e/abstract1 % 2) :default))
                  (#(e/forall' "Y" type0 (e/abstract1 % 1) :default)))
+        ;; THIN: apply the generic to ONE WAddMonoid Nat instance (inline from the row) not 5 consts.
         proof (when pGen
-                (e/app* pGen (gh-natT) (e/const' (nm "Nat.add") []) (gh-zeroN)
-                        (e/const' (nm "Nat.add_assoc") []) (e/const' (nm "Nat.zero_add") [])
-                        (e/const' (nm "Nat.add_zero") [])))]
+                (e/app* pGen (gh-natT)
+                        (e/app* (e/const' (nm "WAddMonoid.mk") []) (gh-natT)
+                                (e/const' (nm "Nat.add") []) (gh-zeroN)
+                                (e/const' (nm "Nat.add_assoc") []) (e/const' (nm "Nat.zero_add") [])
+                                (e/const' (nm "Nat.add_zero") []))))]
     [goal proof]))
 
 ;; List.lookup_map_kv : lookup k (map (λp.(fst p, f(snd p))) l) = Option.map f (lookup k l).
@@ -783,7 +798,7 @@
         hstep (e/lam "a" S (e/lam "y" Y (addG (e/bvar 1) (mulG fx (e/app g (e/bvar 0)))) :default) :default)
         bsBKT (gfold Y (:stepAdd P) zeroF BKT)
         hBKT0 (gfold Y hstep zeroF BKT)
-        addInitEq (e/app* (e/const' (nm "List.foldl_add_init_generic") []) S addF zeroF hAA hZA hAZ Y h BKT acc)
+        addInitEq (e/app* (e/const' (nm "List.foldl_add_init_generic") []) S (mk-am S addF zeroF hAA hZA hAZ) Y h BKT acc)
         pull (e/app* (e/const' (nm "List.foldl_const_mul_pull_generic") []) S addF mulF zeroF hMA hMZ Y fx g BKT)
         Oprime (e/app* (e/const' (nm "List.lookup") [z z]) K LY (:beq P) kfx (:entries P))
         lmkv (e/app* (e/const' (nm "List.lookup_map_kv") []) K LY S (:beq P) (:bucketSumFn P) kfx (:entries P))
@@ -900,7 +915,7 @@
         kfx (e/app kf x)
         BKT (sf-getD LY (e/app* (e/const' (nm "Map.lookup") []) K LY dec kfx (:idx P)) (nilOf Y))
         bsBKT (gfold Y (:stepAdd P) zeroF BKT)
-        addInitEq (e/app* (e/const' (nm "List.foldl_add_init_generic") []) S addF zeroF hAA hZA hAZ Y g BKT acc)
+        addInitEq (e/app* (e/const' (nm "List.foldl_add_init_generic") []) S (mk-am S addF zeroF hAA hZA hAZ) Y g BKT acc)
         Oprime (e/app* (e/const' (nm "List.lookup") [z z]) K LY (:beq P) kfx (:entries P))
         lmkv (e/app* (e/const' (nm "List.lookup_map_kv") []) K LY S (:beq P) (:bucketSumFn P) kfx (:entries P))
         optMapB (fn [o] (e/app* (e/const' (nm "Option.map") [z z]) LY S (:bucketSumFn P) o))
