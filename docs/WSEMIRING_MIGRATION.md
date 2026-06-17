@@ -60,5 +60,20 @@ Gate: `clj -M:local-ansatz:test` (whole wandler suite) green after EACH law. Nev
 signature changed without its two application sites updated in the same commit.
 
 ## Status
-Recipe captured; infra (classes, instances, mk-instance) is the first concrete step. Laws not yet
-migrated — execute incrementally per the order above.
+Infra LANDED (commit f320551, suite 337 green): classes install in `install!`, `mk-instance` term
+builders, recipe. The arrow regression (`->` dropped from the type-position compiler) found + fixed in
+ansatz (41e06bc). Laws NOT yet migrated.
+
+## Gotcha found on the first attempt (foldl_add_init) — READ BEFORE RETRYING
+The mechanical rebind (telescope 6→2, ops/axioms as `pj` projections of `inst`, proof-body locals
+rebound) was applied and the law's STRUCTURE is right, but the **proof replay breaks in a tactic**:
+`simp ['List.foldl_nil]` in the nil case throws "simp made no progress". Cause hypothesis: with `add`
+a stuck projection `WAddMonoid.add S inst` (vs a bare fvar), the goal's `List.foldl … []` is in a
+different normal form by the time simp runs, so `foldl_nil` doesn't fire (or already fired). So the
+migration is NOT purely a signature swap — the **tactic steps may need adjustment** when ops become
+projections (e.g. make the nil-case simp no-progress-tolerant, or `dsimp`/whnf the goal first, or
+close the already-reduced goal directly without simp). Investigate per law: replay each proof step on
+the projected goal, fix the step that diverges. The hand-built-term laws (frame, cond_split,
+bucket_factor, keyfactor — pure `e/app*`/congrArg/Eq.trans, NO tactics) should migrate cleanly (no
+simp replay); the TACTIC laws (foldl_add_init, foldl_const_mul_pull, lookup_reweight — induction+simp)
+are the ones needing per-step attention. Suggest doing a hand-built-term law FIRST to bank a clean win.
