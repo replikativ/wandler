@@ -7,7 +7,14 @@
  :deps {org.replikativ/ansatz {:mvn/version "0.1.60"}
         metosin/malli {:mvn/version "0.16.4"}}
  :aliases
- {:test {:extra-paths ["test"]
+ {;; Side-by-side development against a LOCAL ansatz checkout (overrides the published Clojars pin),
+  ;; e.g. to use the rethink-cleanups dev-experience facilities (goal-state REPL, term quotation,
+  ;; precomputed-Expr-goal proofs) before they ship in a release. ansatz's deps.edn :paths include
+  ;; its compiled "classes" dir, so the Java kernel is on the classpath (run `clj -T:build javac`
+  ;; in ../ansatz first). Use:  clj -M:local-ansatz:test  /  clj -M:local-ansatz:repl
+  :local-ansatz {:override-deps {org.replikativ/ansatz {:local/root "../ansatz"}}}
+
+  :test {:extra-paths ["test"]
          :extra-deps {io.github.cognitect-labs/test-runner {:git/tag "v0.5.1" :git/sha "dfb30dd"}}
          :jvm-opts ["--enable-native-access=ALL-UNNAMED" "-Xmx8g" "-XX:+ExitOnOutOfMemoryError"]
          :main-opts ["-m" "cognitect.test-runner"]
