@@ -90,6 +90,20 @@
                    ps (vec (:goals ps)))]
     [goal (when (proof/solved? ps) (extract/extract ps))]))
 
+;; THIN migration (#146): identical goal builder; the ~18-line hand-built proof (start-proof + the
+;; per-goal reduce with manual fvar/IH juggling) collapses to a 2-line tactic block via a/prove-law.
+(defn prove-flatMap-const-nil-thin []
+  (let [fX (e/fvar 1) fZ (e/fvar 2) fl (e/fvar 3)
+        fn0 (e/lam "_" fX (nilOf fZ) :default)
+        body (e/app* (e/const' (nm "Eq") [L1]) (listOf fZ) (flatMap fX fZ fn0 fl) (nilOf fZ))
+        goal (-> body
+                 (#(e/forall' "l" (listOf fX) (e/abstract1 % 3) :default))
+                 (#(e/forall' "Z" type0 (e/abstract1 % 2) :default))
+                 (#(e/forall' "X" type0 (e/abstract1 % 1) :default)))]
+    (a/prove-law ["X" "Z" "l"] goal
+      '[(induction l)
+        (all_goals (simp_all [List.flatMap_cons List.flatMap_nil List.nil_append]))])))
+
 ;; ---------- flatMap_congr_perm ----------
 (defn prove-flatMap-congr-perm []
   (let [fX (e/fvar 1) fY (e/fvar 2)
@@ -326,3 +340,17 @@
         (is (some? p) "foldl_cons_perm proved")
         (is (true? (checks? p g)) "foldl_cons_perm kernel-checks")))
     (is true "SKIP list-perm-helpers: no Init env")))
+
+;; #146 strangler pilot: the THIN proof must kernel-check the SAME goal the legacy hand-built proof
+;; targets (differential). Old stays as the reference until the whole cluster is migrated.
+(deftest flatmap-const-nil-thin-differential
+  (if-let [kenv @test-env/init-full-env]
+    (do
+      (reset! a/ansatz-env kenv)
+      (let [[g-old _]      (prove-flatMap-const-nil)
+            [g-new p-new]  (prove-flatMap-const-nil-thin)]
+        (is (some? p-new) "thin proof produced")
+        (is (true? (checks? p-new g-new)) "thin proof kernel-checks its own goal")
+        (is (= (str g-old) (str g-new)) "thin goal is byte-identical to the legacy goal")
+        (is (true? (checks? p-new g-old)) "thin proof ALSO proves the legacy goal (differential)")))
+    (is true "SKIP: no Init env")))

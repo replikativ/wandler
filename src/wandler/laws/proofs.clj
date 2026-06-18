@@ -88,21 +88,13 @@
         goal (-> body
                  (#(e/forall' "l" (listOf fX) (e/abstract1 % 3) :default))
                  (#(e/forall' "Z" type0 (e/abstract1 % 2) :default))
-                 (#(e/forall' "X" type0 (e/abstract1 % 1) :default)))
-        [ps _] (proof/start-proof (a/env) goal)
-        ps (basic/intros ps ["X" "Z" "l"])
-        ps (basic/induction ps (fvid ps "l"))
-        ps (reduce (fn [ps gid]
-                     (let [psg (focus ps gid)
-                           cons? (some (fn [[_ d]] (= "head" (:name d))) (:lctx (proof/current-goal psg)))]
-                       (if cons?
-                         (let [ihid (or (fvid psg "ih_tail'") (fvid psg "ih_tail") (fvid psg "ih"))
-                               q (simp/simp psg ['List.flatMap_cons 'List.nil_append])]
-                           (try (basic/exact q (e/fvar ihid)) (catch Throwable _ (basic/rfl q))))
-                         (let [q (simp/simp psg ['List.flatMap_nil])]
-                           (if (proof/solved? q) q (basic/rfl q))))))
-                   ps (vec (:goals ps)))]
-    [goal (when (proof/solved? ps) (extract/extract ps))]))
+                 (#(e/forall' "X" type0 (e/abstract1 % 1) :default)))]
+    ;; THIN (#146): the hand-built per-goal reduce collapses to `induction l <;> simp_all [...]`.
+    ;; Differential-tested vs the legacy proof in test/wandler/list_perm_test.clj (same goal, both
+    ;; kernel-check). Goal builder kept verbatim, so the registered law type is byte-identical.
+    (a/prove-law ["X" "Z" "l"] goal
+      '[(induction l)
+        (all_goals (simp_all [List.flatMap_cons List.flatMap_nil List.nil_append]))])))
 
 (defn prove-flatMap-congr-perm []
   (let [fX (e/fvar 1) fY (e/fvar 2)
