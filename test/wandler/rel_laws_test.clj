@@ -12,6 +12,7 @@
             [wandler.optimize :as opt]
             [wandler.test-env :as test-env]
             [ansatz.kernel.env :as kenv]
+            [ansatz.matchers :as matchers]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.level :as lvl]
@@ -88,22 +89,21 @@
 (deftest lookup-insert-thin-via-split
   ;; #146 (real BYCASES cluster): the THIN prove-lookup-insert (faithful `split` tactic) must
   ;; kernel-check the SAME goal the legacy hand-built by-cases proof targets (differential).
-  ;; PENDING split-S5 (matcher splitter): `simp [lookup_cons]` unfolds the LHS to a
-  ;; `List.filter.match_1` MATCHER (not a clean cond), so `split` on the RHS cond gives `hc`
-  ;; but the LHS matcher discriminant is never rewritten/reduced. Faithful fix = Lean's matcher
-  ;; splitter (Split.lean applyMatchSplitter). The goal-builder half is validated now; the proof
-  ;; is gated until S5 lands. Tolerant so the suite stays green.
+  ;; `simp [lookup_cons]` unfolds the LHS to a `List.filter.match_1` MATCHER, so `split` uses the
+  ;; faithful matcher splitter (ansatz Split.lean applyMatchSplitter port, S5) — which needs
+  ;; MatcherInfo loaded (the raw-replay test env doesn't go through init!, so load it explicitly).
   (if-let [kenv-init @test-env/init-full-env]
     (do
       (reset! a/ansatz-env kenv-init)
+      (matchers/load-bundled-matchers!)            ;; inherit Lean MatcherInfo for the `split` matcher path
       (kmap/install!) (rl/install!)
       (let [legacy-goal (.type (kenv/lookup (a/env) (nm "List.lookup_insert")))
-            r (try (rl/prove-lookup-insert-thin) (catch Throwable _ ::pending))
-            p-new (when (vector? r) (second r))
-            checks? (and (vector? r) p-new
-                         (try (kenv/check-constant (a/env) (kenv/mk-thm (nm "__chk") [] legacy-goal p-new)) true
-                              (catch Throwable _ false)))]
-        (if checks?
-          (is true "thin split proof proves the legacy goal (differential) — S5 LANDED")
-          (is true "PENDING split-S5 matcher splitter: lookup_cons unfolds to match_1; split needs the matcher path"))))
+            [g-new p-new] (rl/prove-lookup-insert-thin)
+            checks (fn [g p] (and g p (try (kenv/check-constant (a/env) (kenv/mk-thm (nm "__chk") [] g p)) true
+                                           (catch Throwable _ false))))]
+        (is (some? p-new) "thin split proof produced")
+        (is (= (str legacy-goal) (str g-new)) "thin goal byte-identical to legacy")
+        (is (true? (checks g-new p-new)) "thin split proof kernel-checks its own goal")
+        (is (true? (checks legacy-goal p-new))
+            "thin `(split)` proof ALSO proves the legacy lookup_insert goal (differential) — faithful matcher splitter")))
     (is true "SKIP: no Init env")))
