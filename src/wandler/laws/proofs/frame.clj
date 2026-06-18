@@ -1040,23 +1040,15 @@
 (defn prove-cond-and-mul-split-generic []
   (let [S (e/fvar 10) inst (e/fvar 11)
         mulF (pj "WSemiring.mul" S inst) zeroF (pj "WSemiring.zero" S inst)
-        hZM (pj "WSemiring.zero_mul" S inst) hMZ (pj "WSemiring.mul_zero" S inst)
         mulG (fn [x y] (e/app* mulF x y))
         condS (fn [c x y] (e/app* (e/const' (nm "cond") [L1]) S c x y))
         andB  (fn [x y] (e/app* (e/const' (nm "Bool.and") []) x y))
         eqS (fn [x y] (e/app* (e/const' (nm "Eq") [L1]) S x y))
-        reflS (fn [x] (e/app* (e/const' (nm "Eq.refl") [L1]) S x))
-        symS (fn [x y h] (e/app* (e/const' (nm "Eq.symm") [L1]) S x y h))
-        hZM-ty (e/forall' "v" S (eqS (mulG zeroF (e/bvar 0)) zeroF) :default)
-        hMZ-ty (e/forall' "u" S (eqS (mulG (e/bvar 0) zeroF) zeroF) :default)
-        ;; Telescope 5→2: ∀/λ (S : Type) (inst : WSemiring S), … (hZM-ty/hMZ-ty above now unused)
+        ;; Telescope 5→2: ∀ (S : Type) (inst : WSemiring S), …
         wsTy (e/app (e/const' (nm "WSemiring") []) S)
         sem-pi (fn [t] (-> t
                   (#(e/forall' "inst" wsTy (e/abstract1 % 11) :default))
                   (#(e/forall' "S" type0 (e/abstract1 % 10) :default))))
-        sem-lam (fn [t] (-> t
-                  (#(e/lam "inst" wsTy (e/abstract1 % 11) :default))
-                  (#(e/lam "S" type0 (e/abstract1 % 10) :default))))
         a (e/fvar 1) b (e/fvar 2) u (e/fvar 3) v (e/fvar 4)
         concl (eqS (condS (andB a b) (mulG u v) zeroF)
                    (mulG (condS a u zeroF) (condS b v zeroF)))
@@ -1066,28 +1058,21 @@
                  (#(e/forall' "b" boolT (e/abstract1 % 2) :default))
                  (#(e/forall' "a" boolT (e/abstract1 % 1) :default))
                  sem-pi)
-        mot-a (e/lam "a'" boolT
-                (eqS (condS (andB (e/bvar 0) b) (mulG u v) zeroF)
-                     (mulG (condS (e/bvar 0) u zeroF) (condS b v zeroF))) :default)
-        mot-b (fn [aLit] (e/lam "b'" boolT
-                 (eqS (condS (andB aLit (e/bvar 0)) (mulG u v) zeroF)
-                      (mulG (condS aLit u zeroF) (condS (e/bvar 0) v zeroF))) :default))
-        bcases (fn [mot major mfalse mtrue]
-                 (e/app* (e/const' (nm "Bool.casesOn") [z]) mot major mfalse mtrue))
-        leaf-ff (symS (mulG zeroF zeroF) zeroF (e/app* hZM zeroF))   ; zero = mul zero zero
-        leaf-ft (symS (mulG zeroF v)     zeroF (e/app* hZM v))       ; zero = mul zero v
-        leaf-tf (symS (mulG u zeroF)     zeroF (e/app* hMZ u))       ; zero = mul u zero
-        leaf-tt (reflS (mulG u v))                                   ; mul u v = mul u v
-        branch-F (bcases (mot-b bfalse) b leaf-ff leaf-ft)           ; a=F: (F,F)→mul0,0  (F,T)→zero_mul
-        branch-T (bcases (mot-b btrue)  b leaf-tf leaf-tt)           ; a=T: (T,F)→mul_zero (T,T)→rfl
-        body (bcases mot-a a branch-F branch-T)
-        proof (-> body
-                  (#(e/lam "v" S (e/abstract1 % 4) :default))
-                  (#(e/lam "u" S (e/abstract1 % 3) :default))
-                  (#(e/lam "b" boolT (e/abstract1 % 2) :default))
-                  (#(e/lam "a" boolT (e/abstract1 % 1) :default))
-                  sem-lam)]
-    [goal proof]))
+        ;; TACTIC SCRIPT (Lean-convenience authoring): the whole conditional-separation proof is
+        ;; `intros; cases a; cases b; simp [zero_mul, mul_zero]`. The two annihilator projections are
+        ;; passed to simp as PROOF TERMS (Lean's `simp [h]`). Matching the named-accessor goal against
+        ;; the projection-spelled lemma is handled by simp's Lean-faithful isDefEq rewrite fallback
+        ;; (ansatz.tactic.unify is-def-eq! + try-theorem). Replaces the former hand-built Bool.casesOn
+        ;; term; the kernel still checks the extracted proof.
+        [ps _] (proof/start-proof (a/env) goal)
+        ps (basic/intros ps ["S" "inst" "a" "b" "u" "v"])
+        S* (gf ps "S") inst* (gf ps "inst")
+        hZM* (pj "WSemiring.zero_mul" S* inst*)
+        hMZ* (pj "WSemiring.mul_zero" S* inst*)
+        ps (basic/cases ps (fvid ps "a"))
+        ps (basic/all-goals ps (fn [g] (basic/cases g (fvid g "b"))))
+        ps (basic/all-goals ps (fn [g] (simp/simp g [hZM* hMZ*])))]
+    [goal (when (proof/solved? ps) (extract/extract ps))]))
 
 ;; Nat law: thin instantiation of the generic at (Nat,·,0,Nat.zero_mul,Nat.mul_zero). Goal byte-identical.
 (defn prove-cond-and-mul-split []
