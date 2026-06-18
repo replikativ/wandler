@@ -64,6 +64,11 @@
 (defn- mk-am [S add zero hAA hZA hAZ]
   (e/app* (e/const' (nm "WAddMonoid.mk") []) S add zero hAA hZA hAZ))
 
+;; mk-sr: build a `WSemiring S` instance term from explicit ops+axioms (the parent WAddMonoid built
+;; inline). Used by the concrete Nat wrappers of WSemiring-parameterized laws.
+(defn- mk-sr [S add mul zero hAA hZA hAZ hMA hMZ hZM]
+  (e/app* (e/const' (nm "WSemiring.mk") []) S (mk-am S add zero hAA hZA hAZ) mul hMA hMZ hZM))
+
 (defn prove-foldl-add-init-generic []
   (let [S (e/fvar 10) inst (e/fvar 11)
         addF (pj "WAddMonoid.add" S inst) zeroF (pj "WAddMonoid.zero" S inst)
@@ -826,7 +831,8 @@
     (e/lam "acc" S (e/abstract1 (e/lam "x" X (e/abstract1 proofBody xf) :default) af) :default)))
 
 (defn prove-foldl-join-frame-generic []
-  (let [S (e/fvar 20) addF (e/fvar 21) mulF (e/fvar 22) zeroF (e/fvar 23)
+  (let [S (e/fvar 20) inst (e/fvar 21)
+        addF (pj "WSemiring.add" S inst) mulF (pj "WSemiring.mul" S inst) zeroF (pj "WSemiring.zero" S inst)
         arrow (fn [a b] (e/forall' "_" a b :default))
         addG (fn [a b] (e/app* addF a b)) mulG (fn [a b] (e/app* mulF a b))
         eqS (fn [x y] (e/app* (e/const' (nm "Eq") [L1]) S x y))
@@ -839,15 +845,9 @@
                   (eqS (mulG (e/bvar 2) (addG (e/bvar 1) (e/bvar 0)))
                        (addG (mulG (e/bvar 2) (e/bvar 1)) (mulG (e/bvar 2) (e/bvar 0)))) :default) :default) :default)
         hMZ-ty (e/forall' "a" S (eqS (mulG (e/bvar 0) zeroF) zeroF) :default)
+        ;; Telescope 9→2: ∀ (S : Type) (inst : WSemiring S), … (hAA-ty…hMZ-ty above now unused)
         sem-pi (fn [t] (-> t
-                  (#(e/forall' "hMZ" hMZ-ty (e/abstract1 % 28) :default))
-                  (#(e/forall' "hMA" hMA-ty (e/abstract1 % 27) :default))
-                  (#(e/forall' "hAZ" hAZ-ty (e/abstract1 % 26) :default))
-                  (#(e/forall' "hZA" hZA-ty (e/abstract1 % 25) :default))
-                  (#(e/forall' "hAA" hAA-ty (e/abstract1 % 24) :default))
-                  (#(e/forall' "zero" S (e/abstract1 % 23) :default))
-                  (#(e/forall' "mul" (arrow S (arrow S S)) (e/abstract1 % 22) :default))
-                  (#(e/forall' "add" (arrow S (arrow S S)) (e/abstract1 % 21) :default))
+                  (#(e/forall' "inst" (e/app (e/const' (nm "WSemiring") []) S) (e/abstract1 % 21) :default))
                   (#(e/forall' "S" type0 (e/abstract1 % 20) :default))))
         sr0 {:S S :addF addF :mulF mulF :zeroF zeroF}
         K (e/fvar 1) X (e/fvar 2) Y (e/fvar 3) dec (e/fvar 4) f (e/fvar 5) g (e/fvar 6)
@@ -869,11 +869,14 @@
                  (#(e/forall' "K" type0 (e/abstract1 % 1) :default))
                  sem-pi)
         [ps _] (proof/start-proof (a/env) goal)
-        ps (basic/intros ps ["S" "add" "mul" "zero" "hAA" "hZA" "hAZ" "hMA" "hMZ"
+        ps (basic/intros ps ["S" "inst"
                              "K" "X" "Y" "dec" "f" "g" "kf" "lf" "e" "xs" "ys"])
-        sr {:S (gf ps "S") :addF (gf ps "add") :mulF (gf ps "mul") :zeroF (gf ps "zero")
-            :hAA (gf ps "hAA") :hZA (gf ps "hZA") :hAZ (gf ps "hAZ") :hMA (gf ps "hMA") :hMZ (gf ps "hMZ")}
-        Sp (:S sr)
+        Sp (gf ps "S") instp (gf ps "inst")
+        sr {:S Sp :addF (pj "WSemiring.add" Sp instp) :mulF (pj "WSemiring.mul" Sp instp)
+            :zeroF (pj "WSemiring.zero" Sp instp)
+            :hAA (pj "WSemiring.add_assoc" Sp instp) :hZA (pj "WSemiring.zero_add" Sp instp)
+            :hAZ (pj "WSemiring.add_zero" Sp instp) :hMA (pj "WSemiring.mul_add" Sp instp)
+            :hMZ (pj "WSemiring.mul_zero" Sp instp)}
         K (gf ps "K") X (gf ps "X") Y (gf ps "Y") dec (gf ps "dec") f (gf ps "f") g (gf ps "g")
         kf (gf ps "kf") lf (gf ps "lf") e (gf ps "e") xs (gf ps "xs") ys (gf ps "ys")
         P (ff-parts-g sr K X Y dec f g kf lf e xs ys)
@@ -1009,10 +1012,12 @@
                  (#(e/forall' "K" type0 (e/abstract1 % 1) :default)))
         ;; thin instantiation of the semiring-generic frame at the Nat semiring; goal byte-identical.
         [_ pGen] (prove-foldl-join-frame-generic)
+        ;; THIN: apply to ONE WSemiring Nat instance (inline) not 8 consts.
         proof (when pGen
-                (e/app* pGen (gh-natT) (e/const' (nm "Nat.add") []) (e/const' (nm "Nat.mul") []) (gh-zeroN)
-                        (e/const' (nm "Nat.add_assoc") []) (e/const' (nm "Nat.zero_add") []) (e/const' (nm "Nat.add_zero") [])
-                        (e/const' (nm "Nat.mul_add") []) (e/const' (nm "Nat.mul_zero") [])))]
+                (e/app* pGen (gh-natT)
+                        (mk-sr (gh-natT) (e/const' (nm "Nat.add") []) (e/const' (nm "Nat.mul") []) (gh-zeroN)
+                               (e/const' (nm "Nat.add_assoc") []) (e/const' (nm "Nat.zero_add") []) (e/const' (nm "Nat.add_zero") [])
+                               (e/const' (nm "Nat.mul_add") []) (e/const' (nm "Nat.mul_zero") []) (e/const' (nm "Nat.zero_mul") []))))]
     [goal proof]))
 
 ;; ── Nat.cond_and_mul_split (CONDITIONAL SEPARATION — the dependent-types win) ─────
@@ -1033,7 +1038,9 @@
 ;; definitional computation (the refl leaves typecheck because Nat.mul u 0 / Nat.mul 0 0 compute to 0); over
 ;; an abstract mul they become explicit hypotheses. Nat law below instantiates at (Nat,·,0,zero_mul,mul_zero).
 (defn prove-cond-and-mul-split-generic []
-  (let [S (e/fvar 10) mulF (e/fvar 12) zeroF (e/fvar 13) hZM (e/fvar 16) hMZ (e/fvar 15)
+  (let [S (e/fvar 10) inst (e/fvar 11)
+        mulF (pj "WSemiring.mul" S inst) zeroF (pj "WSemiring.zero" S inst)
+        hZM (pj "WSemiring.zero_mul" S inst) hMZ (pj "WSemiring.mul_zero" S inst)
         mulG (fn [x y] (e/app* mulF x y))
         condS (fn [c x y] (e/app* (e/const' (nm "cond") [L1]) S c x y))
         andB  (fn [x y] (e/app* (e/const' (nm "Bool.and") []) x y))
@@ -1042,17 +1049,13 @@
         symS (fn [x y h] (e/app* (e/const' (nm "Eq.symm") [L1]) S x y h))
         hZM-ty (e/forall' "v" S (eqS (mulG zeroF (e/bvar 0)) zeroF) :default)
         hMZ-ty (e/forall' "u" S (eqS (mulG (e/bvar 0) zeroF) zeroF) :default)
+        ;; Telescope 5→2: ∀/λ (S : Type) (inst : WSemiring S), … (hZM-ty/hMZ-ty above now unused)
+        wsTy (e/app (e/const' (nm "WSemiring") []) S)
         sem-pi (fn [t] (-> t
-                  (#(e/forall' "hMZ" hMZ-ty (e/abstract1 % 15) :default))
-                  (#(e/forall' "hZM" hZM-ty (e/abstract1 % 16) :default))
-                  (#(e/forall' "zero" S (e/abstract1 % 13) :default))
-                  (#(e/forall' "mul" (sf-arrow S (sf-arrow S S)) (e/abstract1 % 12) :default))
+                  (#(e/forall' "inst" wsTy (e/abstract1 % 11) :default))
                   (#(e/forall' "S" type0 (e/abstract1 % 10) :default))))
         sem-lam (fn [t] (-> t
-                  (#(e/lam "hMZ" hMZ-ty (e/abstract1 % 15) :default))
-                  (#(e/lam "hZM" hZM-ty (e/abstract1 % 16) :default))
-                  (#(e/lam "zero" S (e/abstract1 % 13) :default))
-                  (#(e/lam "mul" (sf-arrow S (sf-arrow S S)) (e/abstract1 % 12) :default))
+                  (#(e/lam "inst" wsTy (e/abstract1 % 11) :default))
                   (#(e/lam "S" type0 (e/abstract1 % 10) :default))))
         a (e/fvar 1) b (e/fvar 2) u (e/fvar 3) v (e/fvar 4)
         concl (eqS (condS (andB a b) (mulG u v) zeroF)
@@ -1100,9 +1103,12 @@
                  (#(e/forall' "u" natT (e/abstract1 % 3) :default))
                  (#(e/forall' "b" boolT (e/abstract1 % 2) :default))
                  (#(e/forall' "a" boolT (e/abstract1 % 1) :default)))
+        ;; THIN: apply to ONE WSemiring Nat instance (cond_split uses only mul/zero/zero_mul/mul_zero).
         proof (when pGen
-                (e/app* pGen natT (e/const' (nm "Nat.mul") []) zeroN
-                        (e/const' (nm "Nat.zero_mul") []) (e/const' (nm "Nat.mul_zero") [])))]
+                (e/app* pGen natT
+                        (mk-sr natT (e/const' (nm "Nat.add") []) (e/const' (nm "Nat.mul") []) zeroN
+                               (e/const' (nm "Nat.add_assoc") []) (e/const' (nm "Nat.zero_add") []) (e/const' (nm "Nat.add_zero") [])
+                               (e/const' (nm "Nat.mul_add") []) (e/const' (nm "Nat.mul_zero") []) (e/const' (nm "Nat.zero_mul") []))))]
     [goal proof]))
 
 ;; ── Map.bucket_key_subst (the FD SCOPE QUOTIENT foundation) ───────────────────────
@@ -1197,27 +1203,19 @@
 ;; the per-bucket sum. Generic over (S,+,·,0) + left-distrib + right-annihilator (via const_mul_pull_generic);
 ;; bucket_key_subst is already W-generic, foldl_map is value-generic. Nat law instantiates at (Nat,+,·,0).
 (defn prove-bucket-factor-pull-generic []
-  (let [S (e/fvar 10) addF (e/fvar 11) mulF (e/fvar 12) zeroF (e/fvar 13) hMA (e/fvar 14) hMZ (e/fvar 15)
+  (let [S (e/fvar 10) inst (e/fvar 11)
+        addF (pj "WSemiring.add" S inst) mulF (pj "WSemiring.mul" S inst) zeroF (pj "WSemiring.zero" S inst)
+        hMA (pj "WSemiring.mul_add" S inst) hMZ (pj "WSemiring.mul_zero" S inst)
         addG (fn [a b] (e/app* addF a b)) mulG (fn [a b] (e/app* mulF a b))
         arrow (fn [a b] (e/forall' "_" a b :default))
         eqS (fn [x y] (e/app* (e/const' (nm "Eq") [L1]) S x y))
-        hMA-ty (e/forall' "a" S (e/forall' "b" S (e/forall' "c" S
-                  (eqS (mulG (e/bvar 2) (addG (e/bvar 1) (e/bvar 0)))
-                       (addG (mulG (e/bvar 2) (e/bvar 1)) (mulG (e/bvar 2) (e/bvar 0)))) :default) :default) :default)
-        hMZ-ty (e/forall' "a" S (eqS (mulG (e/bvar 0) zeroF) zeroF) :default)
+        ;; Telescope 6→2: ∀/λ (S : Type) (inst : WSemiring S), … (hMA-ty/hMZ-ty above now unused)
+        wsTy (e/app (e/const' (nm "WSemiring") []) S)
         sem-pi (fn [t] (-> t
-                  (#(e/forall' "hMZ" hMZ-ty (e/abstract1 % 15) :default))
-                  (#(e/forall' "hMA" hMA-ty (e/abstract1 % 14) :default))
-                  (#(e/forall' "zero" S (e/abstract1 % 13) :default))
-                  (#(e/forall' "mul" (arrow S (arrow S S)) (e/abstract1 % 12) :default))
-                  (#(e/forall' "add" (arrow S (arrow S S)) (e/abstract1 % 11) :default))
+                  (#(e/forall' "inst" wsTy (e/abstract1 % 11) :default))
                   (#(e/forall' "S" type0 (e/abstract1 % 10) :default))))
         sem-lam (fn [t] (-> t
-                  (#(e/lam "hMZ" hMZ-ty (e/abstract1 % 15) :default))
-                  (#(e/lam "hMA" hMA-ty (e/abstract1 % 14) :default))
-                  (#(e/lam "zero" S (e/abstract1 % 13) :default))
-                  (#(e/lam "mul" (arrow S (arrow S S)) (e/abstract1 % 12) :default))
-                  (#(e/lam "add" (arrow S (arrow S S)) (e/abstract1 % 11) :default))
+                  (#(e/lam "inst" wsTy (e/abstract1 % 11) :default))
                   (#(e/lam "S" type0 (e/abstract1 % 10) :default))))
         K (e/fvar 1) Y (e/fvar 2) dec (e/fvar 3) lf (e/fvar 4) w (e/fvar 5) g (e/fvar 6) k (e/fvar 7) ys (e/fvar 8)
         instB (e/app* (e/const' (nm "instBEqOfDecidableEq") [z]) K dec)
@@ -1320,9 +1318,12 @@
                  (#(e/forall' "Y" type0 (e/abstract1 % 2) :default))
                  (#(e/forall' "K" type0 (e/abstract1 % 1) :default)))
         ;; thin instantiation of the semiring-generic factor-pull at (Nat,+,·,0). Goal byte-identical.
+        ;; THIN: apply to ONE WSemiring Nat instance (bucket uses only add/mul/zero/mul_add/mul_zero).
         fproof (when pGen
-                 (e/app* pGen natT addC (e/const' (nm "Nat.mul") []) zeroN
-                         (e/const' (nm "Nat.mul_add") []) (e/const' (nm "Nat.mul_zero") [])))]
+                 (e/app* pGen natT
+                         (mk-sr natT addC (e/const' (nm "Nat.mul") []) zeroN
+                                (e/const' (nm "Nat.add_assoc") []) (e/const' (nm "Nat.zero_add") []) (e/const' (nm "Nat.add_zero") [])
+                                (e/const' (nm "Nat.mul_add") []) (e/const' (nm "Nat.mul_zero") []) (e/const' (nm "Nat.zero_mul") []))))]
     [goal fproof]))
 
 ;; ── List.lookup_reweight (FD scope quotient — float a key-factor into the index) ─
@@ -1454,22 +1455,19 @@
 ;; SEMIRING-GENERIC: pure assembly (foldl_congr lifting the per-x lookup_reweight_generic identity).
 ;; No add/mul LAWS used here beyond what lookup_reweight needs (hMZ); add/mul/zero are just ops.
 (defn prove-keyfactor-float-generic []
-  (let [S (e/fvar 10) addF (e/fvar 11) mulF (e/fvar 12) zeroF (e/fvar 13) hMZ (e/fvar 15)
+  (let [S (e/fvar 10) inst (e/fvar 11)
+        addF (pj "WSemiring.add" S inst) mulF (pj "WSemiring.mul" S inst)
+        zeroF (pj "WSemiring.zero" S inst) hMZ (pj "WSemiring.mul_zero" S inst)
         addG (fn [a b] (e/app* addF a b)) mulG (fn [a b] (e/app* mulF a b))
         arrow (fn [a b] (e/forall' "_" a b :default))
         eqAt (fn [ty x y] (e/app* (e/const' (nm "Eq") [L1]) ty x y))
-        hMZ-ty (e/forall' "a" S (eqAt S (mulG (e/bvar 0) zeroF) zeroF) :default)
+        ;; Telescope 5→2: ∀/λ (S : Type) (inst : WSemiring S), … (hMZ-ty above now unused)
+        wsTy (e/app (e/const' (nm "WSemiring") []) S)
         sem-pi (fn [t] (-> t
-                  (#(e/forall' "hMZ" hMZ-ty (e/abstract1 % 15) :default))
-                  (#(e/forall' "zero" S (e/abstract1 % 13) :default))
-                  (#(e/forall' "mul" (arrow S (arrow S S)) (e/abstract1 % 12) :default))
-                  (#(e/forall' "add" (arrow S (arrow S S)) (e/abstract1 % 11) :default))
+                  (#(e/forall' "inst" wsTy (e/abstract1 % 11) :default))
                   (#(e/forall' "S" type0 (e/abstract1 % 10) :default))))
         sem-lam (fn [t] (-> t
-                  (#(e/lam "hMZ" hMZ-ty (e/abstract1 % 15) :default))
-                  (#(e/lam "zero" S (e/abstract1 % 13) :default))
-                  (#(e/lam "mul" (arrow S (arrow S S)) (e/abstract1 % 12) :default))
-                  (#(e/lam "add" (arrow S (arrow S S)) (e/abstract1 % 11) :default))
+                  (#(e/lam "inst" wsTy (e/abstract1 % 11) :default))
                   (#(e/lam "S" type0 (e/abstract1 % 10) :default))))
         K (e/fvar 1) X (e/fvar 2) dec (e/fvar 3) w (e/fvar 4) kf (e/fvar 5) e (e/fvar 6) xs (e/fvar 7) idx (e/fvar 8)
         KN (prodT K S)
@@ -1535,7 +1533,10 @@
                  (#(e/forall' "X" type0 (e/abstract1 % 2) :default))
                  (#(e/forall' "K" type0 (e/abstract1 % 1) :default)))
         ;; thin instantiation of the generic at (Nat,+,·,0,Nat.mul_zero). Goal byte-identical.
+        ;; THIN: apply to ONE WSemiring Nat instance (keyfactor uses only add/mul/zero/mul_zero).
         fproof (when pGen
-                 (e/app* pGen natT (e/const' (nm "Nat.add") []) (e/const' (nm "Nat.mul") []) zeroN
-                         (e/const' (nm "Nat.mul_zero") [])))]
+                 (e/app* pGen natT
+                         (mk-sr natT (e/const' (nm "Nat.add") []) (e/const' (nm "Nat.mul") []) zeroN
+                                (e/const' (nm "Nat.add_assoc") []) (e/const' (nm "Nat.zero_add") []) (e/const' (nm "Nat.add_zero") [])
+                                (e/const' (nm "Nat.mul_add") []) (e/const' (nm "Nat.mul_zero") []) (e/const' (nm "Nat.zero_mul") []))))]
     [goal fproof]))

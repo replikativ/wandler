@@ -8,6 +8,7 @@
             [ansatz.kernel.level :as lvl]
             [ansatz.kernel.env :as env]
             [ansatz.kernel.tc :as tc]
+            [ansatz.codegen :as cg]
             [wandler.optimize.certify :as cert]
             [wandler.optimize.cost :as cost]
             [wandler.laws.semiring :as sreg]
@@ -440,9 +441,7 @@
                   ndv-est (when (and ndv (e/fvar? ys)) (get ndv (e/fvar-id ys)))]
               (when (and ndv-est (< (double ndv-est) (double build-mem)))
                 (let [law (e/app* (e/const' (name/from-string "Map.foldl_join_frame_generic") [])
-                                  S (sr-c entry :add) (sr-c entry :mul) (sr-c entry :zero)
-                                  (sr-c entry :hAA) (sr-c entry :hZA) (sr-c entry :hAZ)
-                                  (sr-c entry :hMA) (sr-c entry :hMZ)
+                                  S (sc/mk-semiring-instance S entry)
                                   K X Y dec f g kf lf e xs ys)
                       st (cert/mk-st env lctx)
                       ptype (try (tc/infer-type st law) (catch Throwable _ nil))   ; nil if law absent
@@ -610,7 +609,7 @@
                       X1 (fn [p] (condN (andB (e/app P (fstp p)) (e/app Q (sndp p))) (mulN (e/app f (fstp p)) (e/app g (sndp p))) zeroN))
                       X2 (fn [p] (mulN (condN (e/app P (fstp p)) (e/app f (fstp p)) zeroN) (condN (e/app Q (sndp p)) (e/app g (sndp p)) zeroN)))
                       splitPf (fn [p] (e/app* (e/const' (nm "Nat.cond_and_mul_split_generic") [])
-                                              natT (sr-c entry :mul) zeroN (sr-c entry :hZM) (sr-c entry :hMZ)
+                                              natT (sc/mk-semiring-instance natT entry)
                                               (e/app P (fstp p)) (e/app Q (sndp p)) (e/app f (fstp p)) (e/app g (sndp p))))
                       hyp (e/lam "acc" natT (e/lam "p" PXY
                             (e/app* (e/const' (nm "congrArg") [L1 L1]) natT natT (X1 (e/bvar 0)) (X2 (e/bvar 0))
@@ -620,9 +619,7 @@
                       foldlJ (fn [o] (e/app* (e/const' (nm "List.foldl") [z z]) natT PXY o e join))
                       congrEq (e/app* (e/const' (nm "List.foldl_congr") []) natT PXY op op-s join e hyp)
                       frameEq (e/app* (e/const' (nm "Map.foldl_join_frame_generic") [])
-                                      natT (sr-c entry :add) (sr-c entry :mul) zeroN
-                                      (sr-c entry :hAA) (sr-c entry :hZA) (sr-c entry :hAZ)
-                                      (sr-c entry :hMA) (sr-c entry :hMZ)
+                                      natT (sc/mk-semiring-instance natT entry)
                                       K X Y dec f' g' kf lf e xs ys)
                       st (cert/mk-st env lctx)
                       ftype (try (tc/infer-type st frameEq) (catch Throwable _ nil))   ; nil if law absent
@@ -659,18 +656,18 @@
                         z    lvl/zero  L1 (lvl/succ z)  natT S
                         f'   (e/lam "x" X (e/app w (e/app kf (e/bvar 0))) :default)
                         frameEq (e/app* (e/const' (nm "Map.foldl_join_frame_generic") [])
-                                        natT (sr-c entry :add) (sr-c entry :mul) (sr-c entry :zero)
-                                        (sr-c entry :hAA) (sr-c entry :hZA) (sr-c entry :hAZ)
-                                        (sr-c entry :hMA) (sr-c entry :hMZ)
+                                        natT (sc/mk-semiring-instance natT entry)
                                         K X Y dec f' g kf lf e xs ys)
                         st (cert/mk-st env lctx)
                         feT (try (tc/infer-type st frameEq) (catch Throwable _ nil))
                         [_ feA] (when feT (e/get-app-fn-args feT))
                         R1 (when (and feA (>= (count feA) 3)) (nth feA 2))
-                        preidx (when R1 (extract-frame-preidx R1))]
+                        ;; the [inst]-parameterized frame rhs carries instance projections that shift
+                        ;; arg positions — monomorphize them away before structural navigation.
+                        preidx (when R1 (extract-frame-preidx (cg/collapse-instance-projections env R1)))]
                     (when preidx
                       (let [floatEq (e/app* (e/const' (nm "Map.foldl_keyfactor_float_generic") [])
-                                            natT (sr-c entry :add) (sr-c entry :mul) (sr-c entry :zero) (sr-c entry :hMZ)
+                                            natT (sc/mk-semiring-instance natT entry)
                                             K X dec w kf e xs preidx)
                             flT (try (tc/infer-type st floatEq) (catch Throwable _ nil))
                             [_ flA] (when flT (e/get-app-fn-args flT))
