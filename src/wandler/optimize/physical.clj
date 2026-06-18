@@ -10,7 +10,8 @@
             [ansatz.kernel.tc :as tc]
             [wandler.optimize.certify :as cert]
             [wandler.optimize.cost :as cost]
-            [wandler.laws.semiring :as sreg])
+            [wandler.laws.semiring :as sreg]
+            [wandler.semiring-class :as sc])
   (:import [ansatz.kernel Env]))
 
 (declare compose-trans)
@@ -319,8 +320,7 @@
                   ndv-est (when (and ndv (e/fvar? ys)) (get ndv (e/fvar-id ys)))]
               (when (and ndv-est (< (double ndv-est) (double build-mem)))
                 (let [law (e/app* (e/const' (name/from-string "Map.foldl_join_sum_factor_generic") [])
-                                  S (sr-c entry :add) (sr-c entry :zero)
-                                  (sr-c entry :hAA) (sr-c entry :hZA) (sr-c entry :hAZ)
+                                  S (sc/mk-addmonoid-instance S entry)
                                   K X Y dec g kf lf e xs ys)
                       st (cert/mk-st env lctx)
                       ptype (try (tc/infer-type st law) (catch Throwable _ nil))   ; nil if law absent

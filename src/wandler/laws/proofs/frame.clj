@@ -337,10 +337,12 @@
                  (#(e/forall' "K" type0 (e/abstract1 % 1) :default)))
         ;; thin instantiation of the monoid-generic sum-factor at (Nat,+,0). Goal byte-identical.
         [_ pGen] (prove-foldl-join-sum-factor-generic)
+        ;; THIN: apply to ONE WAddMonoid Nat instance (inline from the row) not 5 consts.
         proof (when pGen
-                (e/app* pGen (gh-natT) (e/const' (nm "Nat.add") []) (gh-zeroN)
-                        (e/const' (nm "Nat.add_assoc") []) (e/const' (nm "Nat.zero_add") [])
-                        (e/const' (nm "Nat.add_zero") [])))]
+                (e/app* pGen (gh-natT)
+                        (mk-am (gh-natT) (e/const' (nm "Nat.add") []) (gh-zeroN)
+                               (e/const' (nm "Nat.add_assoc") []) (e/const' (nm "Nat.zero_add") [])
+                               (e/const' (nm "Nat.add_zero") []))))]
     [goal proof]))
 
 ;; ── List.sum_map_mul_const (loop-invariant distributive law) ──────────────────
@@ -935,7 +937,8 @@
     (e/lam "acc" S (e/abstract1 (e/lam "x" X (e/abstract1 proofBody xf) :default) af) :default)))
 
 (defn prove-foldl-join-sum-factor-generic []
-  (let [S (e/fvar 20) addF (e/fvar 21) zeroF (e/fvar 23)
+  (let [S (e/fvar 20) inst (e/fvar 21)
+        addF (pj "WAddMonoid.add" S inst) zeroF (pj "WAddMonoid.zero" S inst)
         arrow (fn [a b] (e/forall' "_" a b :default))
         addG (fn [a b] (e/app* addF a b))
         eqS (fn [x y] (e/app* (e/const' (nm "Eq") [L1]) S x y))
@@ -944,12 +947,9 @@
                        (addG (e/bvar 2) (addG (e/bvar 1) (e/bvar 0)))) :default) :default) :default)
         hZA-ty (e/forall' "a" S (eqS (addG zeroF (e/bvar 0)) (e/bvar 0)) :default)
         hAZ-ty (e/forall' "a" S (eqS (addG (e/bvar 0) zeroF) (e/bvar 0)) :default)
+        ;; Telescope 6→2: ∀ (S : Type) (inst : WAddMonoid S), … (hAA-ty/hZA-ty/hAZ-ty above now unused)
         sem-pi (fn [t] (-> t
-                  (#(e/forall' "hAZ" hAZ-ty (e/abstract1 % 26) :default))
-                  (#(e/forall' "hZA" hZA-ty (e/abstract1 % 25) :default))
-                  (#(e/forall' "hAA" hAA-ty (e/abstract1 % 24) :default))
-                  (#(e/forall' "zero" S (e/abstract1 % 23) :default))
-                  (#(e/forall' "add" (arrow S (arrow S S)) (e/abstract1 % 21) :default))
+                  (#(e/forall' "inst" (e/app (e/const' (nm "WAddMonoid") []) S) (e/abstract1 % 21) :default))
                   (#(e/forall' "S" type0 (e/abstract1 % 20) :default))))
         srm0 {:S S :addF addF :zeroF zeroF}
         K (e/fvar 1) X (e/fvar 2) Y (e/fvar 3) dec (e/fvar 4) g (e/fvar 5)
@@ -970,11 +970,12 @@
                  (#(e/forall' "K" type0 (e/abstract1 % 1) :default))
                  sem-pi)
         [ps _] (proof/start-proof (a/env) goal)
-        ps (basic/intros ps ["S" "add" "zero" "hAA" "hZA" "hAZ"
+        ps (basic/intros ps ["S" "inst"
                              "K" "X" "Y" "dec" "g" "kf" "lf" "e" "xs" "ys"])
-        srm {:S (gf ps "S") :addF (gf ps "add") :zeroF (gf ps "zero")
-             :hAA (gf ps "hAA") :hZA (gf ps "hZA") :hAZ (gf ps "hAZ")}
-        Sp (:S srm)
+        Sp (gf ps "S") instp (gf ps "inst")
+        srm {:S Sp :addF (pj "WAddMonoid.add" Sp instp) :zeroF (pj "WAddMonoid.zero" Sp instp)
+             :hAA (pj "WAddMonoid.add_assoc" Sp instp) :hZA (pj "WAddMonoid.zero_add" Sp instp)
+             :hAZ (pj "WAddMonoid.add_zero" Sp instp)}
         K (gf ps "K") X (gf ps "X") Y (gf ps "Y") dec (gf ps "dec") g (gf ps "g")
         kf (gf ps "kf") lf (gf ps "lf") e (gf ps "e") xs (gf ps "xs") ys (gf ps "ys")
         P (sf-parts-g srm K X Y dec g kf lf e xs ys)
