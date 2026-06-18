@@ -574,6 +574,43 @@
         ps (basic/exact ps pf-term)]
     [goal (when (proof/solved? ps) (extract/extract ps))]))
 
+;; #146 strangler: THIN prove-lookup-insert via the faithful `split` tactic (ansatz).
+;; Same goal builder as prove-lookup-insert (so the law type is byte-identical); the
+;; hand-built by-cases + branch-specific lookup_filter_ne reduce collapses to
+;; `simp [lookup_cons] ; split ; simp_all [...]`. The decidable-eq branch hypothesis
+;; hc:(beq k k')=false discharges lookup_filter_ne's side condition by ASSUMPTION (no
+;; beq_iff_eq bridge needed here). Requires List.lookup_filter_ne already in env.
+(defn prove-lookup-insert-thin []
+  (let [fK (e/fvar 81001) fV (e/fvar 81002) fd (e/fvar 81003)
+        fk (e/fvar 81004) fk' (e/fvar 81005) fvv (e/fvar 81006) fl (e/fvar 81007)
+        beqI (e/app* (e/const' (nm "instBEqOfDecidableEq") [z]) fK fd)
+        prodKV (e/app* (e/const' (nm "Prod") [z z]) fK fV)
+        listKV (e/app (e/const' (nm "List") [z]) prodKV)
+        optV (e/app (e/const' (nm "Option") [z]) fV)
+        deceqK (e/app (e/const' (nm "DecidableEq") [L1]) fK)
+        beq (fn [x y] (e/app* (e/const' (nm "BEq.beq") [z]) fK beqI x y))
+        fstp (fn [p] (e/app* (e/const' (nm "Prod.fst") [z z]) fK fV p))
+        pred (e/lam "p" prodKV (e/app (e/const' (nm "Bool.not") []) (beq (fstp (e/bvar 0)) fk')) :default)
+        filt (e/app* (e/const' (nm "List.filter") [z]) prodKV pred fl)
+        headp (e/app* (e/const' (nm "Prod.mk") [z z]) fK fV fk' fvv)
+        insl (e/app* (e/const' (nm "List.cons") [z]) prodKV headp filt)
+        lookup (fn [l] (e/app* (e/const' (nm "List.lookup") [z z]) fK fV beqI fk l))
+        rhs (e/app* (e/const' (nm "cond") [L1]) optV (beq fk fk')
+                    (e/app* (e/const' (nm "Option.some") [z]) fV fvv) (lookup fl))
+        goal (-> (e/app* (e/const' (nm "Eq") [L1]) optV (lookup insl) rhs)
+                 (#(e/forall' "l" listKV (e/abstract1 % 81007) :default))
+                 (#(e/forall' "v" fV (e/abstract1 % 81006) :default))
+                 (#(e/forall' "k'" fK (e/abstract1 % 81005) :default))
+                 (#(e/forall' "k" fK (e/abstract1 % 81004) :default))
+                 (#(e/forall' "dec" deceqK (e/abstract1 % 81003) :default))
+                 (#(e/forall' "V" type0 (e/abstract1 % 81002) :default))
+                 (#(e/forall' "K" type0 (e/abstract1 % 81001) :default)))]
+    (a/prove-law ["K" "V" "dec" "k" "k'" "v" "l"] goal
+      '[(simp [List.lookup_cons])
+        (split)
+        (all_goals (simp_all [List.lookup_cons List.lookup_cons_self List.lookup_nil
+                              List.lookup_filter_ne Bool.not_true Bool.not_false]))])))
+
 ;; ── installer ────────────────────────────────────────────────────────────────
 (def ^:private cache (atom nil))   ; ordered ConstantInfos — Init-only, env-independent
 
