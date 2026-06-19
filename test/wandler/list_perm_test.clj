@@ -137,6 +137,29 @@
                    ps (vec (:goals ps)))]
     [goal (when (proof/solved? ps) (extract/extract ps))]))
 
+;; THIN migration (#146/#157): the hand-built cons case (simp + manual `p-append (h hd) ih`) and nil
+;; case (`p-refl`) collapse to a tactic block. The cons goal `f hd ++ flatMap f tl ~ g hd ++ flatMap g tl`
+;; is closed by `apply List.Perm.append` then the quantified hyp `h` (→ `h hd`) and the IH (assumption);
+;; nil by `List.Perm.refl`. Exercises the univ-poly apply path (apply solves the Perm ctors' universe
+;; mvars via meta-isDefEq) AND local-hyp-as-solve_by_elim-lemma (h shadows globals).
+(defn prove-flatMap-congr-perm-thin []
+  (let [fX (e/fvar 1) fY (e/fvar 2)
+        xToLY (e/forall' "_" fX (listOf fY) :default)
+        ff (e/fvar 3) fg (e/fvar 4)
+        hTy (e/forall' "x" fX (permOf fY (e/app ff (e/bvar 0)) (e/app fg (e/bvar 0))) :default)
+        body (permOf fY (flatMap fX fY ff (e/fvar 6)) (flatMap fX fY fg (e/fvar 6)))
+        goal (-> body
+                 (#(e/forall' "l" (listOf fX) (e/abstract1 % 6) :default))
+                 (#(e/forall' "h" hTy (e/abstract1 % 5) :default))
+                 (#(e/forall' "g" xToLY (e/abstract1 % 4) :default))
+                 (#(e/forall' "f" xToLY (e/abstract1 % 3) :default))
+                 (#(e/forall' "Y" type0 (e/abstract1 % 2) :default))
+                 (#(e/forall' "X" type0 (e/abstract1 % 1) :default)))]
+    (a/prove-law ["X" "Y" "f" "g" "h" "l"] goal
+      '[(induction l)
+        (all_goals (simp [List.flatMap_cons List.flatMap_nil]))
+        (all_goals (solve_by_elim [List.Perm.append List.Perm.refl List.Perm.nil h]))])))
+
 ;; ---------- flatMap_append_distrib_perm ----------
 (defn prove-flatMap-append-distrib []
   (let [fX (e/fvar 1) fY (e/fvar 2)
@@ -349,6 +372,21 @@
       (reset! a/ansatz-env kenv)
       (let [[g-old _]      (prove-flatMap-const-nil)
             [g-new p-new]  (prove-flatMap-const-nil-thin)]
+        (is (some? p-new) "thin proof produced")
+        (is (true? (checks? p-new g-new)) "thin proof kernel-checks its own goal")
+        (is (= (str g-old) (str g-new)) "thin goal is byte-identical to the legacy goal")
+        (is (true? (checks? p-new g-old)) "thin proof ALSO proves the legacy goal (differential)")))
+    (is true "SKIP: no Init env")))
+
+;; #157 strangler: flatMap_congr_perm — the first PERM-constructor proof thinned. The thin script
+;; `induction l; simp; solve_by_elim [Perm.append Perm.refl Perm.nil h]` replaces the hand-built
+;; `p-append (h hd) ih` / `p-refl` term, and kernel-checks the SAME goal (differential).
+(deftest flatmap-congr-perm-thin-differential
+  (if-let [kenv @test-env/init-full-env]
+    (do
+      (reset! a/ansatz-env kenv)
+      (let [[g-old _]      (prove-flatMap-congr-perm)
+            [g-new p-new]  (prove-flatMap-congr-perm-thin)]
         (is (some? p-new) "thin proof produced")
         (is (true? (checks? p-new g-new)) "thin proof kernel-checks its own goal")
         (is (= (str g-old) (str g-new)) "thin goal is byte-identical to the legacy goal")
