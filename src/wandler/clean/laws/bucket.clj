@@ -32,6 +32,7 @@
             [ansatz.kernel.env :as env]
             [ansatz.kernel.name :as nm]
             [ansatz.prelude.list :as plist]
+            [wandler.clean.laws.frame :as frame]
             [wandler.kmap :as kmap]))
 
 (defn- has? [s] (some? (env/lookup (a/env) (nm/from-string s))))
@@ -46,6 +47,7 @@
   []
   (kmap/install!)
   (plist/install!)
+  (frame/install!)
   ;; Map.lookup_insert — def-eq to List.lookup_insert at m.val (opaque Map ops unfold in is-def-eq).
   (when-not (has? "Map.lookup_insert")
     (try
@@ -137,5 +139,32 @@
                (all_goals (simp_all [List.flatMap_nil List.flatMap_cons List.map_append List.map_nil
                                      wsum_append wsum.eq_1 wsum.eq_2 List.map_map Function.comp_def
                                      Map.bucket_content wsum_map_foldl_cons (WAddMonoid.zero_add m)]))))
+      (catch Throwable _ nil)))
+  ;; Map_aggJoin_factor — THE PLANNER-FACING KEYED FACTOR LAW (replaces term-built
+  ;; Map.foldl_join_sum_factor). For a separable weight `w x * v y`, the aggregate over a REAL group_by
+  ;; `Map.join` factors so the right factor `v` is summed ONCE per matching bucket — the O(|xs|·|ys|) →
+  ;; O(|xs|+|ys|) FAQ win, via a pre-aggregated index. TWO rewrites: the aggregate bridge
+  ;; `wsum_map_Map_join` (real join → clean filter-flatMap form) then the clean `aggJoin_factor`
+  ;; (frame). Carrier-generic over any commutative WSemiring.
+  (when-not (has? "Map_aggJoin_factor")
+    (try
+      (eval '(ansatz.core/theorem Map_aggJoin_factor
+               [K :- Type, X :- Type, Y :- Type, S :- Type, dec :- (DecidableEq K), m :- (WSemiring S),
+                hc :- (Std.Commutative S (WAddMonoid.add (WSemiring.toWAddMonoid m))),
+                kf :- (=> X K), lf :- (=> Y K), w :- (=> X S), v :- (=> Y S), xs :- (List X), ys :- (List Y)]
+               (= S
+                  (wsum (WSemiring.toWAddMonoid m)
+                    (List.map (Prod X Y) S
+                      (fn [pr :- (Prod X Y)] (WSemiring.mul m (w (Prod.fst X Y pr)) (v (Prod.snd X Y pr))))
+                      (Map.join K X Y dec kf lf xs ys)))
+                  (wsum (WSemiring.toWAddMonoid m)
+                    (List.map X S (fn [x :- X]
+                      (WSemiring.mul m (w x)
+                        (wsum (WSemiring.toWAddMonoid m)
+                          (List.map Y S v (List.filter Y (fn [y :- Y] (BEq.beq K (instBEqOfDecidableEq K dec) (kf x) (lf y))) ys))))) xs)))
+               (rw (wsum_map_Map_join K X Y S dec (WSemiring.toWAddMonoid m) hc kf lf
+                     (fn [pr :- (Prod X Y)] (WSemiring.mul m (w (Prod.fst X Y pr)) (v (Prod.snd X Y pr)))) xs ys))
+               (rw (aggJoin_factor X Y S m
+                     (fn [x :- X] (fn [y :- Y] (BEq.beq K (instBEqOfDecidableEq K dec) (kf x) (lf y)))) w v xs ys))))
       (catch Throwable _ nil)))
   :installed)

@@ -45,4 +45,8 @@
       (is (verifies? "Map.join_eq") "rfl-unfolding of the opaque Map.join")
       (is (has? "wsum_map_Map_join"))
       (is (verifies? "wsum_map_Map_join")
-          "∑ over a real Map.join = ∑ over the clean join form (aggJoin_split's input), kernel-verified"))))
+          "∑ over a real Map.join = ∑ over the clean join form (aggJoin_split's input), kernel-verified"))
+    (testing "Map_aggJoin_factor — the planner-facing keyed FAQ factor law over a real Map.join"
+      (is (has? "Map_aggJoin_factor"))
+      (is (verifies? "Map_aggJoin_factor")
+          "separable w·v over a group_by Map.join factors to sum-v-once-per-bucket (O(N²)→O(N)), kernel-verified"))))
