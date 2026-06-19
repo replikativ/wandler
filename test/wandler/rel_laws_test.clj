@@ -107,3 +107,25 @@
         (is (true? (checks legacy-goal p-new))
             "thin `(split)` proof ALSO proves the legacy lookup_insert goal (differential) — faithful matcher splitter")))
     (is true "SKIP: no Init env")))
+
+(deftest lookup-filter-ne-thin
+  ;; #146 BYCASES cluster CLOSED: the THIN prove-lookup-filter-ne (~6-line tactic block) must
+  ;; kernel-check the SAME goal the legacy ~88-LOC hand-built by-cases/focus/rewrite proof targets.
+  ;; Exercises all three ansatz simp fixes: disc-tree beq_iff_eq keying, level-resolved polymorphic
+  ;; LawfulBEq discharge, and faithful matcher-discriminant congruence (so the `List.filter.match_1`
+  ;; discriminant `beq k fst` rewrites to a literal via the branch hyp + `hne` and the matcher reduces).
+  (if-let [kenv-init @test-env/init-full-env]
+    (do
+      (reset! a/ansatz-env kenv-init)
+      (matchers/load-bundled-matchers!)
+      (kmap/install!) (rl/install!)
+      (let [[g-leg _]   ((requiring-resolve 'wandler.laws.relational/prove-lookup-filter-ne))
+            [g-new p-new] (rl/prove-lookup-filter-ne-thin)
+            checks (fn [g p] (and g p (try (kenv/check-constant (a/env) (kenv/mk-thm (nm "__chk_fne") [] g p)) true
+                                           (catch Throwable _ false))))]
+        (is (some? p-new) "thin filter-ne proof produced")
+        (is (= (str g-leg) (str g-new)) "thin goal byte-identical to legacy hand-built goal")
+        (is (true? (checks g-new p-new)) "thin proof kernel-checks its own goal (check-constant)")
+        (is (true? (checks g-leg p-new))
+            "thin proof ALSO proves the legacy lookup_filter_ne goal (differential)")))
+    (is true "SKIP: no Init env")))

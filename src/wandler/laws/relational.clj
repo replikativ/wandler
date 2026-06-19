@@ -611,6 +611,47 @@
         (all_goals (simp_all [List.lookup_cons List.lookup_cons_self List.lookup_nil
                               List.lookup_filter_ne Bool.not_true Bool.not_false]))])))
 
+;; List.lookup_filter_ne — THIN (#146 BYCASES cluster). Builds the SAME goal as the legacy hand-built
+;; `prove-lookup-filter-ne` (~88 LOC of manual by-cases/focus/rewrite) and proves it with a ~6-line
+;; tactic block. Needs the three ansatz simp fixes (disc-tree beq_iff_eq keying f17cfa0; level-resolved
+;; inst-implicit discharge of the polymorphic LawfulBEq 2249063; faithful matcher-discriminant
+;; congruence 9fc9e77). `cases head` destructures the opaque Prod so lookup/filter cons-lemmas fire;
+;; the PRIMED `Bool.not_eq_*'` turn the split branch hyp `Bool.not (beq …) = false` into `beq … = true`;
+;; `split` handles the `List.filter.match_1` matcher (needs MatcherInfo loaded).
+(defn prove-lookup-filter-ne-thin []
+  (let [fK (e/fvar 80001) fV (e/fvar 80002) fd (e/fvar 80003)
+        fk (e/fvar 80004) fk' (e/fvar 80005) fm (e/fvar 80006)
+        beqI (e/app* (e/const' (nm "instBEqOfDecidableEq") [z]) fK fd)
+        prodKV (e/app* (e/const' (nm "Prod") [z z]) fK fV)
+        listKV (e/app (e/const' (nm "List") [z]) prodKV)
+        deceqK (e/app (e/const' (nm "DecidableEq") [L1]) fK)
+        beq (fn [x y] (e/app* (e/const' (nm "BEq.beq") [z]) fK beqI x y))
+        fstp (fn [p] (e/app* (e/const' (nm "Prod.fst") [z z]) fK fV p))
+        pred (e/lam "p" prodKV (e/app (e/const' (nm "Bool.not") []) (beq (fstp (e/bvar 0)) fk')) :default)
+        filt (fn [l] (e/app* (e/const' (nm "List.filter") [z]) prodKV pred l))
+        lookup (fn [l] (e/app* (e/const' (nm "List.lookup") [z z]) fK fV beqI fk l))
+        boolT (e/const' (nm "Bool") [])
+        hyp (e/app* (e/const' (nm "Eq") [L1]) boolT (beq fk fk') (e/const' (nm "Bool.false") []))
+        concl (e/app* (e/const' (nm "Eq") [L1]) (e/app (e/const' (nm "Option") [z]) fV) (lookup (filt fm)) (lookup fm))
+        goal (-> (e/forall' "hne" hyp concl :default)
+                 (#(e/forall' "m" listKV (e/abstract1 % 80006) :default))
+                 (#(e/forall' "k'" fK (e/abstract1 % 80005) :default))
+                 (#(e/forall' "k" fK (e/abstract1 % 80004) :default))
+                 (#(e/forall' "dec" deceqK (e/abstract1 % 80003) :default))
+                 (#(e/forall' "V" type0 (e/abstract1 % 80002) :default))
+                 (#(e/forall' "K" type0 (e/abstract1 % 80001) :default)))
+        LEM '[List.filter_nil List.filter_cons_of_pos List.filter_cons_of_neg
+              List.lookup_cons List.lookup_nil List.lookup_cons_self
+              Bool.not_true Bool.not_false Bool.not_eq_true' Bool.not_eq_false'
+              cond_true cond_false beq_iff_eq beq_self_eq_true]]
+    (a/prove-law ["K" "V" "dec" "k" "k'" "m" "hne"] goal
+      (list '(induction m)
+            (list 'all_goals (list 'simp_all LEM))
+            '(all_goals (cases head))
+            (list 'all_goals (list 'simp_all LEM))
+            '(all_goals (split))
+            (list 'all_goals (list 'simp_all LEM))))))
+
 ;; ── installer ────────────────────────────────────────────────────────────────
 (def ^:private cache (atom nil))   ; ordered ConstantInfos — Init-only, env-independent
 
