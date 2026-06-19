@@ -28,6 +28,20 @@
 
 (defn- cn [x] (when (e/const? x) (name/->string (e/const-name x))))
 
+(defn compose-trans
+  "Eq.trans of `p1` (a=b) and `p2` (b=c) → a proof of a=c. nil proofs are identities
+   (a=a), so `(compose-trans … a a c nil p2) = p2` and `(… a b b p1 nil) = p1`. Builds
+   `@Eq.trans.{u} T a b c p1 p2` with T = type of `a`, u its sort level."
+  [^Env env lctx a b c p1 p2]
+  (cond
+    (nil? p1) p2
+    (nil? p2) p1
+    :else (let [st (cert/mk-st env lctx)
+                t (tc/infer-type st a)
+                t-sort (#'tc/cached-whnf st (tc/infer-type st t))
+                u (if (e/sort? t-sort) (e/sort-level t-sort) lvl/zero)]
+            (e/app* (e/const' (name/from-string "Eq.trans") [u]) t a b c p1 p2))))
+
 (defn- match-app
   "If `t` = `(const head a0 a1 …)` with ≥ n args, return the arg vector; else nil."
   [t head n]

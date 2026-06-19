@@ -13,6 +13,7 @@
             [ansatz.prelude.algebra :as alg]
             [wandler.test-env :as test-env]
             [wandler.clean.laws.bucket :as bucket]
+            [wandler.clean.optimize :as opt]
             [wandler.clean.optimize.physical :as phys]))
 
 (defn- setup [f]
@@ -65,3 +66,26 @@
           (is (= :agg-join-factor (:rw r)))))
       (testing "without a join/separable-weight shape the recognizer declines (nil)"
         (is (nil? (phys/agg-join-factor-match (kc "Nat.zero"))))))))
+
+(deftest optimize-cost-driver
+  (when (ready?)
+    (testing "the cost-search driver applies the physical factor THEN fuses, composing proofs (Eq.trans)"
+      (let [[term lctx comm] (nat-agg-join-query)
+            r (opt/optimize-cost (a/env) term :lctx lctx :comm comm :sizes {7001 1000 7002 1000})]
+        (is (:changed? r) "the driver rewrote the join-aggregate")
+        (is (:verified? r) "the composed (factor ∘ fuse) proof kernel-certifies (check-constant)")
+        (is (= :agg-join-factor (first (:rewrites r))) "the factorization is the first adopted step")
+        (is (not (.equals ^Object term (:term r))) "the plan changed")))
+    (testing "no join/separable shape → the driver falls back to plain fusion, still verified"
+      ;; List.map id (List.map id xs) — a fusable streaming term, no join.
+      (let [Nat (kc "Nat")
+            idf (e/lam "x" Nat (e/bvar 0) :default)
+            xs  (e/fvar 7003)
+            lctx {7003 {:name "xs" :type (e/app (e/const' (nm/from-string "List") [z]) Nat)}}
+            inner (e/app* (e/const' (nm/from-string "List.map") [z z]) Nat Nat idf xs)
+            term  (e/app* (e/const' (nm/from-string "List.map") [z z]) Nat Nat idf inner)
+            r (opt/optimize-cost (a/env) term :lctx lctx)]
+        (is (or (nil? (:rewrites r)) (= [:fuse] (:rewrites r)))
+            "no physical step — plain fusion (or no-op)")
+        (when (:changed? r)
+          (is (:verified? r) "fusion result certifies"))))))
