@@ -194,8 +194,10 @@
 
 (def ^:private monoid-tactic
   "The discharge stack that proves arithmetic monoid/property laws and CORRECTLY FAILS on
-   non-monoids (the kernel won't admit a false law)."
-  (fn [op-name] (list (list 'simp op-name) (list 'all_goals (list 'try (list 'omega))))))
+   non-monoids (the kernel won't admit a false law). `(simp (symbol op-name))` unfolds the
+   verified op to its body (e.g. psum2 → Nat.add) so omega can finish — the arg MUST be a
+   SYMBOL: ansatz's tactic DSL resolves a symbol as a name but elaborates a string as a term."
+  (fn [op-name] (list (list 'simp (symbol op-name)) (list 'all_goals (list 'try (list 'omega))))))
 
 (defn- try-prove
   "Prove `nm : prop` over `params` with the monoid tactic stack; true on success, false on
