@@ -16,7 +16,8 @@
 
    This ns re-exports the certify + cost public names; the driver lands in 5.6."
   (:require [wandler.clean.optimize.certify :as cert]
-            [wandler.clean.optimize.cost :as cost]))
+            [wandler.clean.optimize.cost :as cost]
+            [wandler.clean.optimize.cse :as cse]))
 
 ;; ── certify: the rewriter + the soundness gate (5.1) ─────────────────────────────────────────
 (def fusion-lemmas               cert/fusion-lemmas)
@@ -34,3 +35,6 @@
 (def soac-stages                 cost/soac-stages)
 (def pipeline-resources          cost/pipeline-resources)
 (def pipeline-cost               cost/pipeline-cost)
+
+;; ── cse: shared-subtree hoist, soundness-FREE (let/zeta = Eq.refl) (5.2) ─────────────────────
+(def try-cse                     cse/try-cse)
