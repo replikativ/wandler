@@ -68,13 +68,13 @@
                        (RE.rplus (List.foldl RE Nat deriv p xs) (List.foldl RE Nat deriv q xs))))
                (induction xs)
                (all_goals (try (intros p q)))
-               (all_goals (try (simp "List.foldl_cons" "List.foldl_nil" "deriv_plus")))
+               (all_goals (try (simp List.foldl_cons List.foldl_nil deriv_plus)))
                (all_goals (try (apply ih_tail)))
                (all_goals (try (rfl)))))
       ;; OR-FUSION, kernel-certified: rmatch (rplus p q) xs = rmatch p xs ∨ rmatch q xs
       (eval '(ansatz.core/theorem rmatch_plus [p :- RE, q :- RE, xs :- (List Nat)]
                (= Bool (rmatch (RE.rplus p q) xs) (or (rmatch p xs) (rmatch q xs)))
-               (simp "rmatch" "fold_hom" "matchEps_plus")))
+               (simp rmatch fold_hom matchEps_plus)))
       ;; whole-string matcher over a kernel String — the leaf used by the `:re` conforms node
       (eval '(ansatz.core/defn reMatchStr [r :- RE, s :- String] Bool
                (rmatch r (mapv (fn [c] (Char.toNat c)) (String.toList s)))))
@@ -83,7 +83,7 @@
       ;; fusion direction (2 reMatchStr calls → 1), confluent. From rmatch_plus.
       (eval '(ansatz.core/theorem reMatchStr_plus [p :- RE, q :- RE, s :- String]
                (= Bool (or (reMatchStr p s) (reMatchStr q s)) (reMatchStr (RE.rplus p q) s))
-               (simp "reMatchStr" "rmatch_plus"))))))
+               (simp reMatchStr rmatch_plus))))))
 ;; Once `reMatchStr` is in the env, ansatz.surface.schema's `:re` conforms node becomes PRECISE automatically
 ;; (it env-gates on `reMatchStr` and resolves `re-conforms-leaf` below) — the #62/#63 composition:
 ;; a regex becomes a verified field refinement. No global hook; gated on env state (test-isolated).

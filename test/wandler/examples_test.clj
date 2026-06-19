@@ -291,7 +291,7 @@
     (binding [a/*verbose* false]
       (a/prove-theorem 'ex-insert-base '[x :- Nat]
                        '(= Bool (ex-sorted ((ex-insertSorted x) nil)) true)
-                       '[(simp "ex-insertSorted" "ex-sorted")])
+                       '[(simp ex-insertSorted ex-sorted)])
       (is true "base case proved by simp"))))
 
 (deftest test-isort-singleton
@@ -301,9 +301,9 @@
                        '(= Bool (ex-sorted ((ex-insertSorted x) (cons y nil))) true)
                        '[(by_cases (<= x y))
                          ;; simp_all unfolds + omega handles LE goals from hypothesis decomposition
-                         (all_goals (try (simp_all "ex-insertSorted" "ex-sorted")))
+                         (all_goals (try (simp_all ex-insertSorted ex-sorted)))
                          (all_goals (try (omega)))
-                         (all_goals (try (simp_all "ex-insertSorted" "ex-sorted")))
+                         (all_goals (try (simp_all ex-insertSorted ex-sorted)))
                          (all_goals (try (omega)))])
       (is true "singleton case proved by by_cases + simp_all + omega"))))
 
@@ -353,12 +353,12 @@
                                (apply (Sorted.single x))
                                ;; Case-split on x ≤ a, unfold insertSorted
                                (all_goals (try (by_cases (<= x a))))
-                               (all_goals (try (simp_all "ex-insertSorted")))
+                               (all_goals (try (simp_all ex-insertSorted)))
                                ;; Sub-split cons_cons case on x ≤ b
                                (all_goals (try (by_cases (<= x b))))
-                               (all_goals (try (simp_all "ex-insertSorted")))
+                               (all_goals (try (simp_all ex-insertSorted)))
                                ;; Reduce remaining Bool.rec applications
-                               (all_goals (try (simp_all "ex-insertSorted")))
+                               (all_goals (try (simp_all ex-insertSorted)))
                                ;; Close: constructors + arithmetic + assumptions
                                (all_goals (try (apply Sorted.cons_cons)))
                                (all_goals (try (omega)))
@@ -537,7 +537,7 @@
           (a/prove-theorem 'bal1-leaf-valid
                            '[v :- Nat, r :- (TRBTree Nat), hr :- (ValidRB r)]
                            '(ValidRB (((ex-bal1c (TRBTree.leaf Nat)) v) r))
-                           '[(simp "ex-bal1c")
+                           '[(simp ex-bal1c)
                              (apply ValidRB.vnode) (apply ValidRB.vleaf) (assumption)]
                            ctx)
           (is true "balance1 leaf case preserves ValidRB")
@@ -550,7 +550,7 @@
                            '(ValidRB (((ex-bal1c
                                         (TRBTree.node Nat (TRBColor.red)
                                                       (TRBTree.node Nat (TRBColor.red) a x b) y c)) v) r))
-                           '[(simp "ex-bal1c")
+                           '[(simp ex-bal1c)
                              (apply ValidRB.vnode)
                              (apply ValidRB.vnode) (assumption) (assumption)
                              (apply ValidRB.vnode) (assumption) (assumption)]
@@ -643,14 +643,14 @@
                            '(ValidRB (((ex-bal1full l) v) r))
                            '[(cases hl)
                              ;; vleaf: balance1 leaf v r = node black leaf v r
-                             (simp "ex-bal1full")
+                             (simp ex-bal1full)
                              (apply ValidRB.vnode) (apply ValidRB.vleaf) (assumption)
                              ;; vnode: cases on color (structural, hl reverted in motive)
                              (cases c)
                              ;; red: cases on inner left subtree
                              (cases l)
                              ;; red-leaf: eq_2s1
-                             (simp "ex-bal1full")
+                             (simp ex-bal1full)
                              (apply ValidRB.vnode)
                              (apply ValidRB.vnode) (apply ValidRB.vleaf) (assumption)
                              (assumption)
@@ -658,17 +658,17 @@
                              (cases color)
                              ;; LL rotation (red-red): decompose inner ValidRB
                              (cases hl)
-                             (simp "ex-bal1full")
+                             (simp ex-bal1full)
                              (apply ValidRB.vnode)
                              (apply ValidRB.vnode) (assumption) (assumption)
                              (apply ValidRB.vnode) (assumption) (assumption)
                              ;; red-black: no rotation
-                             (simp "ex-bal1full")
+                             (simp ex-bal1full)
                              (apply ValidRB.vnode)
                              (apply ValidRB.vnode) (assumption) (assumption)
                              (assumption)
                              ;; black: no rotation
-                             (simp "ex-bal1full")
+                             (simp ex-bal1full)
                              (apply ValidRB.vnode)
                              (apply ValidRB.vnode) (assumption) (assumption)
                              (assumption)]
