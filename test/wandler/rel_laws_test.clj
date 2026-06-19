@@ -129,3 +129,22 @@
         (is (true? (checks g-leg p-new))
             "thin proof ALSO proves the legacy lookup_filter_ne goal (differential)")))
     (is true "SKIP: no Init env")))
+
+(deftest issome-lookup-insert-thin
+  ;; #146 BYCASES, the `cond`+`Bool.or` variant (distinct ansatz path from filter-ne's matcher):
+  ;; `rewrite Map.lookup_insert` exposes a `cond`, `split` takes its branches, `simp_all` closes via
+  ;; the branch hyp + Bool.or lemmas. Differential vs the legacy hand-built by-cases proof.
+  (if-let [kenv-init @test-env/init-full-env]
+    (do
+      (reset! a/ansatz-env kenv-init)
+      (matchers/load-bundled-matchers!)
+      (kmap/install!) (rl/install!)
+      (let [[g-leg _]   ((requiring-resolve 'wandler.laws.relational/prove-issome-lookup-insert))
+            [g-new p-new] (rl/prove-issome-lookup-insert-thin)
+            checks (fn [g p] (and g p (try (kenv/check-constant (a/env) (kenv/mk-thm (nm "__chk_iss") [] g p)) true
+                                           (catch Throwable _ false))))]
+        (is (some? p-new) "thin isSome_lookup_insert proof produced")
+        (is (= (str g-leg) (str g-new)) "thin goal byte-identical to legacy")
+        (is (true? (checks g-new p-new)) "thin proof kernel-checks its own goal")
+        (is (true? (checks g-leg p-new)) "thin proof ALSO proves the legacy goal (differential)")))
+    (is true "SKIP: no Init env")))

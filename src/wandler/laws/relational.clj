@@ -652,6 +652,30 @@
             '(all_goals (split))
             (list 'all_goals (list 'simp_all LEM))))))
 
+;; Map.isSome_lookup_insert — THIN. Same goal as the legacy hand-built `prove-issome-lookup-insert`.
+;; Exercises a DIFFERENT BYCASES path than filter-ne: `rewrite Map.lookup_insert` exposes a `cond`
+;; (not a `.match_N`), `split` takes the cond branches, and `simp_all` closes via the branch hyp +
+;; `Bool.or` lemmas (no `beq_iff_eq`/matcher needed — the Bool-eq-direct case).
+(defn prove-issome-lookup-insert-thin []
+  (let [fK (e/fvar 82001) fV (e/fvar 82002) fd (e/fvar 82003) fk (e/fvar 82004) fk' (e/fvar 82005) fv2 (e/fvar 82006) fm (e/fvar 82007)
+        beqI (e/app* (e/const' (nm "instBEqOfDecidableEq") [z]) fK fd)
+        mapKV (e/app* (e/const' (nm "Map") [z z]) fK fV)
+        deceqK (e/app (e/const' (nm "DecidableEq") [L1]) fK)
+        beq (fn [x y] (e/app* (e/const' (nm "BEq.beq") [z]) fK beqI x y))
+        isS (fn [o] (e/app* (e/const' (nm "Option.isSome") [z]) fV o))
+        mlook (fn [mm] (e/app* (e/const' (nm "Map.lookup") []) fK fV fd fk mm))
+        lhs (isS (mlook (e/app* (e/const' (nm "Map.insert") []) fK fV fd fk' fv2 fm)))
+        rhs (e/app* (e/const' (nm "Bool.or") []) (beq fk fk') (isS (mlook fm)))
+        goal (-> (e/app* (e/const' (nm "Eq") [L1]) (e/const' (nm "Bool") []) lhs rhs)
+                 (#(e/forall' "m" mapKV (e/abstract1 % 82007) :default)) (#(e/forall' "v" fV (e/abstract1 % 82006) :default))
+                 (#(e/forall' "k'" fK (e/abstract1 % 82005) :default)) (#(e/forall' "k" fK (e/abstract1 % 82004) :default))
+                 (#(e/forall' "dec" deceqK (e/abstract1 % 82003) :default)) (#(e/forall' "V" type0 (e/abstract1 % 82002) :default)) (#(e/forall' "K" type0 (e/abstract1 % 82001) :default)))
+        LEM '[cond cond_true cond_false Option.isSome Bool.true_or Bool.false_or Bool.or_true Bool.or_false]]
+    (a/prove-law ["K" "V" "dec" "k" "k'" "v" "m"] goal
+      (list '(rewrite Map.lookup_insert)
+            '(split)
+            (list 'all_goals (list 'simp_all LEM))))))
+
 ;; ── installer ────────────────────────────────────────────────────────────────
 (def ^:private cache (atom nil))   ; ordered ConstantInfos — Init-only, env-independent
 
