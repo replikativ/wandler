@@ -28,6 +28,9 @@
     (testing "aggJoin_split — the FAQ factorization (pure simp, no induction/Perm)"
       (is (has? "aggJoin_split"))
       (is (verifies? "aggJoin_split") "kernel check-constant verifies"))
+    (testing "aggJoin_factor — separable-weight FAQ frame (O(N²)→O(N)), thin over the prelude"
+      (is (has? "aggJoin_factor"))
+      (is (verifies? "aggJoin_factor") "kernel check-constant verifies"))
     (testing "aggJoin_reorder — join-commutativity capstone via Fubini, NO List.Perm"
       (is (has? "aggJoin_reorder"))
       (is (verifies? "aggJoin_reorder") "kernel check-constant verifies"))

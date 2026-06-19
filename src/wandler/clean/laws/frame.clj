@@ -59,6 +59,33 @@
                                       (List.filter Y (p x) ys)))) xs)))
                (simp [List.map_flatMap List.map_map wsum_flatten Function.comp_def])))
       (catch Throwable _ nil)))
+  ;; aggJoin_factor — THE FAQ FRAME RULE for a separable weight `w x * v y` (lean-wandler Laws/Frame.lean
+  ;; `aggJoin_factor`): the right factor `v` is summed ONCE per matching bucket, not once per pair, so an
+  ;; O(|xs|·|ys|) aggregate becomes O(|xs|+|ys|) with a pre-aggregated index. This REPLACES old wandler's
+  ;; Map-based `Map.foldl_join_sum_factor`/`Map.foldl_join_frame` cluster (~400 LOC of explicit
+  ;; congrArg/Eq.trans term-building) with a THIN proof over the prelude: factor the join
+  ;; (`aggJoin_split` with the separable f) then pull the loop-invariant `w x` out of each inner sum
+  ;; (`wsum_map_mul_left`). Carrier-generic over any WSemiring (the multiplication lives there).
+  (when-not (has? "aggJoin_factor")
+    (try
+      (eval '(ansatz.core/theorem aggJoin_factor
+               [X :- Type, Y :- Type, S :- Type, m :- (WSemiring S),
+                p :- (=> X (=> Y Bool)), w :- (=> X S), v :- (=> Y S), xs :- (List X), ys :- (List Y)]
+               (= S
+                  (wsum (WSemiring.toWAddMonoid m)
+                    (List.map (Prod X Y) S
+                      (fn [pr :- (Prod X Y)] (WSemiring.mul m (w (Prod.fst pr)) (v (Prod.snd pr))))
+                      (List.flatMap X (Prod X Y)
+                        (fn [x :- X] (List.map Y (Prod X Y) (fn [y :- Y] (Prod.mk x y))
+                                      (List.filter Y (p x) ys))) xs)))
+                  (wsum (WSemiring.toWAddMonoid m)
+                    (List.map X S (fn [x :- X]
+                      (WSemiring.mul m (w x)
+                        (wsum (WSemiring.toWAddMonoid m) (List.map Y S v (List.filter Y (p x) ys))))) xs)))
+               (rw (aggJoin_split X Y S (WSemiring.toWAddMonoid m) p
+                     (fn [x :- X] (fn [y :- Y] (WSemiring.mul m (w x) (v y)))) xs ys))
+               (simp [wsum_map_mul_left])))
+      (catch Throwable _ nil)))
   ;; aggJoin_reorder — the join-commutativity capstone. Factor both orders, filter→guard, Fubini.
   (when-not (has? "aggJoin_reorder")
     (try
