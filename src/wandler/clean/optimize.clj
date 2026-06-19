@@ -42,6 +42,7 @@
 
 ;; ── physical strategies (5.5b) ───────────────────────────────────────────────────────────────
 (def try-agg-join-factor         phys/try-agg-join-factor)
+(def try-agg-join-reorder        phys/try-agg-join-reorder)
 
 ;; ── the cost-search DRIVER (5.6) ─────────────────────────────────────────────────────────────
 (defn optimize-cost
@@ -57,8 +58,12 @@
    witness to the factor strategy; `:extra-lemmas` augments the fusion set."
   [env term & {:keys [lctx selectivity sizes comm extra-lemmas]}]
   (let [pc   (fn [t] (cost/pipeline-cost t {:selectivity selectivity :sizes sizes}))
-        phys (phys/try-agg-join-factor env term :lctx lctx :selectivity selectivity
-                                       :sizes sizes :comm comm)]
+        ;; FACTORIZATION first (the biggest win — eliminates the join), then the drive-direction
+        ;; REORDER (when the factor doesn't apply but swapping which side is indexed is cheaper).
+        phys (or (phys/try-agg-join-factor env term :lctx lctx :selectivity selectivity
+                                           :sizes sizes :comm comm)
+                 (phys/try-agg-join-reorder env term :lctx lctx :selectivity selectivity
+                                            :sizes sizes :comm comm))]
     (if (and phys (:verified? phys))
       ;; a physical step fired → fuse its factored result, compose proofs (physical ∘ fuse).
       (let [sub        (cert/optimize env (:term phys) :lctx lctx :extra-lemmas extra-lemmas)

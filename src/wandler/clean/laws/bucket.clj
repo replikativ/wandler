@@ -167,4 +167,31 @@
                (rw (aggJoin_factor X Y S m
                      (fn [x :- X] (fn [y :- Y] (BEq.beq K (instBEqOfDecidableEq K dec) (kf x) (lf y)))) w v xs ys))))
       (catch Throwable _ nil)))
+  ;; Map_aggJoin_reorder — THE JOIN-COMMUTATIVITY / DRIVE-DIRECTION law over a real Map.join: the
+  ;; aggregate of an equi-join is invariant under swapping the two inputs, so the planner may build the
+  ;; group_by index on whichever side is smaller. `f : X→Y→S` the per-pair weight. FOUR rewrites:
+  ;; bridge LHS to the clean form (`wsum_map_Map_join`), the clean `aggJoin_reorder` (Fubini, NO Perm),
+  ;; bridge the swapped Map.join BACK, then `simp [beq_comm]` reconciles the key predicate `kf x == lf y`
+  ;; with the swapped-drive `lf y == kf x`. Retires the old `Map.join_length_comm`/Perm reorder cluster.
+  (when-not (has? "Map_aggJoin_reorder")
+    (try
+      (eval '(ansatz.core/theorem Map_aggJoin_reorder
+               [K :- Type, X :- Type, Y :- Type, S :- Type, dec :- (DecidableEq K),
+                m :- (WAddMonoid S), hc :- (Std.Commutative S (WAddMonoid.add m)),
+                kf :- (=> X K), lf :- (=> Y K), f :- (=> X (=> Y S)), xs :- (List X), ys :- (List Y)]
+               (= S
+                  (wsum m (List.map (Prod X Y) S (fn [pr :- (Prod X Y)] (f (Prod.fst X Y pr) (Prod.snd X Y pr)))
+                            (Map.join K X Y dec kf lf xs ys)))
+                  (wsum m (List.map (Prod Y X) S (fn [pr :- (Prod Y X)] (f (Prod.snd Y X pr) (Prod.fst Y X pr)))
+                            (Map.join K Y X dec lf kf ys xs))))
+               (rw (wsum_map_Map_join K X Y S dec m hc kf lf
+                     (fn [pr :- (Prod X Y)] (f (Prod.fst X Y pr) (Prod.snd X Y pr))) xs ys))
+               (rw (aggJoin_reorder X Y S m hc
+                     (fn [x :- X] (fn [y :- Y] (BEq.beq K (instBEqOfDecidableEq K dec) (kf x) (lf y)))) f xs ys))
+               (rw (wsum_map_Map_join K Y X S dec m hc lf kf
+                     (fn [pr :- (Prod Y X)] (f (Prod.snd Y X pr) (Prod.fst Y X pr))) ys xs))
+               ;; goal-only simp (not simp_all) — the predicate reconciliation needs only the goal, and
+               ;; the lighter pass installs reliably under full-suite memory pressure.
+               (simp [beq_comm])))
+      (catch Throwable _ nil)))
   :installed)

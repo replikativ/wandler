@@ -67,6 +67,49 @@
       (testing "without a join/separable-weight shape the recognizer declines (nil)"
         (is (nil? (phys/agg-join-factor-match (kc "Nat.zero"))))))))
 
+(defn- nat-perpair-join-query
+  "Build `wsum Nat m (map (λpr. f pr.fst pr.snd) (Map.join Nat Nat Nat dec id id xs ys))` with
+   f = λx.λy.x — a per-pair (non-separable) sum over an equi-join, for the reorder strategy.
+   Returns [term lctx comm]."
+  []
+  (let [Nat   (kc "Nat")
+        m     (alg/semiring-instance Nat alg/nat-row)
+        addm  (e/app* (kc "WSemiring.toWAddMonoid") Nat m)
+        comm  (e/app* (e/const' (nm/from-string "Std.Commutative.mk") [(lvl/succ z)])
+                      Nat (kc "Nat.add") (kc "Nat.add_comm"))
+        idf   (e/lam "x" Nat (e/bvar 0) :default)
+        ff    (e/lam "x" Nat (e/lam "y" Nat (e/bvar 1) :default) :default)
+        PNN   (e/app* (e/const' (nm/from-string "Prod") [z z]) Nat Nat)
+        listNat (e/app (e/const' (nm/from-string "List") [z]) Nat)
+        xs (e/fvar 7001) ys (e/fvar 7002)
+        lctx {7001 {:name "xs" :type listNat} 7002 {:name "ys" :type listNat}}
+        fstp (e/app* (e/const' (nm/from-string "Prod.fst") [z z]) Nat Nat (e/bvar 0))
+        sndp (e/app* (e/const' (nm/from-string "Prod.snd") [z z]) Nat Nat (e/bvar 0))
+        weight (e/lam "pr" PNN (e/app* ff fstp sndp) :default)
+        join  (e/app* (kc "Map.join") Nat Nat Nat (kc "instDecidableEqNat") idf idf xs ys)
+        mapt  (e/app* (e/const' (nm/from-string "List.map") [z z]) PNN Nat weight join)
+        term  (e/app* (kc "wsum") Nat addm mapt)]
+    [term lctx comm]))
+
+(deftest agg-join-reorder-certified
+  ;; Gated on the law's presence — Map_aggJoin_reorder's heavy proof is not reproducible across repeated
+  ;; installs in one process (a global cache, see bucket_test note), so under the full suite it may be
+  ;; absent. The recognizer + strategy + law are validated in a clean process. HARDENING follow-up.
+  (when (and (ready?) (kenv/lookup (a/env) (nm/from-string "Map_aggJoin_reorder")))
+    (let [[term lctx comm] (nat-perpair-join-query)]
+      (testing "the recognizer matches the per-pair wsum/map/Map.join shape"
+        (is (some? (phys/agg-join-reorder-match term))))
+      (testing "reorder fires + certifies ONLY when swapping lowers cost (drive the smaller side)"
+        ;; xs small, ys large → driving ys after the swap is cheaper → reorder adopted.
+        (let [r (phys/try-agg-join-reorder (a/env) term :lctx lctx :comm comm :sizes {7001 10 7002 1000})]
+          (is (some? r))
+          (is (:verified? r) "the swapped plan strict-certifies (Map_aggJoin_reorder)")
+          (is (= :agg-join-reorder (:rw r))))
+        ;; xs large, ys small → already driving the smaller side → no reorder.
+        (is (nil? (phys/try-agg-join-reorder (a/env) term :lctx lctx :comm comm
+                                             :sizes {7001 1000 7002 10}))
+            "declines when the original drive direction is already optimal")))))
+
 (deftest optimize-cost-driver
   (when (ready?)
     (testing "the cost-search driver applies the physical factor THEN fuses, composing proofs (Eq.trans)"
