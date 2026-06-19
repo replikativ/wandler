@@ -25,5 +25,7 @@
       (is (diff/verifies? (a/env) "foldl_hom") "kernel check-constant verifies"))
     (testing "foldl_split — THE LICENCE: (xs ++ ys).fold = xs.fold ⊕ ys.fold, fork-join sound by proof"
       (is (diff/verifies? (a/env) "foldl_split") "kernel check-constant verifies"))
-    (testing "the proof-gate (Phase 0 harness) reports both green"
-      (is (:ok? (diff/proof-gate (a/env) ["foldl_hom" "foldl_split"]))))))
+    (testing "split_certificate — the licence CONSUMED: fold-halves-and-combine = sequential fold"
+      (is (diff/verifies? (a/env) "split_certificate") "kernel check-constant verifies"))
+    (testing "the proof-gate (Phase 0 harness) reports all green"
+      (is (:ok? (diff/proof-gate (a/env) ["foldl_hom" "foldl_split" "split_certificate"]))))))

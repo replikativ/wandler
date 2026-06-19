@@ -65,4 +65,24 @@
                     (List.foldl S S (WAddMonoid.add m) (WAddMonoid.zero m) ys)))
                (simp [List.foldl_append foldl_hom])))
       (catch Throwable _ nil)))
+  ;; split_certificate — THE FORK-JOIN STEP, CONSUMED. Folding the two halves at ANY split point `n`
+  ;; (take n / drop n) and combining with `op` equals the sequential fold. This is `foldl_split`
+  ;; CONSUMED into the soundness statement a parallel runtime actually needs: split anywhere, fold the
+  ;; parts independently, combine — same answer. lean-wandler iterates this depth-many times in a
+  ;; recursive `parFold` (Task fork-join) and proves `parFold_eq`; that recursive form is DEFERRED here
+  ;; pending an ansatz gap — `a/defn` structural recursion rejects a recursive call that TRANSFORMS a
+  ;; non-measured argument (`parFold m d (xs.take n)`), so the depth-bounded executable parFold + its
+  ;; @[csimp] Task lowering land with the runtime phase. The certificate below is the algebraic content.
+  (when-not (has? "split_certificate")
+    (try
+      (eval '(ansatz.core/theorem split_certificate
+               [S :- Type, m :- (WAddMonoid S), n :- Nat, xs :- (List S)]
+               (= S
+                  (WAddMonoid.add m
+                    (List.foldl S S (WAddMonoid.add m) (WAddMonoid.zero m) (List.take S n xs))
+                    (List.foldl S S (WAddMonoid.add m) (WAddMonoid.zero m) (List.drop S n xs)))
+                  (List.foldl S S (WAddMonoid.add m) (WAddMonoid.zero m) xs))
+               (rw <- (foldl_split S m (List.take S n xs) (List.drop S n xs)))
+               (rw (List.take_append_drop S n xs))))
+      (catch Throwable _ nil)))
   :installed)
