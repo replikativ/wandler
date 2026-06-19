@@ -39,4 +39,10 @@
       (is (verifies? "Map.bucket_content_gen")))
     (testing "Map.bucket_content — closed form at empty (group_by bucket = keyed filter, reversed)"
       (is (has? "Map.bucket_content"))
-      (is (verifies? "Map.bucket_content") "the keystone bridge, kernel check-constant-verified"))))
+      (is (verifies? "Map.bucket_content") "the keystone bridge, kernel check-constant-verified"))
+    (testing "Map.join_eq + wsum_map_Map_join — the aggregate bridge to the clean filter-flatMap form"
+      (is (has? "Map.join_eq"))
+      (is (verifies? "Map.join_eq") "rfl-unfolding of the opaque Map.join")
+      (is (has? "wsum_map_Map_join"))
+      (is (verifies? "wsum_map_Map_join")
+          "∑ over a real Map.join = ∑ over the clean join form (aggJoin_split's input), kernel-verified"))))

@@ -97,4 +97,45 @@
                     (List.filter β (fn [x :- β] (BEq.beq α (instBEqOfDecidableEq α dec) k (f x))) ys)))
                (exact (Map.bucket_content_gen α β dec f k ys (Map.empty α (List β))))))
       (catch Throwable _ nil)))
+  ;; Map.join_eq — the rfl-unfolding of the opaque `Map.join` to its flatMap-of-grouped-buckets body.
+  ;; Lets simp/rw expose the bucket so `Map.bucket_content` can rewrite it.
+  (when-not (has? "Map.join_eq")
+    (try
+      (eval '(ansatz.core/theorem Map.join_eq
+               [K :- Type, X :- Type, Y :- Type, d :- (DecidableEq K), kf :- (=> X K), lf :- (=> Y K),
+                xs :- (List X), ys :- (List Y)]
+               (= (List (Prod X Y))
+                  (Map.join K X Y d kf lf xs ys)
+                  (List.flatMap X (Prod X Y)
+                    (fn [x :- X]
+                      (List.map Y (Prod X Y) (fn [y :- Y] (Prod.mk X Y x y))
+                        (Option.getD (List Y) (Map.lookup K (List Y) d (kf x) (Map.group_by K Y d lf ys)) (List.nil Y))))
+                    xs))
+               (rfl)))
+      (catch Throwable _ nil)))
+  ;; wsum_map_Map_join — THE AGGREGATE BRIDGE: the sum of an abstract weight `h` over a REAL `Map.join`
+  ;; equals the same sum over the clean `filter`-`flatMap` join form (`aggJoin_split`'s input). The two
+  ;; lists differ per-bucket by the group_by reversal (`Map.bucket_content` = foldl(::)[] = reverse), so
+  ;; the equality holds only at the SUM level over a COMMUTATIVE monoid. Proof: `rw Map.join_eq` exposes
+  ;; the grouped bucket; `induction xs` splits the flatMap; each cons head reduces (map_append/wsum_append/
+  ;; map_map) to exactly `wsum_map_foldl_cons` on its bucket, the tail to the IH. This is what lets the
+  ;; aggregate frame laws (`aggJoin_split`/`aggJoin_factor`) apply to a real group_by Map.join.
+  (when-not (has? "wsum_map_Map_join")
+    (try
+      (eval '(ansatz.core/theorem wsum_map_Map_join
+               [K :- Type, X :- Type, Y :- Type, S :- Type, d :- (DecidableEq K),
+                m :- (WAddMonoid S), hc :- (Std.Commutative S (WAddMonoid.add m)),
+                kf :- (=> X K), lf :- (=> Y K), h :- (=> (Prod X Y) S), xs :- (List X), ys :- (List Y)]
+               (= S
+                  (wsum m (List.map (Prod X Y) S h (Map.join K X Y d kf lf xs ys)))
+                  (wsum m (List.map (Prod X Y) S h
+                            (List.flatMap X (Prod X Y)
+                              (fn [x :- X] (List.map Y (Prod X Y) (fn [y :- Y] (Prod.mk X Y x y))
+                                            (List.filter Y (fn [y :- Y] (BEq.beq K (instBEqOfDecidableEq K d) (kf x) (lf y))) ys))) xs))))
+               (rw (Map.join_eq K X Y d kf lf xs ys))
+               (induction xs)
+               (all_goals (simp_all [List.flatMap_nil List.flatMap_cons List.map_append List.map_nil
+                                     wsum_append wsum.eq_1 wsum.eq_2 List.map_map Function.comp_def
+                                     Map.bucket_content wsum_map_foldl_cons (WAddMonoid.zero_add m)]))))
+      (catch Throwable _ nil)))
   :installed)
