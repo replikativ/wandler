@@ -459,6 +459,26 @@
             ps (vec (:goals ps)))]
     [goal (when (proof/solved? ps) (extract/extract ps))]))
 
+;; Map.lookup_group_by_gen — THIN (RAWREC class). The ~60-LOC hand-built `prove-gen`
+;; (induction + manual IH-at-accumulator rewrite + unfold + nested by-cases) collapses to a 5-line
+;; tactic block, NO fun_induction needed: `induction xs generalizing m` gives the accumulator-
+;; generalized IH, `simp_all [foldl_*]` AUTO-APPLIES that quantified IH at the recursive call's actual
+;; accumulator, the explicit `rewrite Map.isSome_lookup_insert` fires via isDefEq across the
+;; Map=Subtype representation boundary (`gbStepId m head ≡ Map.insert …`, which simp's disc-tree can't
+;; match but controlled rw can), then `split` + `simp_all` (Bool.or assoc/comm) closes. Builds the same
+;; goal as the legacy proof. Needs Map.isSome_lookup_insert installed first.
+(defn prove-gen-thin []
+  (let [goal (first (prove-gen))    ;; reuse the legacy goal builder verbatim
+        LEM '[List.foldl_nil List.foldl_cons List.elem_nil List.elem_cons
+              Bool.false_or Bool.or_false Bool.or_assoc Bool.or_comm
+              Map.isSome_lookup_insert beq_iff_eq beq_self_eq_true cond cond_true cond_false]]
+    (a/prove-law ["K" "dec" "k" "xs" "m"] goal
+      (list '(induction xs generalizing m)
+            '(all_goals (simp_all [List.foldl_nil List.foldl_cons]))
+            '(all_goals (try (rewrite Map.isSome_lookup_insert)))
+            '(all_goals (try (split)))
+            (list 'all_goals (list 'simp_all LEM))))))
+
 ;; Map.lookup_group_by (foldl form); the same proof inhabits the group_by goal by def-eq
 (defn- prove-foldl-final []
   (let [fK (e/fvar 85001) fd (e/fvar 85003) fk (e/fvar 85004) fxs (e/fvar 85005)

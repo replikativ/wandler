@@ -148,3 +148,24 @@
         (is (true? (checks g-new p-new)) "thin proof kernel-checks its own goal")
         (is (true? (checks g-leg p-new)) "thin proof ALSO proves the legacy goal (differential)")))
     (is true "SKIP: no Init env")))
+
+(deftest lookup-group-by-gen-thin
+  ;; #146 RAWREC class — the accumulator-generalized foldl-of-inserts invariant. The ~60-LOC
+  ;; hand-built proof (induction + manual IH-at-accumulator + unfold + nested by-cases) collapses to
+  ;; a 5-line thin block with NO fun_induction: `induction xs generalizing m` + simp_all auto-applies
+  ;; the quantified IH + controlled `rewrite Map.isSome_lookup_insert` (isDefEq across Map=Subtype) +
+  ;; split + simp_all. Confirms ansatz handles accumulator-generalized RAWREC end-to-end.
+  (if-let [kenv-init @test-env/init-full-env]
+    (do
+      (reset! a/ansatz-env kenv-init)
+      (matchers/load-bundled-matchers!)
+      (kmap/install!) (rl/install!)
+      (let [[g-leg _]   ((requiring-resolve 'wandler.laws.relational/prove-gen))
+            [g-new p-new] (rl/prove-gen-thin)
+            checks (fn [g p] (and g p (try (kenv/check-constant (a/env) (kenv/mk-thm (nm "__chk_gen") [] g p)) true
+                                           (catch Throwable _ false))))]
+        (is (some? p-new) "thin lookup_group_by_gen proof produced")
+        (is (= (str g-leg) (str g-new)) "thin goal byte-identical to legacy")
+        (is (true? (checks g-new p-new)) "thin proof kernel-checks its own goal")
+        (is (true? (checks g-leg p-new)) "thin proof ALSO proves the legacy goal (differential)")))
+    (is true "SKIP: no Init env")))
