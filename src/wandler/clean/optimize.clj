@@ -19,7 +19,9 @@
             [wandler.clean.optimize.cost :as cost]
             [wandler.clean.optimize.cse :as cse]
             [wandler.clean.optimize.physical :as phys]
-            [wandler.clean.optimize.egraph :as egraph]))
+            [wandler.clean.optimize.egraph :as egraph]
+            [ansatz.kernel.expr :as e])
+  (:import [ansatz.kernel Env]))
 
 ;; ── certify: the rewriter + the soundness gate (5.1) ─────────────────────────────────────────
 (def fusion-lemmas               cert/fusion-lemmas)
@@ -100,3 +102,70 @@
       :else
       (let [sub (cert/optimize env term :lctx lctx :extra-lemmas extra-lemmas)]
         (assoc sub :rewrites (when (:changed? sub) [:fuse]) :cost (pc (:term sub)))))))
+
+;; ── the a/defn-integrated optimizer entry (Phase 8.3) ────────────────────────────────────────
+(def ^:dynamic *use-egraph*
+  "When true, `optimize-body` runs the e-graph equality-saturation search instead of the greedy
+   cost driver. Default greedy (saturation is heavier)." false)
+
+(defn optimize-body
+  "Optimize the pipeline INSIDE a function body `λp0…λp_{n-1}. pipeline` — what `a/defn` calls (via the
+   ansatz.core optimize-hook) to get a faster but proven-equivalent runtime term. Opens the n parameter
+   binders with fresh fvars (so the pipeline optimizes in its proper context, not as a whole-function
+   term that η-collapses), runs the cost-directed search (confluent fusion + cost-gated physical
+   strategies, each adopted step kernel-certified), then CSE-hoists shared barriers post-fusion, and
+   re-abstracts. Keeps the rewrite iff it verified AND changed (and, when named helpers were inlined,
+   only if the honest SOAC cost strictly dropped). `:term` is the original body unless the rewrite
+   verified. Clean-tree port of wandler.optimize/optimize-body over the clean cert/cost/cse/phys driver."
+  [^Env env body n & {:keys [extra-lemmas]}]
+  (loop [ex body, i 0, fvids [], types [], names []]
+    (if (and (< i n) (e/lam? ex))
+      (let [fid (+ 8800000 i)]
+        (recur (e/instantiate1 (e/lam-body ex) (e/fvar fid)) (inc i)
+               (conj fvids fid) (conj types (e/lam-type ex)) (conj names (e/lam-name ex))))
+      (let [lctx (into {} (map (fn [fid nm ty] [fid {:name (str nm) :type ty}]) fvids names types))
+            ;; INLINE named helpers (definitional `.eq_unfold` rules, generated on the fly).
+            [env0 unfold-names] (cert/with-unfold-lemmas env ex)
+            ;; ensure the map∘filter→filterMap law is available (idempotent; verify-once, local).
+            env+ (cert/install-filtermap-fusion-law! env0)
+            cost-before (cost/soac-cost-deep env ex)
+            ;; cheap pre-check: nothing to fuse with < 2 (deep) SOAC ops — skip simp entirely, EXCEPT a
+            ;; membership scan (List.elem → semijoin) or a bare aggregate over a Map.join (factorization).
+            res (if (and (< cost-before 2)
+                         (not (cost/mentions-const? ex "List.elem"))
+                         (not (cost/mentions-const? ex "Map.join")))
+                  {:term ex :verified? true :changed? false :rewrites []}
+                  (optimize-cost env+ ex :lctx lctx :use-egraph? *use-egraph*
+                                 :extra-lemmas (concat extra-lemmas unfold-names)))
+            ;; SHARED-SUBTREE PLANNING (CSE) — POST-fusion: hoist a remaining shared BARRIER (join/sort/
+            ;; group-by used by ≥2 consumers) into a `let` (certificate Eq.refl = zeta defeq). Composes
+            ;; (fuse ∘ cse) proofs by Eq.trans.
+            res (if-not (:verified? res) res
+                  (loop [r res, guard 0]
+                    (let [c (when (< guard 8) (cse/try-cse env+ (:term r) :lctx lctx))]
+                      (if (and c (:verified? c))
+                        (recur {:term (:term c)
+                                :proof (phys/compose-trans env+ lctx ex (:term r) (:term c) (:proof r) (:proof c))
+                                :verified? true :changed? true
+                                :rewrites (conj (vec (:rewrites r)) :cse)}
+                               (inc guard))
+                        r))))
+            ;; keep iff verified + changed; AND when helpers were inlined, only if the honest SOAC cost
+            ;; strictly DROPPED (inlining that doesn't fuse would just duplicate code → revert).
+            ok (and (:verified? res) (:changed? res)
+                    (or (empty? unfold-names)
+                        (< (cost/soac-cost (:term res)) cost-before)))
+            reabstract (fn [t]
+                         (loop [t t, j (dec (count fvids))]
+                           (if (neg? j) t
+                               (recur (e/lam (str (nth names j)) (nth types j)
+                                             (e/abstract1 t (nth fvids j)) :default)
+                                      (dec j)))))]
+        {:term (if ok (reabstract (:term res)) body)
+         :verified? (:verified? res)
+         :changed? (boolean ok)
+         :rewrites (:rewrites res)
+         :stages-before (cost/soac-stages ex)
+         :stages-after (cost/soac-stages (if ok (:term res) ex))
+         :passes-before cost-before
+         :passes-after (cost/soac-cost (if ok (:term res) ex))}))))

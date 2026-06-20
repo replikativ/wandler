@@ -130,3 +130,25 @@
             "no physical step — plain fusion (or no-op)")
         (when (:changed? r)
           (is (:verified? r) "fusion result certifies"))))))
+
+(deftest optimize-body-fuses-function-body
+  ;; Phase 8.3: optimize-body opens the fn binders, optimizes the pipeline in context, re-abstracts.
+  ;; λxs:(List Nat). map succ (map succ xs)  →  λxs. map (succ∘succ) xs  (one pass, kernel-certified).
+  (when (ready?)
+    (let [Nat   (kc "Nat")
+          succ  (kc "Nat.succ")
+          lmap  (fn [inner] (e/app* (e/const' (nm/from-string "List.map") [z z]) Nat Nat succ inner))
+          body  (e/lam "xs" (e/app (e/const' (nm/from-string "List") [z]) Nat)
+                       (lmap (lmap (e/bvar 0))) :default)
+          r     (opt/optimize-body (a/env) body 1)]
+      (testing "the λ-wrapped map∘map body fuses to one pass, verified + re-abstracted"
+        (is (:changed? r)  "a rewrite was adopted")
+        (is (:verified? r) "the inner rewrite kernel-certifies (strict verified-rewrite?)")
+        (is (e/lam? (:term r)) "the result is re-abstracted into a λ")
+        (is (= ["map"] (:stages-after r)) "fused to a single map stage")
+        (is (< (long (:passes-after r)) (long (:passes-before r))) "fewer passes after fusion"))
+      (testing "a trivial (non-pipeline) body is left untouched (cheap pre-check, no spurious change)"
+        (let [triv (e/lam "xs" (e/app (e/const' (nm/from-string "List") [z]) Nat) (e/bvar 0) :default)
+              rt   (opt/optimize-body (a/env) triv 1)]
+          (is (not (:changed? rt)) "identity body: nothing to fuse")
+          (is (:verified? rt)))))))
