@@ -22,6 +22,9 @@
             [wandler.clean.surface.records :as records]
             ;; string verbs (str/upper-case/lower-case/starts-with?) → kernel String ops; copy-clean.
             [wandler.clean.surface.strings :as strings]
+            ;; Option NARROWING: `if` on a nil-check of an Option var → Option.elim (what if-let/if-some/
+            ;; when-let/some-> expand to) + Option-aware nil?/some? (delegate for non-Option). copy-clean.
+            [wandler.clean.surface.option :as option]
             ;; the dynamic EDN `Value` universe is an ANSATZ capability (shared) — the clean tree installs
             ;; it, it does not re-port it. Opt-in (heavyweight: defines the Value inductive + ops).
             [ansatz.surface.data :as data]
@@ -40,6 +43,7 @@
   (relational/install!)
   (records/install!)
   (strings/install!)
+  (option/install!)
   nil)
 
 (defn install-value!
