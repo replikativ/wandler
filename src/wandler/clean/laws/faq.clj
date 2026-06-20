@@ -28,7 +28,9 @@
   (:require [ansatz.core :as a]
             [ansatz.kernel.env :as env]
             [ansatz.kernel.name :as nm]
-            [wandler.clean.laws.bucket :as bucket]))
+            [ansatz.prelude.algebra :as alg]
+            [wandler.clean.laws.bucket :as bucket]
+            [wandler.clean.laws.ac :as ac-providers]))
 
 (defn- has? [s] (some? (env/lookup (a/env) (nm/from-string s))))
 
@@ -38,7 +40,11 @@
    join factor/count laws rewrite with, plus the aggregate `Map_aggJoin_*` cluster). Each `theorem`
    form is kernel `check-constant`-verified as it lands. Returns :installed."
   []
+  (alg/install-classes!)   ;; WAddMonoid ⊂ WSemiring — the carriers the _generic laws + AC providers use
   (bucket/install!)
+  ;; AC providers for WAddMonoid.add / WSemiring.add — feed `ac_rfl` (the monoid normalizer that
+  ;; closes the abstract associativity+identity reshuffles in the `_generic` proofs below).
+  (ac-providers/register!)
 
   ;; ── LINEARITY foundation (List, Nat) ────────────────────────────────────────────────────────────
   ;; sum_map_zero: a fold of all-zeros leaves the accumulator. Base of the additive-structure cluster.
@@ -164,6 +170,29 @@
                (all_goals (simp [List.foldl_cons List.foldl_nil]))
                (rw [<- (hMA c acc (g head))])
                (rw [(ih_tail (add acc (g head)))])))
+      (catch Throwable _ nil)))
+
+  ;; ── ADDITIVE-MONOID init extraction (the pre-aggregated-index sub-lemma) ─────────────────────────
+  ;; foldl_add_init_generic: pull the accumulator out of an additive monoid fold —
+  ;;   foldl (λa y. a ⊕ g y) acc l = acc ⊕ foldl (λa y. a ⊕ g y) 0 l   (over ANY WAddMonoid).
+  ;; The WAddMonoid-generic sibling of `List.foldl_add_pull` (Nat). The accumulator reshuffle that
+  ;; `omega` closed for Nat is here closed by `ac_rfl` (the AC/monoid normalizer): after the IH exposes
+  ;; the SAME tail-fold atom on both sides, the residual is a pure associativity+identity reassociation
+  ;; over `WAddMonoid.add`/`WAddMonoid.zero`, which `ac_rfl` normalizes (the nil case is the bare
+  ;; `acc = acc ⊕ 0` identity-absorption). The crux sub-lemma of `foldl_join_sum_factor_generic`.
+  (when-not (has? "List.foldl_add_init_generic")
+    (try
+      (eval '(ansatz.core/theorem List.foldl_add_init_generic
+               [S :- (Sort 1), inst :- (WAddMonoid S), Y :- (Sort 1), g :- (=> Y S), l :- (List Y), acc :- S]
+               (= S (List.foldl S Y (fn [a :- S] (fn [y :- Y] (WAddMonoid.add S inst a (g y)))) acc l)
+                    (WAddMonoid.add S inst acc
+                      (List.foldl S Y (fn [a :- S] (fn [y :- Y] (WAddMonoid.add S inst a (g y)))) (WAddMonoid.zero S inst) l)))
+               (induction l generalizing acc)
+               (all_goals (simp [List.foldl_cons List.foldl_nil]))
+               (all_goals (first (ac_rfl)
+                                 (and_then (rw [(ih_tail (WAddMonoid.add S inst acc (g head)))])
+                                           (and_then (rw [(ih_tail (WAddMonoid.add S inst (WAddMonoid.zero S inst) (g head)))])
+                                                     (ac_rfl)))))))
       (catch Throwable _ nil)))
 
   ;; ── CONDITIONAL SEPARATION (semiring-generic) ───────────────────────────────────────────────────
