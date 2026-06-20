@@ -229,3 +229,77 @@
             res  {:term rhs :proof cert :changed? true :rw :hoist-invariant}]
         (when (cert/verified-rewrite? env term res :lctx lctx)
           (assoc res :verified? true))))))
+
+;; ── aggregation-THROUGH-join factorization (count/fold) — Phase 8 Level 1 ─────────────────────
+;; Clean-tree ports of the old FAQ strategies. They are pure RECOGNIZER + law-application: match a
+;; Map.join aggregate shape, build (LAW @ args), read the RHS off the law's type, compose + certify.
+;; The laws (Map.count_join_factor / Map.foldl_join_factor) are proven env constants (a shared law
+;; engine, installed by wandler.laws); these strategies just APPLY them — so soundness still rests
+;; entirely on cert/verified-rewrite?.
+
+(defn- count-join
+  "Match `List.length (Map.join K X Y dec kf lf xs ys)` — a COUNT over a join. Returns the join's 8
+   args, or nil."
+  [term]
+  (let [[h args] (e/get-app-fn-args term)]
+    (when (and (e/const? h) (= "List.length" (cn h)) (>= (count args) 2))
+      (let [[jh jargs] (e/get-app-fn-args (nth args 1))]
+        (when (and (e/const? jh) (= "Map.join" (cn jh)) (>= (count jargs) 8))
+          (vec (take 8 jargs)))))))
+
+(defn- fold-join
+  "Match `List.foldl op e (Map.join K X Y dec kf lf xs ys)` — ANY aggregate folded over a join.
+   Returns {:S :op :e :jargs} (jargs = the join's 8 args), or nil."
+  [term]
+  (let [[h args] (e/get-app-fn-args term)]
+    (when (and (e/const? h) (= "List.foldl" (cn h)) (>= (count args) 5))
+      (let [[S _PXY op ini lst] (take 5 args)
+            [jh jargs] (e/get-app-fn-args lst)]
+        (when (and (e/const? jh) (= "Map.join" (cn jh)) (>= (count jargs) 8))
+          {:S S :op op :e ini :jargs (vec (take 8 jargs))})))))
+
+(defn try-count-factor
+  "Cost-driven COUNT factorization (the FAQ asymptotic win, count instance). `length (Map.join … kf lf
+   xs ys)` → `sum (map (λx. length (bucket (kf x) ys)) xs)` — count the join WITHOUT materializing the
+   |xs|·|ys| product. Applies `Map.count_join_factor`; adopt iff it strictly lowers pipeline-cost AND
+   strict-certifies. Returns {:term :proof :verified? :changed? :rw} or nil."
+  [^Env env term & {:keys [lctx selectivity sizes]}]
+  (when-let [jargs (count-join term)]
+    (let [proof (apply e/app* (e/const' (name/from-string "Map.count_join_factor") []) jargs)
+          st (cert/mk-st env lctx)
+          ptype (try (tc/infer-type st proof) (catch Throwable _ nil))   ; nil if law absent
+          [_ eqargs] (when ptype (e/get-app-fn-args ptype))]
+      (when (and eqargs (>= (count eqargs) 3))
+        (let [rhs (nth eqargs 2)
+              res {:term rhs :proof proof :changed? true :rw :count-factor}]
+          (when (and (< (cost/pipeline-cost rhs {:selectivity selectivity :sizes sizes})
+                        (cost/pipeline-cost term {:selectivity selectivity :sizes sizes}))
+                     (cert/verified-rewrite? env term res :lctx lctx))
+            (assoc res :verified? true)))))))
+
+(defn try-fold-factor
+  "Cost-driven AGGREGATION-THROUGH-JOIN factorization, GENERAL over the aggregate (count/sum/max/any
+   foldl — `Map.foldl_join_factor`, no monoid axioms). FUSES first (so `foldl op e (map proj (join))`
+   collapses to `foldl op' e (join)`), then if it's a foldl over a Map.join, rewrites to the per-key
+   nested foldl that NEVER materializes the |xs|·|ys| pairs. Adopt iff it strictly lowers pipeline-cost
+   AND the composed (fuse ∘ factor) proof certifies."
+  [^Env env term & {:keys [lctx selectivity sizes]}]
+  (when (cost/mentions-const? term "Map.join")
+   (let [fused  (cert/optimize env term :lctx lctx)
+         fterm  (if (:verified? fused) (:term fused) term)
+         fproof (when (:verified? fused) (:proof fused))]
+    (when-let [{:keys [S op e jargs]} (fold-join fterm)]
+      (let [[K X Y dec kf lf xs ys] jargs
+            factor-pf (e/app* (e/const' (name/from-string "Map.foldl_join_factor") [])
+                              K X Y S dec op e kf lf xs ys)
+            st (cert/mk-st env lctx)
+            ptype (try (tc/infer-type st factor-pf) (catch Throwable _ nil))
+            [_ eqargs] (when ptype (e/get-app-fn-args ptype))]
+        (when (and eqargs (>= (count eqargs) 3))
+          (let [rhs (nth eqargs 2)
+                proof (compose-trans env lctx term fterm rhs fproof factor-pf)
+                res {:term rhs :proof proof :changed? true :rw :fold-factor}]
+            (when (and (< (cost/pipeline-cost rhs {:selectivity selectivity :sizes sizes})
+                          (cost/pipeline-cost term {:selectivity selectivity :sizes sizes}))
+                       (cert/verified-rewrite? env term res :lctx lctx))
+              (assoc res :verified? true)))))))))

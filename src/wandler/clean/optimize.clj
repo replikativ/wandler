@@ -47,6 +47,8 @@
 (def try-agg-join-factor         phys/try-agg-join-factor)
 (def try-agg-join-reorder        phys/try-agg-join-reorder)
 (def try-hoist-invariant         phys/try-hoist-invariant)
+(def try-count-factor            phys/try-count-factor)
+(def try-fold-factor             phys/try-fold-factor)
 
 ;; ── e-graph equality-saturation search (5.3) ─────────────────────────────────────────────────
 (def saturate-and-extract        egraph/saturate-and-extract)
@@ -80,7 +82,11 @@
                  (phys/try-agg-join-reorder env term :lctx lctx :selectivity selectivity
                                             :sizes sizes :comm comm)
                  ;; 1-variable FAQ: hoist a loop-invariant factor out of a sum (per-row recompute → once)
-                 (phys/try-hoist-invariant env term :lctx lctx :selectivity selectivity :sizes sizes))]
+                 (phys/try-hoist-invariant env term :lctx lctx :selectivity selectivity :sizes sizes)
+                 ;; aggregation-THROUGH-join: count/foldl over Map.join → per-key nested fold (no |xs|·|ys|
+                 ;; product materialized). Apply the proven Map-cluster laws (shared law engine).
+                 (phys/try-count-factor env term :lctx lctx :selectivity selectivity :sizes sizes)
+                 (phys/try-fold-factor  env term :lctx lctx :selectivity selectivity :sizes sizes))]
     (cond
       (and phys (:verified? phys))
       ;; a physical step fired → fuse its factored result, compose proofs (physical ∘ fuse).
