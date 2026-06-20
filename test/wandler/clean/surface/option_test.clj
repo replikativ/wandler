@@ -3,7 +3,7 @@
    Option-typed VARIABLE compiles to `Option.elim` with the variable narrowed (rebound at the element
    type) in the present branch — exactly what if-let/if-some/when-let/some-> macroexpand to, so those
    idioms verify + run without special forms. Standalone nil?/some? over an Option → isNone/isSome
-   (and DELEGATE for non-Option operands). Clean-tree port of wandler.surface.option (copy-clean)."
+   (and DELEGATE for non-Option operands). Clean-tree port of wandler.clean.surface.option (copy-clean)."
   (:require [clojure.test :refer [deftest is testing]]
             [ansatz.core :as a]
             [wandler.test-env :as test-env]

@@ -13,7 +13,7 @@
   (:require [ansatz.core :as a]
             [wandler.test-env :as test-env]
             [wandler.optimize :as opt]
-            [wandler.surface.malli :as malli]
+            [wandler.clean.surface.malli :as malli]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.env :as kenv]

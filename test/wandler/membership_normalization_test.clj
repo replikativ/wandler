@@ -4,8 +4,8 @@
    'a large class of Clojure functions, written many ways'. Plus some/every? as general ∃/∀."
   (:require [wandler.core]
             [ansatz.core :as a]
-            [wandler.surface.collections :as coll]
-            [wandler.surface.relational :as rel]
+            [wandler.clean.surface.collections :as coll]
+            [wandler.clean.surface.relational :as rel]
             [wandler.laws.relational :as rl]
             [wandler.kmap :as kmap]
             [wandler.test-env :as test-env]

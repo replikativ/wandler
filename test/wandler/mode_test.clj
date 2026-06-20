@@ -163,7 +163,7 @@
   (when (ready?)
     ((requiring-resolve 'wandler.kmap/install!))
     ((requiring-resolve 'wandler.laws.relational/install!))
-    ((requiring-resolve 'wandler.surface.collections/install!))
+    ((requiring-resolve 'wandler.clean.surface.collections/install!))
     (let [natT (e/const' (nm "Nat") [])
           listNat (e/app (e/const' (nm "List") [z]) natT)
           xs (e/fvar 1)

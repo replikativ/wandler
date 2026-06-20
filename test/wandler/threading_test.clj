@@ -5,7 +5,7 @@
    (let [g e] (if (nil? g) nil (-> g step))), and compile-nilable-if narrows g + returns
    Option. inc/dec map to type-inferring +1/-1. See [[pipelines-system-design]]."
   (:require [ansatz.core :as a]
-            [wandler.surface.collections :as coll]   ; ->/->> threading lives here now (the base ns)
+            [wandler.clean.surface.collections :as coll]   ; ->/->> threading lives here now (the base ns)
             [wandler.test-env :as test-env]
             [clojure.test :refer [deftest is]]))
 

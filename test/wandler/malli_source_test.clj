@@ -12,7 +12,7 @@
             [ansatz.core :as a]
             [wandler.core :as wc] [wandler.kmap :as km] [wandler.laws.relational :as rl]
             [wandler.optimize :as opt] [wandler.optimize.cost :as cost]
-            [wandler.surface.malli :as am]
+            [wandler.clean.surface.malli :as am]
             [wandler.reducers.record :as rec]
             [wandler.test-env :as test-env]
             [ansatz.kernel.expr :as e] [ansatz.kernel.name :as name] [ansatz.kernel.level :as lvl]))

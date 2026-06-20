@@ -5,7 +5,7 @@
   (:require [wandler.core]
             [ansatz.core :as a]
             [wandler.optimize :as opt]
-            [wandler.surface.collections :as coll]
+            [wandler.clean.surface.collections :as coll]
             [wandler.test-env :as test-env]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.expr :as e]

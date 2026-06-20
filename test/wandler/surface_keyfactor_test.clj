@@ -11,7 +11,7 @@
             [wandler.core :as wc]
             [wandler.kmap :as km]
             [wandler.laws.relational :as rl]
-            [wandler.surface.records :as wrec]
+            [wandler.clean.surface.records :as wrec]
             [wandler.test-env :as test-env]
             [wandler.optimize :as opt]
             [ansatz.kernel.env :as env]

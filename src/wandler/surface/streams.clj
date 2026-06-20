@@ -19,7 +19,7 @@
    possibly-finite lazy seqs) and wandler.exec.dbsp-stream (the Nat→Int operator algebra)."
   (:require [ansatz.core :as a]
             [ansatz.surface.api :as api]
-            [wandler.surface.common :refer [nm]]
+            [wandler.clean.surface.common :refer [nm]]
             [ansatz.kernel.env :as kenv]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.expr :as e]
@@ -337,7 +337,7 @@
   (let [[_ targs] (e/get-app-fn-args (a/get-arg-type env nil strm-expr))] (first targs)))
 
 (defonce ^{:doc "The pre-routing verb elaborators, captured ONCE (first install). Re-installs
-                 (any order vs wandler.surface.collections) reuse these — never wrap a wrapper."}
+                 (any order vs wandler.clean.surface.collections) reuse these — never wrap a wrapper."}
   originals (atom nil))
 
 (defn- router!
@@ -368,7 +368,7 @@
               (let [A (strm-elem (:env est) coll)
                     ;; inject the stream's element type A into the (possibly untyped) map fn — exactly
                     ;; as List.map does — so `(map (fn [v] …) s)` / `(map :k s)` elaborate over a stream.
-                    f ((requiring-resolve 'wandler.surface.collections/compile-fn) est f-form [A])
+                    f ((requiring-resolve 'wandler.clean.surface.collections/compile-fn) est f-form [A])
                     B (api/whnf est (e/forall-body (api/arg-type est f)))]   ; map fn's codomain
                 (e/app* (e/const' (nm (str kind ".smap")) []) A B f coll))
               ((orig v) est args))))))
@@ -391,7 +391,7 @@
             (let [A (strm-elem (:env est) coll)
                   init (api/elab est init-form)
                   B (api/whnf est (api/arg-type est init))
-                  f ((requiring-resolve 'wandler.surface.collections/compile-fn) est f-form [B A])]
+                  f ((requiring-resolve 'wandler.clean.surface.collections/compile-fn) est f-form [B A])]
               (e/app* (e/const' (nm "Strm.scan") []) A B f init coll))
             ((orig 'reductions) est args)))))
     ;; the PRODUCTIVITY GATE: reduce/filter over a raw Strm/LSeq is rejected — window it first.

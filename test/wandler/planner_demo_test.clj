@@ -22,7 +22,7 @@
             [wandler.core :as wc]
             [wandler.kmap :as km]
             [wandler.laws.relational :as rl]
-            [wandler.surface.malli :as am]
+            [wandler.clean.surface.malli :as am]
             [wandler.test-env :as test-env]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.expr :as e]

@@ -4,7 +4,7 @@
    truncating `Nat.sub`) — while Nat keeps its truncating semantics. Int literals coerce
    to the type the context needs. See [[pipelines-system-design]]."
   (:require [ansatz.core :as a]
-            [wandler.surface.collections :as coll]
+            [wandler.clean.surface.collections :as coll]
             [wandler.test-env :as test-env]
             [ansatz.kernel.env :as env]
             [ansatz.kernel.name :as name]

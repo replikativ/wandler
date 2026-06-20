@@ -6,7 +6,7 @@
    The long[] path stays unboxed single-thread; non-monoid folds stay sequential.
    See [[verified-aggregation]], [[semiring-sum-product-planner]]."
   (:require [ansatz.core :as a]
-            [wandler.surface.collections :as coll]
+            [wandler.clean.surface.collections :as coll]
             [wandler.test-env :as test-env]
             [ansatz.kernel.env :as env]
             [ansatz.kernel.name :as name]
