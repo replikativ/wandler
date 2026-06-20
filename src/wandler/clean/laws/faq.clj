@@ -435,6 +435,62 @@
                (try (rfl))))
       (catch Throwable _ nil)))
 
+  ;; ── KEY-REWEIGHT (the FD-scope keyfactor) ───────────────────────────────────────────────────────
+  ;; lookup_reweight: a per-key weight commutes into the pre-aggregated index —
+  ;;   `w(k)·getD(lookup k idx) 0 = getD(lookup k (map (λp.(p.1, w(p.1)·p.2)) idx)) 0`.
+  ;; Key-DEPENDENT value map (unlike lookup_map_kv): induction on idx, Prod.eta the head, `by_cases` the
+  ;; BEq; the lookup-miss leaf is `w(k)·0 = 0` closed by an explicit-arg `WSemiring.mul_zero` rw.
+  (when-not (has? "List.lookup_reweight")
+    (try
+      (eval '(ansatz.core/theorem List.lookup_reweight
+               [S :- (Sort 1), inst :- (WSemiring S), K :- Type, dec :- (DecidableEq K), w :- (=> K S), k :- K, idx :- (List (Prod K S))]
+               (= S
+                  (WSemiring.mul S inst (w k) (Option.getD S (List.lookup K S (instBEqOfDecidableEq K dec) k idx) (WSemiring.zero S inst)))
+                  (Option.getD S
+                    (List.lookup K S (instBEqOfDecidableEq K dec) k
+                      (List.map (Prod K S) (Prod K S) (fn [p :- (Prod K S)] (Prod.mk K S (Prod.fst K S p) (WSemiring.mul S inst (w (Prod.fst K S p)) (Prod.snd K S p)))) idx))
+                    (WSemiring.zero S inst)))
+               (induction idx)
+               (all_goals (try (rw [<- (Prod.eta K S head)])))
+               (all_goals (simp [List.map_nil List.map_cons List.lookup_nil List.lookup_cons]))
+               (all_goals (try (by_cases (BEq.beq K (instBEqOfDecidableEq K dec) k (Prod.fst K S head)))))
+               (all_goals (try (simp_all [Option.getD beq_iff_eq List.lookup_cons])))
+               (all_goals (try (rw [(WSemiring.mul_zero S inst (w k))])))
+               (all_goals (try (rfl)))))
+      (catch Throwable _ nil)))
+
+  ;; foldl_keyfactor_float_generic: the THIRD deep frame generic — float a per-key weight `w(kf x)` over a
+  ;; foldl into the index (the FD-scope quotient: pre-reweight the index once instead of per row). Thin:
+  ;; `apply List.foldl_congr` + per-key `lookup_reweight`. (Also unblocked by the Miller-pattern unifier
+  ;; fix, which lets `apply foldl_congr` unify the higher-order step-functions.)
+  (when-not (has? "Map.foldl_keyfactor_float_generic")
+    (try
+      (eval '(ansatz.core/theorem Map.foldl_keyfactor_float_generic
+               [S :- (Sort 1), inst :- (WSemiring S), K :- Type, X :- Type,
+                dec :- (DecidableEq K), w :- (=> K S), kf :- (=> X K), e :- S, xs :- (List X), idx :- (List (Prod K S))]
+               (= S
+                  (List.foldl S X
+                    (fn [acc :- S] (fn [x :- X]
+                      (WSemiring.add S inst acc
+                        (WSemiring.mul S inst (w (kf x))
+                          (Option.getD S (List.lookup K S (instBEqOfDecidableEq K dec) (kf x) idx) (WSemiring.zero S inst))))))
+                    e xs)
+                  (List.foldl S X
+                    (fn [acc :- S] (fn [x :- X]
+                      (WSemiring.add S inst acc
+                        (Option.getD S
+                          (List.lookup K S (instBEqOfDecidableEq K dec) (kf x)
+                            (List.map (Prod K S) (Prod K S)
+                              (fn [p :- (Prod K S)] (Prod.mk K S (Prod.fst K S p) (WSemiring.mul S inst (w (Prod.fst K S p)) (Prod.snd K S p)))) idx))
+                          (WSemiring.zero S inst)))))
+                    e xs))
+               (apply List.foldl_congr)
+               (intros b a)
+               (simp [])
+               (rw [List.lookup_reweight])
+               (try (rfl))))
+      (catch Throwable _ nil)))
+
   ;; TODO (Level-2 remaining, tracked): the DEEP generic frame family — hand-built term proofs in
   ;; `wandler.laws.proofs.frame` to be re-derived as tactic scripts:
   ;;   Map.foldl_join_frame_generic / Map.foldl_join_sum_factor_generic / Map.foldl_keyfactor_float_generic
