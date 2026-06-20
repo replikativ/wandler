@@ -20,6 +20,8 @@
             ;; records — `records` pulls `malli` (schema→type) + `refine` (Subtype refinement). copy-clean
             ;; (IR-agnostic; only ansatz.* deps). Auto-installs on load; `install!` re-runs idempotently.
             [wandler.clean.surface.records :as records]
+            ;; string verbs (str/upper-case/lower-case/starts-with?) → kernel String ops; copy-clean.
+            [wandler.clean.surface.strings :as strings]
             ;; the dynamic EDN `Value` universe is an ANSATZ capability (shared) — the clean tree installs
             ;; it, it does not re-port it. Opt-in (heavyweight: defines the Value inductive + ops).
             [ansatz.surface.data :as data]
@@ -37,6 +39,7 @@
   (collections/install!)
   (relational/install!)
   (records/install!)
+  (strings/install!)
   nil)
 
 (defn install-value!

@@ -77,3 +77,17 @@
           (is (= #{1 2} (set (runv '(ansatz.core/defn cv-vs [m :- Value] Value (vals m)) {:a 1 :b 2})))
               "vals over Value"))))
     (do (println "SKIP clean-surface-value: no Init env") (is true))))
+
+(deftest clean-surface-strings
+  (if-let [kenv @test-env/init-full-env]
+    (do
+      (reset! a/ansatz-env kenv)
+      (surf/install!)
+      (binding [a/*verbose* false]
+        (eval '(ansatz.core/defn cs-concat [s :- String] String (str s s)))
+        (eval '(ansatz.core/defn cs-pre [s :- String] Bool (starts-with? s "ab"))))
+      (testing "string verbs elaborate + EXECUTE (str folds String.append; starts-with? → isPrefixOf)"
+        (is (= "abab" ((resolve 'cs-concat) "ab")) "str concat result-parity")
+        (is (= true   ((resolve 'cs-pre) "abcd"))  "starts-with? true")
+        (is (= false  ((resolve 'cs-pre) "xy")))))
+    (do (println "SKIP clean-surface-strings: no Init env") (is true))))
