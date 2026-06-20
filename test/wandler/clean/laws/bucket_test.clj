@@ -50,13 +50,7 @@
       (is (has? "Map_aggJoin_factor"))
       (is (verifies? "Map_aggJoin_factor")
           "separable w·v over a group_by Map.join factors to sum-v-once-per-bucket (O(N²)→O(N)), kernel-verified"))
-    ;; Map_aggJoin_reorder is PROVEN + verifies, and the clean-only suite installs it (run
-    ;; `-r "wandler\.clean\..*"` → 0 failures). But in the FULL suite a NON-clean test (rel-laws-test,
-    ;; which resets the env to smaller/raw-replay envs and runs proofs there) pollutes some process-global
-    ;; cache, after which this lemma's heavy proof (4 rw + simp[beq_comm] under binders) goes "Proof
-    ;; incomplete". DETERMINISTIC (not flaky), not memory, not init!, not the synth-cache (now env-keyed).
-    ;; Gate on presence so the suite stays green; HARDENING: pin the exact env-blind global cache.
     (testing "Map_aggJoin_reorder — the drive-direction / join-commutativity law over a real Map.join"
-      (when (has? "Map_aggJoin_reorder")
-        (is (verifies? "Map_aggJoin_reorder")
-            "the aggregate of an equi-join is invariant under swapping inputs (bridge + aggJoin_reorder + beq_comm), kernel-verified")))))
+      (is (has? "Map_aggJoin_reorder"))
+      (is (verifies? "Map_aggJoin_reorder")
+          "the aggregate of an equi-join is invariant under swapping inputs (bridge + aggJoin_reorder + beq_comm), kernel-verified"))))

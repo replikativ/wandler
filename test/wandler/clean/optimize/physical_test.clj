@@ -92,9 +92,8 @@
     [term lctx comm]))
 
 (deftest agg-join-reorder-certified
-  ;; Gated on the law's presence (see bucket_test note): a non-clean test pollutes a global cache that
-  ;; makes Map_aggJoin_reorder's heavy proof go "incomplete" under the full suite. Validated clean.
-  (when (and (ready?) (kenv/lookup (a/env) (nm/from-string "Map_aggJoin_reorder")))
+  (when (ready?)
+    (is (kenv/lookup (a/env) (nm/from-string "Map_aggJoin_reorder")) "the reorder law is installed")
     (let [[term lctx comm] (nat-perpair-join-query)]
       (testing "the recognizer matches the per-pair wsum/map/Map.join shape"
         (is (some? (phys/agg-join-reorder-match term))))
