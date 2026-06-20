@@ -145,6 +145,27 @@
                (rw [<- (List.sum_map_const_mul_gen f c xs Nat.zero)])))
       (catch Throwable _ nil)))
 
+  ;; ── CONDITIONAL SEPARATION (semiring-generic) ───────────────────────────────────────────────────
+  ;; cond_and_mul_split: a separable conjunctive guard factors a weighted product —
+  ;;   cond(a&&b)(u·v) 0 = (cond a u 0)·(cond b v 0) — so a guarded join weight splits per side and the
+  ;; frame rule fires. Over ANY WSemiring (uses only mul + zero + the two annihilators). The literal
+  ;; Lean `cond` const is spelled `bif` in surface (`cond` itself is Clojure-clause-cond). RECIPE for
+  ;; the WSemiring-accessor generics: `cases` both bools; `simp []` ground-reduces cond/Bool.and; then
+  ;; per-case `rw` the annihilator accessor with EXPLICIT args (simp can't use applied projections as
+  ;; lemmas — type-mismatch); `rfl` closes the defeq `WSemiring.zero` vs `WAddMonoid.zero∘toWAddMonoid`.
+  (when-not (has? "Nat.cond_and_mul_split_generic")
+    (try
+      (eval '(ansatz.core/theorem Nat.cond_and_mul_split_generic
+               [S :- (Sort 1), inst :- (WSemiring S), a :- Bool, b :- Bool, u :- S, v :- S]
+               (= S (bif (Bool.and a b) (WSemiring.mul S inst u v) (WSemiring.zero S inst))
+                    (WSemiring.mul S inst (bif a u (WSemiring.zero S inst)) (bif b v (WSemiring.zero S inst))))
+               (cases a) (all_goals (cases b)) (all_goals (simp []))
+               (all_goals (first (rw [(WSemiring.mul_zero S inst u)])
+                                 (rw [(WSemiring.zero_mul S inst v)])
+                                 (rw [(WSemiring.zero_mul S inst (WSemiring.zero S inst))])))
+               (all_goals (rfl))))
+      (catch Throwable _ nil)))
+
   ;; ── AGGREGATION-THROUGH-JOIN factor (Map cluster) ───────────────────────────────────────────────
   ;; foldl_join_factor: a left-fold over a `Map.join` factors into per-key bucket folds — Σ_{x⋈y} =
   ;; Σ_x Σ_{y∈bucket(kf x)}, WITHOUT materializing the |xs|·|ys| pair list. THE deferred Phase-4
