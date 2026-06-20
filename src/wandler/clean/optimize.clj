@@ -98,10 +98,26 @@
           (let [sub (cert/optimize env term :lctx lctx :extra-lemmas extra-lemmas)]
             (assoc sub :rewrites (when (:changed? sub) [:fuse]) :cost (pc (:term sub))))))
 
-      ;; no physical rewrite applied → plain confluent fusion.
+      ;; no structured physical step → confluent fusion, THEN a greedy cost-rewrite search over
+      ;; `cost/cost-rewrites` (the non-confluent relational pool: semijoin elem→index-probe, filter→join
+      ;; pushdown, map∘filter→filterMap). Each law is offered as an extra simp lemma and ADOPTED only when
+      ;; the re-fused term both verifies AND strictly lowers pipeline-cost (cardinality) — so a SOAC-neutral
+      ;; reorder (filter→join) is kept for its cardinality win. Untrusted search; every step kernel-certified.
       :else
-      (let [sub (cert/optimize env term :lctx lctx :extra-lemmas extra-lemmas)]
-        (assoc sub :rewrites (when (:changed? sub) [:fuse]) :cost (pc (:term sub)))))))
+      (let [base (cert/optimize env term :lctx lctx :extra-lemmas extra-lemmas)
+            base (if (:verified? base) base {:term term :proof nil :verified? true :changed? false})]
+        (loop [best base, remaining cost/cost-rewrites, applied []]
+          (let [cands (keep (fn [r]
+                              (let [v (cert/optimize env term :lctx lctx
+                                                     :extra-lemmas (concat extra-lemmas (conj (vec applied) r)))]
+                                (when (and (:verified? v) (< (pc (:term v)) (pc (:term best))))
+                                  [r v])))
+                            remaining)]
+            (if (empty? cands)
+              (assoc best :rewrites (if (seq applied) (vec applied) (when (:changed? best) [:fuse]))
+                          :cost (pc (:term best)))
+              (let [[r v] (apply min-key (comp pc :term second) cands)]
+                (recur v (remove #{r} remaining) (conj applied r))))))))))
 
 ;; ── the a/defn-integrated optimizer entry (Phase 8.3) ────────────────────────────────────────
 (def ^:dynamic *use-egraph*
