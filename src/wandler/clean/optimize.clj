@@ -45,11 +45,16 @@
 (def try-cse                     cse/try-cse)
 
 ;; ── physical strategies (5.5b) ───────────────────────────────────────────────────────────────
-(def try-agg-join-factor         phys/try-agg-join-factor)
+(def try-agg-join-factor         phys/try-agg-join-factor)   ; clean wsum aggregate strategies
 (def try-agg-join-reorder        phys/try-agg-join-reorder)
-(def try-hoist-invariant         phys/try-hoist-invariant)
-(def try-count-factor            phys/try-count-factor)
-(def try-fold-factor             phys/try-fold-factor)
+;; the ported FAQ/index strategies live in wandler.clean.optimize.faq (the shared Map-cluster driver);
+;; re-export the ones the breadth + tests reach by name.
+(def try-hoist-invariant         faq/try-hoist-invariant)
+(def try-count-factor            faq/try-count-factor)
+(def try-fold-factor             faq/try-fold-factor)
+(def try-frame-index             faq/try-frame-index)
+(def try-join-reorder            faq/try-join-reorder)
+(def try-pre-agg-index           faq/try-pre-agg-index)
 
 ;; ── e-graph equality-saturation search (5.3) ─────────────────────────────────────────────────
 (def saturate-and-extract        egraph/saturate-and-extract)

@@ -18,7 +18,7 @@
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.level :as lvl]
             [ansatz.kernel.tc :as tc]
-            [wandler.optimize :as opt]))
+            [wandler.clean.optimize :as opt]))
 
 (defn- nm [s] (name/from-string s))
 (def ^:private z lvl/zero) (def ^:private L1 (lvl/succ z)) (def ^:private type0 (e/sort' L1))

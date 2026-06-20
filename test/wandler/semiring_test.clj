@@ -44,7 +44,7 @@
           "the FAQ factorization for existence is certified by a kernel theorem")
       (is (= :algebra (:level (sr/faq-certificate sr/existence))) "existence FAQ is certified at the ALGEBRA level")
       (is (= :execution (:level (sr/faq-certificate sr/counting)))
-          "counting FAQ is certified at the EXECUTION level by the optimizer's proven Nat factorization laws (wandler.optimize.faq)"))))
+          "counting FAQ is certified at the EXECUTION level by the optimizer's proven Nat factorization laws (wandler.clean.optimize.faq)"))))
 
 (deftest recursion-gate
   (testing "the CERTIFIED POPS gate — which semirings may recurse (datahike's matrix, as a kernel theorem)"

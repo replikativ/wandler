@@ -1,7 +1,7 @@
 (ns wandler.egraph-optimize-test
   "E-graph search layer for the verified optimizer (roadmap item B).
 
-   `wandler.optimize.egraph/saturate-and-extract` saturates grind's e-graph with the
+   `wandler.clean.optimize.egraph/saturate-and-extract` saturates grind's e-graph with the
    oriented laws, extracts the cost-minimal equivalent plan by `pipeline-cost`, and
    certifies `orig = extracted` with a kernel proof (grind's `mk-eq-proof`,
    re-checked by `verified-rewrite?`). Wired into `optimize-cost` via `:use-egraph?`.
@@ -22,8 +22,8 @@
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.level :as lvl]
-            [wandler.optimize :as opt]
-            [wandler.optimize.egraph :as ege]
+            [wandler.clean.optimize :as opt]
+            [wandler.clean.optimize.egraph :as ege]
             [ansatz.tactic.grind.egraph :as eg]
             [ansatz.tactic.grind.ematch :as ematch]
             [clojure.test :refer [deftest is]]))

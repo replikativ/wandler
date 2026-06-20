@@ -12,7 +12,7 @@
    (`[:string {:min/:max/:re}]` → `Subtype`) which drive constraint-based replanning."
   (:require [ansatz.core :as a]
             [wandler.test-env :as test-env]
-            [wandler.optimize :as opt]
+            [wandler.clean.optimize :as opt]
             [wandler.clean.surface.malli :as malli]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]

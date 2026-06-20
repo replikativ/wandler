@@ -824,7 +824,7 @@
           (thm! "List.elem_filter_eq_index_probe"     (prove-semijoin))
           (thm! "List.elem_not_filter_eq_index_probe" (prove-anti-join))
           ;; aggregation-through-join factorization (general; needs the Map.join unfold equation)
-          (admit! ((requiring-resolve 'wandler.optimize/unfold-eqn-ci) (a/env) "Map.join"))
+          (admit! ((requiring-resolve 'wandler.clean.optimize/unfold-eqn-ci) (a/env) "Map.join"))
           (thm! "Map.foldl_join_factor" (prove-foldl-join-factor))
           (thm! "Map.count_join_factor" (prove-count-join-factor))
           ;; JOIN COMMUTATIVITY chain (perm → bucket → join_comm → Perm→Eq count bridge), the

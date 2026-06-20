@@ -11,8 +11,7 @@
             [ansatz.kernel.level :as lvl]
             [ansatz.kernel.name :as nm]
             [wandler.test-env :as test-env]
-            [wandler.clean.optimize.cse :as cclean]
-            [wandler.optimize.cse :as cold]))
+            [wandler.clean.optimize.cse :as cclean]))
 
 (defn- setup [f]
   (when @test-env/init-full-env (reset! a/ansatz-env @test-env/init-full-env))
@@ -30,15 +29,10 @@
         lctx  {7101 {:name "f" :type NatN} 7102 {:name "xs" :type ListN}}]
     [term lctx]))
 
-(deftest clean-cse-matches-old
+(deftest clean-cse-declines-streaming-share
   (when @test-env/init-full-env
     (let [env (a/env)
           [term lctx] (streaming-share-term)
-          clean (cclean/try-cse env term :lctx lctx)
-          old   (cold/try-cse  env term :lctx lctx)]
-      (testing "the clean CSE declines a streaming (fusable) share — same as old (fusion handles it)"
-        (is (nil? clean))
-        (is (nil? old)))
-      (testing "differential: clean ≡ old (verbatim copy makes the same decision)"
-        (let [norm (fn [r] (when r (clojure.string/replace (str (:term r)) #"0x[0-9a-fA-F]+" "")))]
-          (is (= (norm clean) (norm old))))))))
+          clean (cclean/try-cse env term :lctx lctx)]
+      (testing "the clean CSE declines a streaming (fusable) share — fusion handles it, no barrier to hoist"
+        (is (nil? clean))))))

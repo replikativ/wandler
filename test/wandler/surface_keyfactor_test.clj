@@ -13,7 +13,7 @@
             [wandler.laws.relational :as rl]
             [wandler.clean.surface.records :as wrec]
             [wandler.test-env :as test-env]
-            [wandler.optimize :as opt]
+            [wandler.clean.optimize :as opt]
             [ansatz.kernel.env :as env]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]

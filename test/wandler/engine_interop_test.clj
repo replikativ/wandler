@@ -23,7 +23,7 @@
   (:require [ansatz.core :as a]
             [wandler.bridge :as bridge]
             [wandler.bridge.datahike :as dh]
-            [wandler.optimize :as opt]
+            [wandler.clean.optimize :as opt]
             [wandler.laws.relational :as rl]
             [wandler.kmap :as kmap]
             [wandler.test-env :as test-env]

@@ -40,8 +40,11 @@
 
 (deftest egraph-laws-installed
   (when (ready?)
-    (testing "the clean hoist law set (prelude wsum linearity) is present in the env"
-      (doseq [s egraph/hoist-laws]
+    (testing "the clean wsum hoist laws (the prelude linearity set) are present in the env"
+      ;; hoist-laws also lists the Nat List.sum_map_* FAQ laws for the List.foldl shape — those are
+      ;; installed on demand by the relational law engine, not bucket/install!, so they're optional here
+      ;; (prepare-theorems silently skips uninstalled laws). Assert the wsum subset bucket DOES install.
+      (doseq [s ["wsum_map_mul_left" "wsum_map_add" "wsum_map_const_zero"]]
         (is (some? (kenv/lookup (a/env) (nm/from-string s))) (str s " installed"))))))
 
 (deftest saturate-and-extract-certifies

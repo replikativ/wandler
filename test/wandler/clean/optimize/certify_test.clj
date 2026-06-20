@@ -10,7 +10,7 @@
             [ansatz.kernel.name :as nm]
             [wandler.test-env :as test-env]
             [wandler.clean.optimize.certify :as cclean]
-            [wandler.optimize.certify :as cold]))
+            [wandler.clean.optimize.certify :as cold]))
 
 (defn- setup [f]
   (when @test-env/init-full-env (reset! a/ansatz-env @test-env/init-full-env))

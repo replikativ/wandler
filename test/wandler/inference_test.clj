@@ -12,7 +12,7 @@
   (:require [ansatz.core :as a]
             [wandler.kmap :as kmap]
             [wandler.laws.relational :as rl]
-            [wandler.optimize :as opt]
+            [wandler.clean.optimize :as opt]
             [wandler.test-env :as test-env]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]

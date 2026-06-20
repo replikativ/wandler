@@ -4,7 +4,7 @@
    the filter folded into the per-key aggregate (so an active-user check ends up per-user, the orders
    aggregated per user, the |users|·|orders| product never built)."
   (:require [ansatz.core :as a]
-            [wandler.optimize :as opt]
+            [wandler.clean.optimize :as opt]
             [wandler.laws.relational :as rl]
             [wandler.kmap :as kmap]
             [wandler.test-env :as test-env]

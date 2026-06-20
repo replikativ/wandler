@@ -21,7 +21,7 @@
             [ansatz.tactic.basic :as basic]
             [ansatz.tactic.simp :as simp]
             [ansatz.tactic.extract :as extract]
-            [wandler.optimize :as opt]
+            [wandler.clean.optimize :as opt]
             [clojure.test :refer [deftest is]])
   (:import [ansatz.kernel TypeChecker]))
 

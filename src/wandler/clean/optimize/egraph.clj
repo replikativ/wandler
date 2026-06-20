@@ -51,7 +51,11 @@
    installed by `ansatz.prelude.list/install!`; any not yet installed are silently skipped by
    `prepare-theorems`). `wsum_map_mul_left` pulls an x-free factor out of an aggregate; the rest carry
    the additive structure. One of the two sub-categories of `default-laws`."
-  ["wsum_map_mul_left" "wsum_map_add" "wsum_map_const_zero"])
+  ["wsum_map_mul_left" "wsum_map_add" "wsum_map_const_zero"
+   ;; the Nat List.foldl/sum shape (not wsum) — the FAQ linearity laws for nested-sum factorization
+   ;; (uninstalled names are silently skipped by prepare-theorems).
+   "List.sum_map_mul_const" "List.sum_map_const_mul" "List.sum_map_add_distrib"
+   "List.sum_map_zero" "List.foldl_add_pull"])
 
 (def reorder-laws
   "Relational/cardinality REORDERS (`cost/cost-rewrites` — filter↔map, filter→join pushdown, …). The

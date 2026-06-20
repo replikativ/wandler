@@ -17,7 +17,7 @@
             [ansatz.kernel.name :as name]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.level :as lvl]
-            [wandler.optimize :as opt]
+            [wandler.clean.optimize :as opt]
             [ansatz.tactic.proof :as proof]
             [ansatz.tactic.basic :as basic]
             [ansatz.tactic.extract :as extract]

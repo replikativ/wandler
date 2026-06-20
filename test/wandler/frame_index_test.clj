@@ -20,7 +20,7 @@
             [ansatz.kernel.env :as env]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.level :as lvl]
-            [wandler.optimize :as opt]))
+            [wandler.clean.optimize :as opt]))
 
 (defn- nm [s] (name/from-string s))
 (def ^:private z lvl/zero)

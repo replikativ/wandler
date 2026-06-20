@@ -9,7 +9,7 @@
             [wandler.kmap :as kmap]
             [wandler.clean.surface.collections :as coll]
             [wandler.clean.surface.relational :as rel]
-            [wandler.optimize :as opt]
+            [wandler.clean.optimize :as opt]
             [wandler.test-env :as test-env]
             [ansatz.kernel.env :as kenv]
             [ansatz.matchers :as matchers]

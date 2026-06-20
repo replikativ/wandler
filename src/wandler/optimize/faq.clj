@@ -13,7 +13,7 @@
    See [[programming-model-4-structures]]."
   (:require [ansatz.core :as a]
             [wandler.inference.semiring :as sr]
-            [wandler.optimize :as opt]
+            [wandler.clean.optimize :as opt]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.level :as lvl]))
