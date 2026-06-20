@@ -126,7 +126,7 @@
             inner (e/app* (e/const' (nm/from-string "List.map") [z z]) Nat Nat idf xs)
             term  (e/app* (e/const' (nm/from-string "List.map") [z z]) Nat Nat idf inner)
             r (opt/optimize-cost (a/env) term :lctx lctx)]
-        (is (or (nil? (:rewrites r)) (= [:fuse] (:rewrites r)))
+        (is (or (nil? (:rewrites r)) (= [] (:rewrites r)))
             "no physical step — plain fusion (or no-op)")
         (when (:changed? r)
           (is (:verified? r) "fusion result certifies"))))))

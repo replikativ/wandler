@@ -23,7 +23,8 @@
             [wandler.kmap :as kmap]
             [wandler.algebra :as algebra]
             [wandler.runtime :as rt]
-            [wandler.optimize :as opt]))
+            [wandler.optimize :as opt]
+            [wandler.clean.optimize :as copt]))
 
 (defonce ^{:doc "fn-name → the optimizer report for its last definition (the explain source)."}
   reports (atom {}))
@@ -37,7 +38,7 @@
   (if-not *optimize*
     term
     (let [n (loop [t term, k 0] (if (e/lam? t) (recur (e/lam-body t) (inc k)) k))
-        res (try (opt/optimize-body env term n)
+        res (try (copt/optimize-body env term n)
                  (catch Throwable t
                    {:term term :verified? false :changed? false
                     :error (.getMessage t)}))]

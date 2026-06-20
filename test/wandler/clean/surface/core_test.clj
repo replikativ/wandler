@@ -43,7 +43,7 @@
         (let [r (opt/optimize-cost (a/env) (body-of "cs-mapmap"))]
           (is (:changed? r)  "map∘map fused")
           (is (:verified? r) "the fusion proof (List.map_map) kernel check-constant-verifies")
-          (is (= [:fuse] (:rewrites r))))))
+          (is (= [] (:rewrites r))))))
     (do (println "SKIP clean-surface-collections: no Init env") (is true))))
 
 (deftest clean-surface-relational-elaborates

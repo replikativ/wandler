@@ -108,7 +108,7 @@
               "clean-surface query result diverged from clojure.core ground truth"))
         (testing "(a) PLAN — the CLEAN optimizer certifies + fuses (2 map passes → 1)"
           (is (:verified? clean-plan) "the clean fusion plan check-constant-verifies")
-          (is (= [:fuse] (:rewrites clean-plan)))
+          (is (= [] (:rewrites clean-plan)))
           (is (= ["map"] (:stages-after clean-plan)) "fused to a single map stage")
           (is (< (long (:passes-after clean-plan)) (long (:passes-before clean-plan)))
               "fewer passes after fusion"))

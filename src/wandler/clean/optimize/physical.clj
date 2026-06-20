@@ -140,3 +140,92 @@
                             (cost/pipeline-cost term {:selectivity selectivity :sizes sizes}))
                          (cert/verified-rewrite? env term res :lctx lctx))
                 (assoc res :verified? true)))))))))
+
+;; ── loop-invariant HOIST (1-variable FAQ elimination) — Phase 8.4b ────────────────────────────
+(defn- cn? [e s] (= s (cn e)))
+
+(defn- nat-zero?
+  "Every spelling of Nat 0: the Nat.zero ctor, a bare lit-nat 0 (what `reduce + 0` elaborates to),
+   and @OfNat.ofNat Nat 0 _ — all def-eq but syntactically distinct. Syntactic; a false positive
+   cannot pass verified-rewrite?, so loose recognition is sound."
+  [e]
+  (or (cn? e "Nat.zero")
+      (and (e/lit-nat? e) (zero? (long (e/lit-nat-val e))))
+      (let [[h args] (e/get-app-fn-args e)]
+        (and (e/const? h) (= "OfNat.ofNat" (cn h)) (>= (count args) 2) (nat-zero? (nth args 1))))))
+
+(defn- expr-children [e]
+  (case (e/tag e)
+    :app    [(e/app-fn e) (e/app-arg e)]
+    :lam    [(e/lam-type e) (e/lam-body e)]
+    :forall [(e/forall-type e) (e/forall-body e)]
+    :let    [(e/let-type e) (e/let-value e) (e/let-body e)]
+    :mdata  [(e/mdata-expr e)]
+    :proj   [(e/proj-struct e)]
+    []))
+
+(defn- any-node? [e pred]
+  (or (pred e) (boolean (some #(any-node? % pred) (expr-children e)))))
+
+(def ^:private soac-heads
+  "Heads whose presence in an invariant `c` makes hoisting it out of a row-loop worthwhile (the cost
+   that matters is a per-row recompute of a traversal). A heuristic worth-it gate, NOT a soundness gate."
+  #{"List.foldl" "List.foldr" "List.map" "List.filter" "List.flatMap" "List.filterMap"
+    "List.foldlIdx" "List.length" "List.range" "Map.join" "Map.group_by"})
+
+(defn- contains-soac? [e] (any-node? e #(and (e/const? %) (soac-heads (cn %)))))
+(defn- contains-fvar? [e id] (any-node? e #(and (e/fvar? %) (= (long id) (e/fvar-id %)))))
+
+(defn- fresh-fvar-id
+  "An fvar id guaranteed not to occur in `term` — max(occurring)+1, floored well above every id family
+   in use (lctx params, e-graph 9e8+). Avoids the open-binder magic-constant collision."
+  [term]
+  (let [mx (atom 2000000000)]
+    (any-node? term (fn [x] (when (e/fvar? x) (swap! mx max (e/fvar-id x))) false))
+    (inc (long @mx))))
+
+(defn- match-sum-map-mul
+  "term = foldl Nat Nat Nat.add 0 (map Nat Nat (λx. Nat.mul A B) xs) where exactly ONE of A,B is free
+   of the map binder (the loop-invariant factor c) and the other depends on it (the per-row factor f).
+   Returns {:f (λx.·) :c · :xs xs :side :right|:left} (:right = f x * c, :left = c * f x) or nil."
+  [term]
+  (let [[h args] (e/get-app-fn-args term)]
+    (when (and (cn? h "List.foldl") (= 5 (count args))
+               (cn? (nth args 0) "Nat") (cn? (nth args 1) "Nat")
+               (cn? (nth args 2) "Nat.add") (nat-zero? (nth args 3)))
+      (let [[mh margs] (e/get-app-fn-args (nth args 4))]
+        (when (and (cn? mh "List.map") (= 4 (count margs))
+                   (cn? (nth margs 0) "Nat") (cn? (nth margs 1) "Nat") (e/lam? (nth margs 2)))
+          (let [step (nth margs 2) xs (nth margs 3)
+                K (fresh-fvar-id term)
+                body (e/instantiate1 (e/lam-body step) (e/fvar K))
+                [bh bargs] (e/get-app-fn-args body)
+                lam-of (fn [P] (e/lam "x" (e/const' (name/from-string "Nat") []) (e/abstract1 P K) :default))]
+            (when (and (cn? bh "Nat.mul") (= 2 (count bargs)))
+              (let [A (nth bargs 0) B (nth bargs 1)
+                    A? (contains-fvar? A K) B? (contains-fvar? B K)]
+                (cond
+                  (and A? (not B?)) {:f (lam-of A) :c B :xs xs :side :right}   ; f x * c
+                  (and B? (not A?)) {:f (lam-of B) :c A :xs xs :side :left})))))))))   ; c * f x
+
+(defn try-hoist-invariant
+  "Cost-driven LOOP-INVARIANT HOIST (1-variable FAQ elimination). If `term` = foldl(+) 0 (map (λx. f x *
+   c) xs) (or the mirror c * f x) with `c` x-free AND loop-shaped (contains a SOAC, so the per-row
+   recompute is the cost that matters), rewrite the invariant OUT of the row loop so it is evaluated
+   ONCE. Certified by List.sum_map_mul_const (right) / List.sum_map_const_mul (left); adopt iff it
+   strict-certifies. Returns {:term :proof :verified? :changed? :rw} or nil. Clean-tree port."
+  [^Env env term & {:keys [lctx] :as _opts}]
+  (when-let [{:keys [f c xs side]} (match-sum-map-mul term)]
+    (when (contains-soac? c)
+      (let [natC (e/const' (name/from-string "Nat") [])
+            mul  (fn [a b] (e/app* (e/const' (name/from-string "Nat.mul") []) a b))
+            add0 (fn [l] (e/app* (e/const' (name/from-string "List.foldl") [lvl/zero lvl/zero]) natC natC
+                                 (e/const' (name/from-string "Nat.add") []) (e/const' (name/from-string "Nat.zero") []) l))
+            sumf (add0 (e/app* (e/const' (name/from-string "List.map") [lvl/zero lvl/zero]) natC natC f xs))
+            [law rhs] (if (= side :left)
+                        ["List.sum_map_const_mul" (mul c sumf)]
+                        ["List.sum_map_mul_const" (mul sumf c)])
+            cert (e/app* (e/const' (name/from-string law) []) f c xs)
+            res  {:term rhs :proof cert :changed? true :rw :hoist-invariant}]
+        (when (cert/verified-rewrite? env term res :lctx lctx)
+          (assoc res :verified? true))))))

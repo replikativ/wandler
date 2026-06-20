@@ -46,6 +46,7 @@
 ;; ── physical strategies (5.5b) ───────────────────────────────────────────────────────────────
 (def try-agg-join-factor         phys/try-agg-join-factor)
 (def try-agg-join-reorder        phys/try-agg-join-reorder)
+(def try-hoist-invariant         phys/try-hoist-invariant)
 
 ;; ── e-graph equality-saturation search (5.3) ─────────────────────────────────────────────────
 (def saturate-and-extract        egraph/saturate-and-extract)
@@ -77,7 +78,9 @@
         phys (or (phys/try-agg-join-factor env term :lctx lctx :selectivity selectivity
                                            :sizes sizes :comm comm)
                  (phys/try-agg-join-reorder env term :lctx lctx :selectivity selectivity
-                                            :sizes sizes :comm comm))]
+                                            :sizes sizes :comm comm)
+                 ;; 1-variable FAQ: hoist a loop-invariant factor out of a sum (per-row recompute → once)
+                 (phys/try-hoist-invariant env term :lctx lctx :selectivity selectivity :sizes sizes))]
     (cond
       (and phys (:verified? phys))
       ;; a physical step fired → fuse its factored result, compose proofs (physical ∘ fuse).
@@ -86,7 +89,7 @@
             composed   (phys/compose-trans env lctx term (:term phys) final-term
                                            (:proof phys) (:proof sub))
             res {:term final-term :proof composed :changed? true :cost (pc final-term)
-                 :rewrites (into [(:rw phys)] (when (:changed? sub) [:fuse]))}]
+                 :rewrites [(:rw phys)]}]
         (assoc res :verified? (cert/verified-rewrite? env term res :lctx lctx)))
 
       ;; no structured physical step → EQUALITY-SATURATION search when requested (the 5.3 layer).
@@ -114,8 +117,9 @@
                                   [r v])))
                             remaining)]
             (if (empty? cands)
-              (assoc best :rewrites (if (seq applied) (vec applied) (when (:changed? best) [:fuse]))
-                          :cost (pc (:term best)))
+              ;; plain fusion reports `[]` (matching the old optimizer's explain), cost-rewrites report
+              ;; their applied law-names. (No `:fuse` label — kept the clean tree in lockstep with old.)
+              (assoc best :rewrites (vec applied) :cost (pc (:term best)))
               (let [[r v] (apply min-key (comp pc :term second) cands)]
                 (recur v (remove #{r} remaining) (conj applied r))))))))))
 
