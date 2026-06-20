@@ -30,6 +30,7 @@
             [ansatz.kernel.name :as nm]
             [ansatz.prelude.algebra :as alg]
             [wandler.clean.laws.bucket :as bucket]
+            [wandler.clean.laws.reorder :as reorder]
             [wandler.clean.laws.relational :as relational]
             [wandler.clean.laws.ac :as ac-providers]))
 
@@ -43,6 +44,7 @@
   []
   (alg/install-classes!)   ;; WAddMonoid ⊂ WSemiring — the carriers the _generic laws + AC providers use
   (bucket/install!)
+  (reorder/install!)       ;; count drive-direction reorder (Map.join_length_comm) — aggregate corollary, NO Perm
   (relational/install!)    ;; semijoin / anti-join (membership filter → group_by index probe)
   ;; AC providers for WAddMonoid.add / WSemiring.add — feed `ac_rfl` (the monoid normalizer that
   ;; closes the abstract associativity+identity reshuffles in the `_generic` proofs below).
