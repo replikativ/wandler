@@ -133,4 +133,51 @@
                (all_goals (try (rfl)))
                (all_goals (try (simp_all [List.filter_nil List.filter_cons])))))
       (catch Throwable _ nil)))
+
+  ;; ── filter→join PUSHDOWN (B + A here; C = TODO) — push a key-predicate through Map.join ──────────
+  ;; The OLD engine proved B/A by hand-built induction + a custom step-driver; here they are THIN.
+  ;; C (`Map.filter_join_pushdown`, what the optimizer consumes) composes A over Nat Map.join with B as
+  ;; the per-row premise. A thin `(rw [Map.join_eq])×2 (apply A)(intro)(apply B)` STALLS (the unfolded
+  ;; flatMap doesn't syntactically match A's shape for `apply`), so C must be ported as the faithful
+  ;; TERM-COMPOSITION (old `wandler.laws.relational/compose-C`) over the now-clean A,B constants.
+  ;; ROOT-CAUSE FIX (this is why the naive thin attempt HUNG): use the GUARDED filter-cons lemmas
+  ;; `List.filter_cons_of_pos` / `List.filter_cons_of_neg` — they fire only once the predicate value is
+  ;; decided by `by_cases`. NEVER put bare `List.filter_cons` in a simp set with a `cond`/`bif` goal: it
+  ;; unfolds filter-on-cons UNCONDITIONALLY into a cond and `simp_all` loops on it forever.
+  ;;
+  ;; B: filter (λpr. p pr.fst) (map (λy.(x,y)) L) = bif (p x) (map (λy.(x,y)) L) [].
+  (when-not (has? "List.filter_map_pair_eq_cond")
+    (try
+      (eval '(ansatz.core/theorem List.filter_map_pair_eq_cond
+               [X :- Type, Y :- Type, p :- (=> X Bool), x :- X, L :- (List Y)]
+               (= (List (Prod X Y))
+                  (List.filter (Prod X Y) (fn [pr :- (Prod X Y)] (p (Prod.fst X Y pr)))
+                    (List.map Y (Prod X Y) (fn [y :- Y] (Prod.mk X Y x y)) L))
+                  (bif (p x) (List.map Y (Prod X Y) (fn [y :- Y] (Prod.mk X Y x y)) L) (List.nil (Prod X Y))))
+               (induction L)
+               (all_goals (simp [List.map_cons List.map_nil List.filter_nil]))
+               (all_goals (try (by_cases (p x))))
+               (all_goals (try (simp_all [List.filter_cons_of_pos List.filter_cons_of_neg
+                                          List.filter_nil List.map_nil List.map_cons cond_true cond_false])))))
+      (catch Throwable _ nil)))
+
+  ;; A: per-row premise ⇒ filter pushes through flatMap —
+  ;;   (∀x. filter q (g x) = bif (p x) (g x) []) → filter q (flatMap g xs) = flatMap g (filter p xs).
+  (when-not (has? "List.filter_flatMap_cond")
+    (try
+      (eval '(ansatz.core/theorem List.filter_flatMap_cond
+               [A :- (Sort 1), B :- (Sort 1), g :- (=> A (List B)), q :- (=> B Bool),
+                p :- (=> A Bool), xs :- (List A),
+                H :- (forall [x A] (= (List B) (List.filter B q (g x)) (bif (p x) (g x) (List.nil B))))]
+               (= (List B) (List.filter B q (List.flatMap A B g xs)) (List.flatMap A B g (List.filter A p xs)))
+               (induction xs)
+               (all_goals (simp [List.flatMap_cons List.flatMap_nil List.filter_nil]))
+               (all_goals (try (simp [List.filter_append])))
+               (all_goals (try (rw [(H head)])))
+               (all_goals (try (by_cases (p head))))
+               (all_goals (try (simp_all [List.filter_cons_of_pos List.filter_cons_of_neg
+                                          cond_true cond_false List.filter_append
+                                          List.flatMap_cons List.flatMap_nil List.filter_nil
+                                          List.append_nil List.nil_append])))))
+      (catch Throwable _ nil)))
   :installed)
