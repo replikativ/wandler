@@ -18,7 +18,7 @@
 
    This is the seam that ties the inductive (datahike/stratum, finite/exact) and coinductive (live
    streams, sampled/stationary) views together under one certified search."
-  (:require [wandler.optimize :as opt]
+  (:require [wandler.clean.optimize :as opt]
             [wandler.optimize.plan :as oplan]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]

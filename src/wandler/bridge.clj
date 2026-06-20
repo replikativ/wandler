@@ -24,7 +24,7 @@
      :lower    (fn [plan] → exec-form)         — γ: ansatz plan → engine physical executor call
      :estimate (fn [plan] → {pred→rate})    — optional: feeds optimize's :selectivity hook"
   (:require [wandler.optimize.plan :as plan]
-            [wandler.optimize :as opt]))
+            [wandler.clean.optimize :as opt]))
 
 (defonce ^:private engines (atom {}))
 

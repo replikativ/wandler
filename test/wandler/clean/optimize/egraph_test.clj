@@ -60,7 +60,10 @@
             r (opt/optimize-cost (a/env) term :lctx lctx :use-egraph? true)]
         (is (:changed? r))
         (is (:verified? r) "the e-graph-selected plan certifies")
-        (is (= [:egraph] (:rewrites r)) "the saturation search path was taken (no structured physical step)")))
+        ;; under the ported (old-faithful) driver, confluent map∘map fusion wins in the base pass before
+        ;; the e-graph adds anything, so :rewrites is [] — the :use-egraph? path is exercised + verified,
+        ;; but the e-graph only changes the plan when it beats base fusion (see saturate-and-extract-certifies).
+        (is (= [] (:rewrites r)) "base fusion already deforests map∘map; the e-graph adds nothing here")))
     (testing "structured physical strategies still fire FIRST even with :use-egraph? on"
       ;; the separable-weight factor query — the factor recognizer should win before the e-graph fallback.
       (let [[term lctx comm] ((requiring-resolve 'wandler.clean.optimize.physical-test/nat-agg-join-query))

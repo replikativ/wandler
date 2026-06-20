@@ -74,70 +74,23 @@
    is unchanged — the e-graph is an untrusted oracle, every adopted plan carries a `check-constant`-
    verified proof. The structured physical strategies still run first (their factor/reorder wins need
    the commutativity witness + the structured recognizer, not expressible as a flat oriented rewrite)."
-  [env term & {:keys [lctx selectivity sizes comm extra-lemmas use-egraph? ndv memory-budget]}]
+  [env term & {:keys [lctx selectivity sizes comm extra-lemmas] :as opts}]
   (let [pc   (fn [t] (cost/pipeline-cost t {:selectivity selectivity :sizes sizes}))
-        S    (fn [strat] (strat env term :lctx lctx :selectivity selectivity :sizes sizes
-                                :memory-budget memory-budget :ndv ndv))
-        ;; The FAQ/index strategies (ported, riding the shared Map-cluster laws) — biggest wins first:
-        ;; pre-aggregated index (ndv-gated) → two-sided frame index (+ cond/keyfactor variants) →
-        ;; grace-hash spill → join-reorder → count/fold factorization → loop-invariant hoist. Each is
-        ;; cost-gated + kernel-certified internally; the first that fires + verifies wins.
-        ;; FACTORIZATION first (the biggest win — eliminates the join), then the drive-direction
-        ;; REORDER (when the factor doesn't apply but swapping which side is indexed is cheaper).
-        phys (or (phys/try-agg-join-factor env term :lctx lctx :selectivity selectivity
-                                           :sizes sizes :comm comm)
-                 (S faq/try-pre-agg-index) (S faq/try-frame-index)
-                 (S faq/try-frame-index-cond) (S faq/try-frame-index-keyfactor)
-                 (S faq/try-grace-hash) (S faq/try-join-reorder)
-                 (S faq/try-count-factor) (S faq/try-fold-factor*)
-                 (S faq/try-hoist-invariant)
-                 ;; the clean AGGREGATE (wsum) drive-direction reorder — distinct shape from faq's
-                 ;; Map-cluster join-reorder; kept for the clean a/defn wsum path.
-                 (phys/try-agg-join-reorder env term :lctx lctx :selectivity selectivity
-                                            :sizes sizes :comm comm))]
-    (cond
-      (and phys (:verified? phys))
-      ;; a physical step fired → fuse its factored result, compose proofs (physical ∘ fuse).
-      (let [sub        (cert/optimize env (:term phys) :lctx lctx :extra-lemmas extra-lemmas)
+        ;; clean AGGREGATE (wsum) strategies — the clean tree's OWN aggJoin_factor/reorder over WSemiring
+        ;; (a distinct shape from the Map-cluster driver). Try first; if neither fires, delegate to the
+        ;; FULL ported driver (`faq/optimize-cost-driver`: pre-agg / frame (+cond/keyfactor) / grace-hash /
+        ;; count·fold·join reorder → hoist-index | nested-loop, + the greedy cost-rewrite pool + e-graph
+        ;; saturation, all budget/ndv-gated) — a verbatim port of the old optimizer so the breadth gets
+        ;; identical plan selection. Every adopted step is kernel-certified (verified-rewrite?).
+        wsum (or (phys/try-agg-join-factor env term :lctx lctx :selectivity selectivity :sizes sizes :comm comm)
+                 (phys/try-agg-join-reorder env term :lctx lctx :selectivity selectivity :sizes sizes :comm comm))]
+    (if (and wsum (:verified? wsum))
+      (let [sub        (cert/optimize env (:term wsum) :lctx lctx :extra-lemmas extra-lemmas)
             final-term (:term sub)
-            composed   (phys/compose-trans env lctx term (:term phys) final-term
-                                           (:proof phys) (:proof sub))
-            res (cond-> {:term final-term :proof composed :changed? true :cost (pc final-term)
-                         ;; strategies report either :rw (singular keyword) or :rewrites (vector) + :physical
-                         :rewrites (or (:rewrites phys) [(:rw phys)])}
-                  (:physical phys) (assoc :physical (:physical phys)))]
+            composed   (phys/compose-trans env lctx term (:term wsum) final-term (:proof wsum) (:proof sub))
+            res {:term final-term :proof composed :changed? true :cost (pc final-term) :rewrites [(:rw wsum)]}]
         (assoc res :verified? (cert/verified-rewrite? env term res :lctx lctx)))
-
-      ;; no structured physical step → EQUALITY-SATURATION search when requested (the 5.3 layer).
-      use-egraph?
-      (let [sat (egraph/saturate-and-extract env term :lctx lctx :selectivity selectivity :sizes sizes)]
-        (if (and (:changed? sat) (:verified? sat))
-          (assoc sat :rewrites [:egraph] :cost (pc (:term sat)))
-          ;; saturation found nothing usable → plain confluent fusion.
-          (let [sub (cert/optimize env term :lctx lctx :extra-lemmas extra-lemmas)]
-            (assoc sub :rewrites (when (:changed? sub) [:fuse]) :cost (pc (:term sub))))))
-
-      ;; no structured physical step → confluent fusion, THEN a greedy cost-rewrite search over
-      ;; `cost/cost-rewrites` (the non-confluent relational pool: semijoin elem→index-probe, filter→join
-      ;; pushdown, map∘filter→filterMap). Each law is offered as an extra simp lemma and ADOPTED only when
-      ;; the re-fused term both verifies AND strictly lowers pipeline-cost (cardinality) — so a SOAC-neutral
-      ;; reorder (filter→join) is kept for its cardinality win. Untrusted search; every step kernel-certified.
-      :else
-      (let [base (cert/optimize env term :lctx lctx :extra-lemmas extra-lemmas)
-            base (if (:verified? base) base {:term term :proof nil :verified? true :changed? false})]
-        (loop [best base, remaining cost/cost-rewrites, applied []]
-          (let [cands (keep (fn [r]
-                              (let [v (cert/optimize env term :lctx lctx
-                                                     :extra-lemmas (concat extra-lemmas (conj (vec applied) r)))]
-                                (when (and (:verified? v) (< (pc (:term v)) (pc (:term best))))
-                                  [r v])))
-                            remaining)]
-            (if (empty? cands)
-              ;; plain fusion reports `[]` (matching the old optimizer's explain), cost-rewrites report
-              ;; their applied law-names. (No `:fuse` label — kept the clean tree in lockstep with old.)
-              (assoc best :rewrites (vec applied) :cost (pc (:term best)))
-              (let [[r v] (apply min-key (comp pc :term second) cands)]
-                (recur v (remove #{r} remaining) (conj applied r))))))))))
+      (apply faq/optimize-cost-driver env term (mapcat identity opts)))))
 
 ;; ── the a/defn-integrated optimizer entry (Phase 8.3) ────────────────────────────────────────
 (def ^:dynamic *use-egraph*
@@ -205,3 +158,30 @@
          :stages-after (cost/soac-stages (if ok (:term res) ex))
          :passes-before cost-before
          :passes-after (cost/soac-cost (if ok (:term res) ex))}))))
+
+;; ── explain: a human-readable account of optimize-cost's plan (Phase 8 Level 1) ──────────────
+(defn explain
+  "Human-readable account of what `optimize-cost` did — the relational/PHYSICAL strategy + the
+   memory reasoning, the algebraic rewrites, and the certificate. Clean-tree port; uses the FAQ
+   strategy descriptions."
+  [result]
+  (let [rw (:rewrites result)
+        physd (:physical result)
+        rewrites (keep faq/rewrite-descriptions rw)
+        strlaws  (filter string? rw)]
+    (str "verified plan" (when-not (:changed? result) " (unchanged)") "\n"
+         (when (seq rewrites) (str "  rewrites: " (clojure.string/join "; " rewrites) "\n"))
+         (when physd
+           (str "  physical: "
+                (case (:strategy physd)
+                  :in-memory-hash "IN-MEMORY HASH (build the index once)"
+                  :nested-loop    "NESTED-LOOP (stream, no held index)"
+                  :grace-hash     "GRACE-HASH (spill: build side in budget-sized blocks)"
+                  :pre-agg-index  "PRE-AGGREGATED HASH (buckets pre-summed; O(distinct keys))"
+                  (str (:strategy physd)))
+                (format " — index est ~%.0f %s budget %s\n"
+                        (double (:index-est physd))
+                        (if (<= (double (:index-est physd)) (double (:budget physd))) "≤" ">")
+                        (if (>= (double (:budget physd)) 1.0e8) "(default)" (format "%.0f" (double (:budget physd)))))))
+         (when (seq strlaws) (str "  laws:     " (clojure.string/join ", " strlaws) "\n"))
+         "  proof:    " (if (:verified? result) "optimized ≡ original (kernel-certified)" "UNVERIFIED"))))

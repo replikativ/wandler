@@ -12,8 +12,8 @@
    certificate before trusting it. The PGO win: the plan is tuned to the OBSERVED data (the params), not
    to defaults; the SOUNDNESS is independent of whether the observation was accurate."
   (:require [ansatz.core :as a]
-            [wandler.optimize :as opt]
-            [wandler.optimize.certify :as cert]
+            [wandler.clean.optimize :as opt]
+            [wandler.clean.optimize.certify :as cert]
             [ansatz.kernel.expr :as e]))
 
 (defn- compile-over

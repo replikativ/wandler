@@ -24,8 +24,8 @@
         (eval '(ansatz.core/defn faq-count [xs :- (List Nat), ys :- (List Nat)] Nat
                  (count (join (fn [x] x) (fn [y] y) xs ys)))))
       (testing "count over a Map.join factors through the join via the clean optimizer"
-        (is (= [:count-factor] (vec (:rewrites (w/explain 'faq-count))))
-            "the clean optimizer adopted the count-factor strategy")
+        (is (= [:count-factor :hoist-index] (vec (:rewrites (w/explain 'faq-count))))
+            "the clean optimizer factored the count through the join, then hoisted the index out of the loop")
         (is (:verified? (w/explain 'faq-count))
             "the factored plan kernel-certifies ≡ the original"))
       (testing "the factored count runs and agrees with the naive join-then-count"

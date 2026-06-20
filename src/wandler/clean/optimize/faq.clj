@@ -774,3 +774,156 @@
    :grace-hash   "GRACE-HASH spill — build side processed in budget-sized blocks (List.chunk)"
    :pre-agg-index "PRE-AGGREGATED index — each join bucket pre-summed once (held memory O(distinct keys))"
    :egraph       "e-graph equality saturation"})
+
+;; ── the cost-search DRIVER (Phase 8 Level 1 — verbatim port of old optimize-cost) ──────────────
+(defn optimize-cost-driver
+  "Cost-directed optimization (the SEARCH layer). Always applies the confluent
+   fusion set; then GREEDILY tries cost/cost-rewrites (filter_map, relational
+   pushdowns) — adopting one only when the re-optimized term both VERIFIES and has
+   strictly lower `cost/soac-cost`. The search is untrusted; soundness rests entirely
+   on each adopted step being kernel-certified (`verified?`). Returns the
+   `cert/optimize` result plus `:rewrites` (the cost/cost-rewrites adopted) and `:cost`.
+
+   FIRST tries a certified, cost-lowering JOIN REORDER (`try-join-reorder`, the
+   `Map.join_comm` Perm→Eq bridge for count queries). If it fires, the REORDERED term
+   is then fused, and the reorder proof is composed with the fusion proof via
+   `Eq.trans` — so a count-join is reordered AND deforested in one kernel-certified
+   step. Falls back to the no-reorder search if the composed proof doesn't verify.
+
+   `:selectivity` (a map pred-string→rate, or fn pred→rate) is threaded to
+   `cost/pipeline-cost` — pass a MEASURED profile here to drive the search with real
+   per-predicate pass-rates (see `ansatz.core/measure-selectivity`). Defaults to
+   the static heuristic.
+
+   `:use-egraph?` swaps the greedy one-at-a-time search for EQUALITY SATURATION
+   (`wandler.clean.optimize.egraph/saturate-and-extract`): saturate the e-graph with all
+   laws and extract the cost-minimal equivalent plan, interleaved with simp fusion.
+   Explores rewrite COMBINATIONS greedy ordering can miss; each step still
+   kernel-certified. Falls back to the greedy result if saturation doesn't verify."
+  [^Env env term & {:keys [lctx pool selectivity sizes use-egraph? skip-reorder? extra-lemmas memory-budget ndv] :or {pool cost/cost-rewrites}}]
+  (let [pc (fn [t] (cost/pipeline-cost t {:selectivity selectivity :sizes sizes}))
+        ;; PHYSICAL pre-aggregated index (FAQ): a SEPARABLE SUM over a join holds an O(distinct-keys)
+        ;; pre-summed index — the best in-memory plan when ndv ≪ |ys|. Try FIRST; adopt when its held
+        ;; estimate fits the budget (DuckDB PerfectHashAggregate gating). Certified rewrite.
+        pre-agg (when (not skip-reorder?)
+                  (try-pre-agg-index env term :lctx lctx :selectivity selectivity :sizes sizes
+                                     :memory-budget memory-budget :ndv ndv))
+        ;; FAQ FRAME RULE: a SEPARABLE two-sided weight f(x)·g(y) over a join holds the SAME
+        ;; O(distinct-keys) pre-summed index (g pre-aggregated), with the probe-side weight f(x) applied
+        ;; after the lookup. The f≡1 generalization of pre-agg; disjoint matcher (requires the Nat.mul).
+        frame (when (not skip-reorder?)
+                (try-frame-index env term :lctx lctx :selectivity selectivity :sizes sizes
+                                      :memory-budget memory-budget :ndv ndv))
+        ;; CONDITIONAL frame: a separable guard P(x)∧Q(y) over a weighted join — split the guard
+        ;; (Nat.cond_and_mul_split) to f'=[P]·f, g'=[Q]·g, then the frame index. Disjoint matcher (cond).
+        frame-cond (when (not skip-reorder?)
+                     (try-frame-index-cond env term :lctx lctx :selectivity selectivity :sizes sizes
+                                                :memory-budget memory-budget :ndv ndv))
+        ;; FD SCOPE QUOTIENT: a key-factor w(kf x)·g(y) floats the key-factor into the per-key index
+        ;; (frame ∘ Map.foldl_keyfactor_float) — w computed per-key not per-row. Disjoint matcher (w∘kf).
+        frame-kf (when (not skip-reorder?)
+                   (try-frame-index-keyfactor env term :lctx lctx :selectivity selectivity :sizes sizes
+                                                   :memory-budget memory-budget :ndv ndv))
+        ;; PHYSICAL grace-hash: if a memory budget is set and the join index would exceed it, spill
+        ;; the build side into budget-sized blocks BEFORE factorization (grace-hash is an ALTERNATIVE
+        ;; to the in-memory hash/factor, operating on the raw foldl-over-join). Certified rewrite.
+        gh (when (and memory-budget (not skip-reorder?))
+             (try-grace-hash env term :lctx lctx :selectivity selectivity :sizes sizes :memory-budget memory-budget))
+        ;; dedicated count-over-join paths, cost-chosen + certified directly (not via the simp
+        ;; pool): FIRST factorize the join away (aggregation-through-join, biggest win), else
+        ;; reorder which side is indexed. Both reduce to length/sum over xs, then fuse normally.
+        reorder (when-not skip-reorder?
+                  (or (try-count-factor env term :lctx lctx :selectivity selectivity :sizes sizes)
+                      ;; RECURSIVE FAQ variable elimination: factor EVERY join in a multi-way tree, not
+                      ;; just the outermost (iterate the proven single step to a fixpoint, composing proofs).
+                      (try-fold-factor* env term :lctx lctx :selectivity selectivity :sizes sizes)
+                      (try-join-reorder env term :lctx lctx :selectivity selectivity :sizes sizes)
+                      ;; 1-variable FAQ elimination: hoist a loop-invariant multiplicative factor out of
+                      ;; a sum (the measured nested-fold quadratic → linear). Certified by sum_map_mul_const.
+                      (try-hoist-invariant env term :lctx lctx :selectivity selectivity :sizes sizes)))]
+    (cond
+      ;; pre-agg wins when its held index (O(distinct keys)) fits the budget — strictly better than the
+      ;; raw factor (O(|ys|) buckets) for separable sums. Else fall through to grace-hash / factor.
+      (and pre-agg (:verified? pre-agg)
+           (<= (double (:index-est (:physical pre-agg))) (double (or memory-budget 1.0e8))))
+      pre-agg
+      ;; frame index (two-sided separable weight) — same held-index gate as pre-agg.
+      (and frame (:verified? frame)
+           (<= (double (:index-est (:physical frame))) (double (or memory-budget 1.0e8))))
+      frame
+      ;; conditional frame index (separable guard) — same held-index gate.
+      (and frame-cond (:verified? frame-cond)
+           (<= (double (:index-est (:physical frame-cond))) (double (or memory-budget 1.0e8))))
+      frame-cond
+      ;; key-factor float (FD scope quotient) — same held-index gate.
+      (and frame-kf (:verified? frame-kf)
+           (<= (double (:index-est (:physical frame-kf))) (double (or memory-budget 1.0e8))))
+      frame-kf
+      (:verified? gh) gh
+      (and reorder (:verified? reorder))
+      ;; a pre-rewrite fired → fuse its result, then compose proofs (pre ∘ fuse).
+      (let [sub (optimize-cost-driver env (:term reorder) :lctx lctx :pool pool :extra-lemmas extra-lemmas
+                               :selectivity selectivity :sizes sizes :use-egraph? use-egraph? :skip-reorder? true)
+            composed (compose-trans env lctx term (:term reorder) (:term sub)
+                                    (:proof reorder) (:proof sub))
+            res {:term (:term sub) :proof composed :changed? true
+                 :rewrites (into [(:rw reorder)] (:rewrites sub)) :cost (:cost sub)}
+            ;; PHYSICAL strategy: hoist loop-invariant index builds out of the fold (the in-memory
+            ;; hash join), making a factorized join O(N) not O(N²). β-equivalent → the composed proof
+            ;; still certifies. MEMORY-GATED: only when the held index fits the budget (default
+            ;; generous; aggregation-through-join indices are O(distinct keys)).
+            res (let [h (hoist-invariant-indices env lctx (:term res))
+                      ;; the held-index footprint ≈ the build side: estimate from the ORIGINAL term
+                      ;; (which still has the Map.join node; the factorized/hoisted term doesn't).
+                      idx-mem (:memory (cost/pipeline-resources term {:selectivity selectivity :sizes sizes}))]
+                  (cond
+                    ;; FITS the budget → in-memory HASH: hoist the index (β-equiv, proof unchanged).
+                    (and (not (.equals ^Object h (:term res))) (<= idx-mem (or memory-budget 1.0e8)))
+                    (assoc res :term h :rewrites (conj (:rewrites res) :hoist-index)
+                           :physical {:strategy :in-memory-hash :index-est idx-mem :budget (or memory-budget 1.0e8)})
+                    ;; EXCEEDS an explicit budget → NESTED-LOOP: bucket_content removes the O(|ys|)
+                    ;; index → a per-row filter (O(bucket) memory, no held index). Certified by an
+                    ;; Eq law, so compose: orig ≡ factorized (res.proof) ∘ factorized ≡ nested-loop.
+                    (and memory-budget (> idx-mem memory-budget))
+                    (let [nl (cert/optimize env (:term res) :lctx lctx :extra-lemmas ['Map.bucket_content])]
+                      (if (and (:changed? nl) (:verified? nl) (:proof nl))
+                        (assoc res :term (:term nl) :rewrites (conj (:rewrites res) :nested-loop)
+                               :proof (compose-trans env lctx term (:term res) (:term nl) (:proof res) (:proof nl))
+                               :physical {:strategy :nested-loop :index-est idx-mem :budget memory-budget})
+                        res))
+                    :else res))
+            res (assoc res :verified? (cert/verified-rewrite? env term res :lctx lctx))]
+        (if (:verified? res)
+          res
+          ;; composition didn't certify — fall back to the plain (no-reorder) search
+          (optimize-cost-driver env term :lctx lctx :pool pool :selectivity selectivity :sizes sizes :extra-lemmas extra-lemmas
+                         :use-egraph? use-egraph? :skip-reorder? true)))
+      :else
+      ;; no reorder → the cost-directed search
+      (let [base (cert/optimize env term :lctx lctx :extra-lemmas extra-lemmas)
+            base (if (:verified? base) base {:term term :verified? true :changed? false})]
+        (if use-egraph?
+          ;; e-graph saturation search (resolved lazily to avoid a namespace cycle)
+          (let [sat ((requiring-resolve 'wandler.clean.optimize.egraph/saturate-and-extract)
+                     env term :lctx lctx :selectivity selectivity :sizes sizes)]
+            (if (and sat (:verified? sat) (:changed? sat)
+                     (< (pc (:term sat)) (pc (:term base))))
+              (assoc sat :rewrites [:egraph] :cost (cost/soac-cost (:term sat)))
+              (assoc base :rewrites [] :cost (cost/soac-cost (:term base)))))
+          ;; greedy cost-directed search (default)
+          (loop [best base, remaining pool, applied []]
+            (let [cands (keep (fn [r]
+                                (let [v (cert/optimize env term :lctx lctx
+                                                  :extra-lemmas (concat extra-lemmas (conj applied r)))]
+                                  ;; GATE on cost/pipeline-cost (cardinality), not op-count, so a
+                                  ;; SOAC-neutral reorder (filter→join) is kept for its
+                                  ;; cardinality win. `:cost` still reports cost/soac-cost.
+                                  (when (and (:verified? v) (< (pc (:term v)) (pc (:term best))))
+                                    [r v])))
+                              remaining)]
+              (if (empty? cands)
+                (assoc best :rewrites applied :cost (cost/soac-cost (:term best)))
+                (let [[r v] (apply min-key (comp pc :term second) cands)]
+                  (recur v (remove #{r} remaining) (conj applied r)))))))))))
+
+

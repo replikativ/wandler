@@ -355,7 +355,7 @@
    branch already returns — so the type-driven front door yields a runnable in every mode. Returns nil if
    the term isn't codegenable (e.g. a bare source variable with a mismatched lctx)."
   [env term lctx]
-  (let [opt ((requiring-resolve 'wandler.optimize/optimize-cost) env term :lctx lctx)
+  (let [opt ((requiring-resolve 'wandler.clean.optimize/optimize-cost) env term :lctx lctx)
         t   (:term opt)
         ids (sort > (keys lctx))   ; abstract highest id first (innermost) ⇒ first param = lowest id
         lam (reduce (fn [body fid]
@@ -368,7 +368,7 @@
    plan lens), then curry over the source fvars — same callable shape as batch-run. Returns nil when the
    optimized plan isn't a linear producing pipeline (the caller falls back to batch-run's eager path)."
   [env term lctx]
-  (let [opt ((requiring-resolve 'wandler.optimize/optimize-cost) env term :lctx lctx)
+  (let [opt ((requiring-resolve 'wandler.clean.optimize/optimize-cost) env term :lctx lctx)
         t   (:term opt)
         ids (sort > (keys lctx))
         lam (reduce (fn [body fid]
@@ -384,7 +384,7 @@
   "Run a chunkable batch plan via a registered chunked-array backend (raster/stratum); nil if no backend
    applies (the caller falls back to the eager/apfoldl realization, which is result-equal)."
   [env term lctx]
-  (let [opt ((requiring-resolve 'wandler.optimize/optimize-cost) env term :lctx lctx)
+  (let [opt ((requiring-resolve 'wandler.clean.optimize/optimize-cost) env term :lctx lctx)
         t   (:term opt)
         ids (sort > (keys lctx))
         lam (reduce (fn [body fid]
@@ -395,7 +395,7 @@
         ;; COST-BASED push-down (B2): among engine backends that recognize this plan, choose the cheapest
         ;; that beats the eager Clojure cost; else fall back to the legacy array-form (recognize-wins) and
         ;; then to eager. Every backend is result-equal (the optimized plan is kernel-certified).
-        eager-cost ((requiring-resolve 'wandler.optimize.cost/pipeline-cost) body {})
+        eager-cost ((requiring-resolve 'wandler.clean.optimize.cost/pipeline-cost) body {})
         form (or (:form (phys/choose-cost-form env plan names eager-cost))
                  (phys/array-form env plan names))]
     (when form

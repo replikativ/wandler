@@ -18,7 +18,7 @@
      • `:memory-budget`            → resource bound              ⇒ hash / nested-loop / grace-hash
      • `:selectivity` (or a sample, via optimize-measured)       ⇒ measured replanning (JIT)"
   (:require [ansatz.core :as a]
-            [wandler.optimize :as opt]
+            [wandler.clean.optimize :as opt]
             [wandler.optimize.plan :as plan]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]
