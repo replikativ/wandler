@@ -7,7 +7,7 @@
 ;; *algebraically* simplify the composite using a property of `assoc`, with a
 ;; kernel proof.
 ;;
-;; The record schema is supplied as MALLI (`wandler.surface.malli/malli-record` compiles it
+;; The record schema is supplied as MALLI (`wandler.clean.surface.malli/malli-record` compiles it
 ;; to a kernel `Prod` model: field types, key->index, and the record type). Over
 ;; that tuple model the algebraic laws are DEFINITIONAL:
 ;;   assoc k v2 (assoc k v1 r) ≡ assoc k v2 r            (overwrite elimination)
@@ -22,7 +22,7 @@
   (:require [ansatz.kernel.expr :as e]
             [ansatz.kernel.level :as lvl]
             [ansatz.kernel.name :as name]
-            [wandler.surface.malli :as malli])
+            [wandler.clean.surface.malli :as malli])
   (:import [ansatz.kernel Env Expr TypeChecker]))
 
 (defn- nm [s] (name/from-string s))
@@ -37,7 +37,7 @@
 
 (defn model
   "Compile a Malli `:map` schema to a kernel record model:
-   {:keys :index :field-types :rec-type} (see wandler.surface.malli/malli-record)."
+   {:keys :index :field-types :rec-type} (see wandler.clean.surface.malli/malli-record)."
   [malli-schema]
   (malli/malli-record malli-schema))
 

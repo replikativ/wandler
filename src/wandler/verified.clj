@@ -21,7 +21,7 @@
   (:refer-clojure :exclude [map filter comp defn])
   (:require [wandler.reducers :as r]
             [wandler.reducers.plan :as pl]
-            [wandler.surface.records :as rec]
+            [wandler.clean.surface.records :as rec]
             [ansatz.core :as ac]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.env :as kenv]
@@ -103,13 +103,13 @@
 (rec/install!)   ;; register the record-op elaborators on load
 
 (defmacro def-record
-  "Define a schema-typed record from a Malli `:map` (see wandler.surface.records/def-record)."
+  "Define a schema-typed record from a Malli `:map` (see wandler.clean.surface.records/def-record)."
   [type-name malli-schema]
   `(rec/def-record ~type-name ~malli-schema))
 
 (defmacro defn
   "Define a verified record function in idiomatic Clojure; for a single-record-param
-   pipeline also proves `<name>.fusion_eq : naive = fused` (see wandler.surface.records/defn)."
+   pipeline also proves `<name>.fusion_eq : naive = fused` (see wandler.clean.surface.records/defn)."
   [fn-name params ret-type & body]
   `(rec/defn ~fn-name ~params ~ret-type ~@body))
 
@@ -122,7 +122,7 @@
 
 (clojure.core/defn validate
   "Does `data` satisfy record `rname`'s Malli schema (refinements included)? The
-   contract boundary — see wandler.surface.records/validate."
+   contract boundary — see wandler.clean.surface.records/validate."
   [rname data] (rec/validate rname data))
 
 (clojure.core/defn conform

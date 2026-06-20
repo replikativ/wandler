@@ -27,7 +27,7 @@
             [ansatz.kernel.level :as lvl]
             [ansatz.kernel.name :as name]
             [wandler.reducers :as r]
-            [wandler.surface.refine :as refine])
+            [wandler.clean.surface.refine :as refine])
   (:import [ansatz.kernel Env Expr TypeChecker]))
 
 ;; ============================================================
