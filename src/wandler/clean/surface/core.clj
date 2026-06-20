@@ -16,6 +16,10 @@
   (:require [wandler.clean.surface.common]
             [wandler.clean.surface.collections :as collections]
             [wandler.clean.surface.relational :as relational]
+            ;; records vertical: idiomatic map ops (assoc/update/get-in/select-keys/…) over malli-schema'd
+            ;; records — `records` pulls `malli` (schema→type) + `refine` (Subtype refinement). copy-clean
+            ;; (IR-agnostic; only ansatz.* deps). Auto-installs on load; `install!` re-runs idempotently.
+            [wandler.clean.surface.records :as records]
             ;; the dynamic EDN `Value` universe is an ANSATZ capability (shared) — the clean tree installs
             ;; it, it does not re-port it. Opt-in (heavyweight: defines the Value inductive + ops).
             [ansatz.surface.data :as data]
@@ -32,6 +36,7 @@
   []
   (collections/install!)
   (relational/install!)
+  (records/install!)
   nil)
 
 (defn install-value!
