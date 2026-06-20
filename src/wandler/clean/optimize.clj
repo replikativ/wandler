@@ -20,6 +20,7 @@
             [wandler.clean.optimize.cse :as cse]
             [wandler.clean.optimize.physical :as phys]
             [wandler.clean.optimize.egraph :as egraph]
+            [wandler.clean.optimize.faq :as faq]
             [ansatz.kernel.expr :as e])
   (:import [ansatz.kernel Env]))
 
@@ -73,20 +74,27 @@
    is unchanged — the e-graph is an untrusted oracle, every adopted plan carries a `check-constant`-
    verified proof. The structured physical strategies still run first (their factor/reorder wins need
    the commutativity witness + the structured recognizer, not expressible as a flat oriented rewrite)."
-  [env term & {:keys [lctx selectivity sizes comm extra-lemmas use-egraph?]}]
+  [env term & {:keys [lctx selectivity sizes comm extra-lemmas use-egraph? ndv memory-budget]}]
   (let [pc   (fn [t] (cost/pipeline-cost t {:selectivity selectivity :sizes sizes}))
+        S    (fn [strat] (strat env term :lctx lctx :selectivity selectivity :sizes sizes
+                                :memory-budget memory-budget :ndv ndv))
+        ;; The FAQ/index strategies (ported, riding the shared Map-cluster laws) — biggest wins first:
+        ;; pre-aggregated index (ndv-gated) → two-sided frame index (+ cond/keyfactor variants) →
+        ;; grace-hash spill → join-reorder → count/fold factorization → loop-invariant hoist. Each is
+        ;; cost-gated + kernel-certified internally; the first that fires + verifies wins.
         ;; FACTORIZATION first (the biggest win — eliminates the join), then the drive-direction
         ;; REORDER (when the factor doesn't apply but swapping which side is indexed is cheaper).
         phys (or (phys/try-agg-join-factor env term :lctx lctx :selectivity selectivity
                                            :sizes sizes :comm comm)
+                 (S faq/try-pre-agg-index) (S faq/try-frame-index)
+                 (S faq/try-frame-index-cond) (S faq/try-frame-index-keyfactor)
+                 (S faq/try-grace-hash) (S faq/try-join-reorder)
+                 (S faq/try-count-factor) (S faq/try-fold-factor*)
+                 (S faq/try-hoist-invariant)
+                 ;; the clean AGGREGATE (wsum) drive-direction reorder — distinct shape from faq's
+                 ;; Map-cluster join-reorder; kept for the clean a/defn wsum path.
                  (phys/try-agg-join-reorder env term :lctx lctx :selectivity selectivity
-                                            :sizes sizes :comm comm)
-                 ;; 1-variable FAQ: hoist a loop-invariant factor out of a sum (per-row recompute → once)
-                 (phys/try-hoist-invariant env term :lctx lctx :selectivity selectivity :sizes sizes)
-                 ;; aggregation-THROUGH-join: count/foldl over Map.join → per-key nested fold (no |xs|·|ys|
-                 ;; product materialized). Apply the proven Map-cluster laws (shared law engine).
-                 (phys/try-count-factor env term :lctx lctx :selectivity selectivity :sizes sizes)
-                 (phys/try-fold-factor  env term :lctx lctx :selectivity selectivity :sizes sizes))]
+                                            :sizes sizes :comm comm))]
     (cond
       (and phys (:verified? phys))
       ;; a physical step fired → fuse its factored result, compose proofs (physical ∘ fuse).
@@ -94,8 +102,10 @@
             final-term (:term sub)
             composed   (phys/compose-trans env lctx term (:term phys) final-term
                                            (:proof phys) (:proof sub))
-            res {:term final-term :proof composed :changed? true :cost (pc final-term)
-                 :rewrites [(:rw phys)]}]
+            res (cond-> {:term final-term :proof composed :changed? true :cost (pc final-term)
+                         ;; strategies report either :rw (singular keyword) or :rewrites (vector) + :physical
+                         :rewrites (or (:rewrites phys) [(:rw phys)])}
+                  (:physical phys) (assoc :physical (:physical phys)))]
         (assoc res :verified? (cert/verified-rewrite? env term res :lctx lctx)))
 
       ;; no structured physical step → EQUALITY-SATURATION search when requested (the 5.3 layer).
