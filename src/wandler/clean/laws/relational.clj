@@ -24,6 +24,14 @@
 (def ^:private L1 (lvl/succ lvl/zero))
 (defn- c [s ls] (e/const' (nm/from-string s) ls))
 
+(defn- beta-spine
+  "Beta-reduce `f` applied to `args` (used to unfold Map.join's value to its flatMap form)."
+  [f args]
+  (loop [f f args args]
+    (if (and (e/lam? f) (seq args))
+      (recur (e/instantiate1 (e/lam-body f) (first args)) (rest args))
+      (if (seq args) (apply e/app* f args) f))))
+
 (defn- install-gbStepId!
   "Admit the opaque group_by-id fold step `Map.gbStepId K dec = λ m x. Map.insert x (x :: getD (lookup
    x m) []) m` (a def, not a theorem; `Map.group_by id` is def-eq to a foldl over it)."
@@ -179,5 +187,52 @@
                                           cond_true cond_false List.filter_append
                                           List.flatMap_cons List.flatMap_nil List.filter_nil
                                           List.append_nil List.nil_append])))))
+      (catch Throwable _ nil)))
+
+  ;; C: Map.filter_join_pushdown — filter (p∘fst) (join kf lf xs ys) = join kf lf (filter p xs) ys.
+  ;; Faithful TERM-COMPOSITION (ported from old `wandler.laws.relational/compose-C`): extract the join's
+  ;; per-key bucket fn `g` from `Map.join`'s beta-unfolded value, then APPLY A (`filter_flatMap_cond`)
+  ;; to it with the B-instance (`filter_map_pair_eq_cond`) as the per-row premise. The kernel
+  ;; `check-constant` verifies the goal by def-eq — `Map.join` is a def that unfolds to `flatMap g`, so
+  ;; `filter q (join xs ys) ≡ filter q (flatMap g xs)` and the A-proof discharges it. The clean A,B have
+  ;; statements byte-identical to the old ones, so this composition is a drop-in.
+  (when-not (has? "Map.filter_join_pushdown")
+    (try
+      (let [nat (c "Nat" []) boolT (c "Bool" [])
+            prodNN (e/app* (c "Prod" [z z]) nat nat)
+            listN (e/app (c "List" [z]) nat)
+            listNN (e/app (c "List" [z]) prodNN)
+            deceq (c "instDecidableEqNat" [])
+            n->n (e/forall' "_" nat nat :default)
+            n->b (e/forall' "_" nat boolT :default)
+            pp (e/fvar 62001) kf (e/fvar 62002) lf (e/fvar 62003) ys (e/fvar 62004) xs (e/fvar 62005)
+            joinT (fn [xs'] (e/app* (c "Map.join" []) nat nat nat deceq kf lf xs' ys))
+            predPair (e/lam "pr" prodNN (e/app pp (e/app* (c "Prod.fst" [z z]) nat nat (e/bvar 0))) :default)
+            filterPair (fn [l] (e/app* (c "List.filter" [z]) prodNN predPair l))
+            filterN (fn [l] (e/app* (c "List.filter" [z]) nat pp l))
+            goal (-> (e/app* (c "Eq" [L1]) listNN (filterPair (joinT xs)) (joinT (filterN xs)))
+                     (#(e/forall' "xs" listN (e/abstract1 % 62005) :default))
+                     (#(e/forall' "ys" listN (e/abstract1 % 62004) :default))
+                     (#(e/forall' "lf" n->n (e/abstract1 % 62003) :default))
+                     (#(e/forall' "kf" n->n (e/abstract1 % 62002) :default))
+                     (#(e/forall' "p"  n->b (e/abstract1 % 62001) :default)))
+            mj-val (.getValue (env/lookup (a/env) (nm/from-string "Map.join")))
+            join-1 (beta-spine mj-val [nat nat nat deceq kf lf xs ys])
+            g (nth (second (e/get-app-fn-args join-1)) 2)
+            Bc (c "List.filter_map_pair_eq_cond" [])
+            premise (e/lam "a" nat
+                           (let [ga (e/instantiate1 (e/lam-body g) (e/bvar 0))
+                                 La (nth (second (e/get-app-fn-args ga)) 3)]
+                             (e/app* Bc nat nat pp (e/bvar 0) La)) :default)
+            Ac (c "List.filter_flatMap_cond" [])
+            C (e/app* Ac nat prodNN g predPair pp xs premise)
+            C-closed (-> C
+                         (#(e/lam "xs" listN (e/abstract1 % 62005) :default))
+                         (#(e/lam "ys" listN (e/abstract1 % 62004) :default))
+                         (#(e/lam "lf" n->n (e/abstract1 % 62003) :default))
+                         (#(e/lam "kf" n->n (e/abstract1 % 62002) :default))
+                         (#(e/lam "p"  n->b (e/abstract1 % 62001) :default)))]
+        (swap! a/ansatz-env env/check-constant
+               (env/mk-thm (nm/from-string "Map.filter_join_pushdown") [] goal C-closed)))
       (catch Throwable _ nil)))
   :installed)
