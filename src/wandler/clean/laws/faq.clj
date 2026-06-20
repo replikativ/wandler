@@ -365,6 +365,76 @@
                (try (rfl))))
       (catch Throwable _ nil)))
 
+  ;; ── PRE-AGGREGATED bucket-sum helper + the FRAME RULE (separable two-sided weight) ──────────────
+  ;; bucket_sum_preagg: the per-key pointwise identity shared by sum_factor and the frame rule —
+  ;; `Σ_{y∈bucket k} g y = getD (lookup k <pre-aggregated index>) 0`. Proven in a CLEAN context (no
+  ;; intermediate simp), so `lookup_map_kv` + the explicit-arg `Option.getD_map` close it directly
+  ;; (the eta-sensitive default matches here). Factored out so the frame proof closes by a single `rw`.
+  (when-not (has? "Map.bucket_sum_preagg")
+    (try
+      (eval '(ansatz.core/theorem Map.bucket_sum_preagg
+               [S :- (Sort 1), inst :- (WSemiring S), K :- (Sort 1), Y :- (Sort 1),
+                dec :- (DecidableEq K), g :- (=> Y S), lf :- (=> Y K), k :- K, ys :- (List Y)]
+               (= S
+                  (List.foldl S Y (fn [a :- S] (fn [y :- Y] (WSemiring.add S inst a (g y)))) (WSemiring.zero S inst)
+                    (Option.getD (List Y) (Map.lookup K (List Y) dec k (Map.group_by K Y dec lf ys)) (List.nil Y)))
+                  (Option.getD S
+                    (List.lookup K S (instBEqOfDecidableEq K dec) k
+                      (List.map (Prod K (List Y)) (Prod K S)
+                        (fn [p :- (Prod K (List Y))]
+                          (Prod.mk K S (Prod.fst K (List Y) p)
+                            (List.foldl S Y (fn [a :- S] (fn [y :- Y] (WSemiring.add S inst a (g y)))) (WSemiring.zero S inst) (Prod.snd K (List Y) p))))
+                        (Map.entries K (List Y) (Map.group_by K Y dec lf ys))))
+                    (WSemiring.zero S inst)))
+               (rw [List.lookup_map_kv])
+               (rw [(Option.getD_map (List Y) S
+                      (fn [blk :- (List Y)] (List.foldl S Y (fn [acc :- S] (fn [y :- Y] (WSemiring.add S inst acc (g y)))) (WSemiring.zero S inst) blk))
+                      (List.nil Y)
+                      (List.lookup K (List Y) (instBEqOfDecidableEq K dec) k (Map.entries K (List Y) (Map.group_by K Y dec lf ys))))])
+               (try (rfl))))
+      (catch Throwable _ nil)))
+
+  ;; foldl_join_frame_generic: THE FAQ FRAME RULE — a SEPARABLE two-sided weight `f(x)·g(y)` over a join
+  ;; factorizes through the SAME pre-aggregated index: `Σ_{x⋈y} f(x)·g(y) = Σ_x f(x)·(Σ bucket g)`.
+  ;; Generalizes sum_factor (its f≡1 case). The SECOND deep frame generic re-proven THINLY — unblocked
+  ;; by the ansatz Miller-pattern unifier fix (commit f6f3557) which lets the HIGHER-ORDER rewrites
+  ;; `foldl_add_init_wsem` / `foldl_const_mul_pull` fire on the f(x)-dependent step-λ (previously a
+  ;; loose-bvar crash, which had forced fragile explicit-args). Chain: factor → congr → per-key pointwise
+  ;; (add_init pulls the acc, const_mul_pull pulls the f(x) factor, bucket_sum_preagg closes).
+  (when-not (has? "Map.foldl_join_frame_generic")
+    (try
+      (eval '(ansatz.core/theorem Map.foldl_join_frame_generic
+               [S :- (Sort 1), inst :- (WSemiring S), K :- (Sort 1), X :- (Sort 1), Y :- (Sort 1),
+                dec :- (DecidableEq K), f :- (=> X S), g :- (=> Y S), kf :- (=> X K), lf :- (=> Y K),
+                e :- S, xs :- (List X), ys :- (List Y)]
+               (= S
+                  (List.foldl S (Prod X Y)
+                    (fn [acc :- S] (fn [p :- (Prod X Y)] (WSemiring.add S inst acc (WSemiring.mul S inst (f (Prod.fst X Y p)) (g (Prod.snd X Y p))))))
+                    e (Map.join K X Y dec kf lf xs ys))
+                  (List.foldl S X
+                    (fn [acc :- S] (fn [x :- X]
+                      (WSemiring.add S inst acc
+                        (WSemiring.mul S inst (f x)
+                          (Option.getD S
+                            (List.lookup K S (instBEqOfDecidableEq K dec) (kf x)
+                              (List.map (Prod K (List Y)) (Prod K S)
+                                (fn [p :- (Prod K (List Y))]
+                                  (Prod.mk K S (Prod.fst K (List Y) p)
+                                    (List.foldl S Y (fn [a :- S] (fn [y :- Y] (WSemiring.add S inst a (g y)))) (WSemiring.zero S inst) (Prod.snd K (List Y) p))))
+                                (Map.entries K (List Y) (Map.group_by K Y dec lf ys))))
+                            (WSemiring.zero S inst))))))
+                    e xs))
+               (rw [Map.foldl_join_factor])
+               (apply List.foldl_congr)
+               (intros b a)
+               (simp [])
+               (rw [List.foldl_add_init_wsem])
+               (simp [])
+               (rw [List.foldl_const_mul_pull])
+               (rw [Map.bucket_sum_preagg])
+               (try (rfl))))
+      (catch Throwable _ nil)))
+
   ;; TODO (Level-2 remaining, tracked): the DEEP generic frame family — hand-built term proofs in
   ;; `wandler.laws.proofs.frame` to be re-derived as tactic scripts:
   ;;   Map.foldl_join_frame_generic / Map.foldl_join_sum_factor_generic / Map.foldl_keyfactor_float_generic
