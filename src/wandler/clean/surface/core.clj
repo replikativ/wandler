@@ -16,6 +16,9 @@
   (:require [wandler.clean.surface.common]
             [wandler.clean.surface.collections :as collections]
             [wandler.clean.surface.relational :as relational]
+            ;; the dynamic EDN `Value` universe is an ANSATZ capability (shared) — the clean tree installs
+            ;; it, it does not re-port it. Opt-in (heavyweight: defines the Value inductive + ops).
+            [ansatz.surface.data :as data]
             ;; the shared runtime codegen lowering registry (List.*/Map.* → Clojure) — auto-installs at
             ;; load, so surface-elaborated `a/defn` bodies EXECUTE. Self-contained: don't rely on another
             ;; namespace having loaded it. (Clean runtime is a deferred Phase-2-remainder; until cutover
@@ -30,3 +33,15 @@
   (collections/install!)
   (relational/install!)
   nil)
+
+(defn install-value!
+  "OPT-IN: bring up the dynamic EDN `Value` front door — define the `Value` type + core ops on the
+   current env (`ansatz.surface.data/install-core!`) and register the native-Clojure-over-`Value`
+   surface verbs (`get`/`contains?`/`keys`/`vals`/`int?`/`map?`/… ; `data/install-surface!`). Lets
+   ordinary dynamic Clojure map/coll code run over kernel-verified `Value` (via `edn->value`/`value->edn`).
+   Heavyweight (defines an inductive) — kept separate from `install!`. Requires Init in the env. Returns
+   the updated env."
+  []
+  (let [env (data/install-core!)]
+    (data/install-surface!)
+    env))

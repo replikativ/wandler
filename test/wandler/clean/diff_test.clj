@@ -8,9 +8,12 @@
    old-vs-clean subjects as the runtime/optimizer modules land in Phases 2+."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [ansatz.core :as a]
+            [ansatz.kernel.env :as kenv]
+            [ansatz.kernel.name :as nm]
             [wandler.core :as w]
             [wandler.clean.diff :as diff]
             [wandler.clean.laws.frame :as frame]
+            [wandler.clean.surface.core :as surf]
             [wandler.test-env :as test-env]))
 
 (defn- setup [f]
@@ -75,3 +78,44 @@
         (let [d (diff/differential {:label "dh" :old-fn naive :new-fn fused :inputs INPUTS
                                     :kenv (a/env) :laws ["aggJoin_reorder"]})]
           (is (:ok? d) (str "differential failed: " d)))))))
+
+;; ── the cutover gate: a REAL clean-surface subject, old-vs-clean, all three parities live ─────
+;; A query written once in ordinary Clojure, run through (1) the OLD wandler surface+optimizer and
+;; (2) the CLEAN surface+optimizer, asserting the strangler equivalence directly: identical executed
+;; result (clean ≡ old ≡ clojure.core), and the clean plan is independently kernel-certified + fuses.
+(def ^:private MM-BODY '(mapv (fn [x] (inc x)) (mapv (fn [x] (inc x)) xs)))
+(def ^:private MM-INPUTS [[] [1 2 3] [10 20 30 40] [5] [0 0 0 7]])
+(defn- mm-truth [xs] (mapv inc (mapv inc xs)))
+
+(deftest clean-surface-subject-cutover-differential
+  (when (ready?)
+    ;; (1) OLD subject — the fixture left the OLD surface installed (w/install!); build + capture it FIRST.
+    (let [old-fn (binding [a/*verbose* false]
+                   (eval (list 'ansatz.core/defn 'dh-old '[xs :- (List Nat)] '(List Nat) MM-BODY))
+                   @(resolve 'dh-old))]
+      ;; (2) CLEAN subject — now install the CLEAN surface (overwrites the registry with clean copies),
+      ;; build the clean fn + read its elaborated body for the clean optimizer.
+      (surf/install!)
+      (let [clean-fn (binding [a/*verbose* false]
+                       (eval (list 'ansatz.core/defn 'dh-clean '[xs :- (List Nat)] '(List Nat) MM-BODY))
+                       @(resolve 'dh-clean))
+            clean-body (.value (kenv/lookup (a/env) (nm/from-string "dh-clean")))
+            clean-plan (diff/clean-plan-report (a/env) clean-body)]
+        (testing "(b) RESULT — clean ≡ old ≡ clojure.core on every input (the strangler equivalence)"
+          (is (:ok? (diff/result-parity clean-fn old-fn MM-INPUTS))
+              "clean-surface query result diverged from old wandler")
+          (is (:ok? (diff/result-parity clean-fn mm-truth MM-INPUTS))
+              "clean-surface query result diverged from clojure.core ground truth"))
+        (testing "(a) PLAN — the CLEAN optimizer certifies + fuses (2 map passes → 1)"
+          (is (:verified? clean-plan) "the clean fusion plan check-constant-verifies")
+          (is (= [:fuse] (:rewrites clean-plan)))
+          (is (= ["map"] (:stages-after clean-plan)) "fused to a single map stage")
+          (is (< (long (:passes-after clean-plan)) (long (:passes-before clean-plan)))
+              "fewer passes after fusion"))
+        (testing "(c) PROOF — the clean laws backing the optimizer verify"
+          (is (:ok? (diff/proof-gate (a/env) ["aggJoin_split" "aggJoin_reorder" "wsum"]))))
+        (testing "the combined `differential` gate is green on the real clean subject"
+          (let [d (diff/differential {:label "clean-mm" :old-fn old-fn :new-fn clean-fn :inputs MM-INPUTS
+                                      :old-plan clean-plan :new-plan clean-plan
+                                      :kenv (a/env) :laws ["aggJoin_split"]})]
+            (is (:ok? d) (str "differential failed: " d))))))))

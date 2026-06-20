@@ -20,7 +20,9 @@
    `((resolve fn-name) input)` (the executed result), and `wandler.core/*optimize*` (toggle fused/naive)."
   (:require [ansatz.kernel.env :as env]
             [ansatz.kernel.name :as nm]
-            [wandler.core :as w]))
+            [wandler.core :as w]
+            [wandler.clean.optimize :as copt]
+            [wandler.clean.optimize.cost :as ccost]))
 
 ;; ── (c) PROOF parity — active now ───────────────────────────────────────────────────────────
 (defn verifies?
@@ -42,6 +44,23 @@
 (defn plan-of
   "The optimizer plan-report for a defined pipeline (`wandler.core/explain`)."
   [fn-name] (w/explain fn-name))
+
+(defn clean-plan-report
+  "A `w/explain`-shaped plan-report from the CLEAN optimizer (`optimize-cost`) over an elaborated body
+   `term` — so a clean subject can be plan-compared the same way an old subject is. Keys mirror
+   `wandler.core/explain`: `:verified?` (the composed proof check-constant-verifies), `:rewrites` (the
+   laws the clean driver fired), `:stages-after` (SOAC pipeline of the optimized plan), `:passes-before`/
+   `:passes-after` (SOAC stage counts). Pass the same `optimize-cost` opts (`:lctx`/`:sizes`/`:comm`/…)."
+  [env term & opts]
+  (let [r (apply copt/optimize-cost env term opts)
+        before (ccost/soac-stages term)
+        after  (ccost/soac-stages (:term r))]
+    {:verified?     (boolean (:verified? r))
+     :rewrites      (vec (:rewrites r))
+     :stages-after  after
+     :passes-before (count before)
+     :passes-after  (count after)
+     :term          (:term r)}))
 
 (defn plan-parity
   "Two plan-reports (`wandler.core/explain` output) agree iff identical fused stages + applied

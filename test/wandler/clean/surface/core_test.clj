@@ -17,7 +17,8 @@
             [wandler.test-env :as test-env]
             [wandler.clean.laws.bucket :as bucket]
             [wandler.clean.surface.core :as surf]
-            [wandler.clean.optimize :as opt]))
+            [wandler.clean.optimize :as opt]
+            [ansatz.surface.data :as data]))
 
 (defn- body-of [s] (.value (kenv/lookup (a/env) (nm/from-string s))))
 
@@ -56,3 +57,23 @@
                    (->map (group-by (fn [x] x) xs)))))
         (is (some? (body-of "cs-groupcount")) "group-by/->map elaborated to a Map.group_by term")))
     (do (println "SKIP clean-surface-relational: no Init env") (is true))))
+
+(deftest clean-surface-value-front-door
+  ;; The dynamic EDN `Value` front door (ansatz.surface.data, a shared ansatz capability the clean tree
+  ;; installs). Native Clojure map verbs over `Value` elaborate (kernel-typed) + RUN on real Clojure data
+  ;; via edn->value/value->edn — ordinary dynamic Clojure map code, kernel-verified.
+  (if-let [kenv @test-env/init-full-env]
+    (do
+      (reset! a/ansatz-env kenv)
+      (binding [a/*verbose* false] (surf/install!) (surf/install-value!))
+      (let [runv (fn [form arg]
+                   (binding [a/*verbose* false]
+                     (data/value->edn ((deref (eval form)) (data/edn->value arg)))))]
+        (testing "native-Clojure map verbs run over the kernel-verified Value universe"
+          (is (= true (runv '(ansatz.core/defn cv-has [m :- Value] Value (Value.vbool (contains? m :a)))
+                            {:a 1 :b 2})) "contains? over Value")
+          (is (= #{:a :b} (set (runv '(ansatz.core/defn cv-ks [m :- Value] Value (keys m)) {:a 1 :b 2})))
+              "keys over Value")
+          (is (= #{1 2} (set (runv '(ansatz.core/defn cv-vs [m :- Value] Value (vals m)) {:a 1 :b 2})))
+              "vals over Value"))))
+    (do (println "SKIP clean-surface-value: no Init env") (is true))))

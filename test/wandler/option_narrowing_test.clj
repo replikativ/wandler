@@ -9,6 +9,7 @@
    (if (nil? v) …). See [[pipelines-system-design]]."
   (:require [ansatz.core :as a]
             [wandler.surface.collections :as coll]
+            [wandler.surface.option :as option]
             [wandler.test-env :as test-env]
             [clojure.test :refer [deftest is]]))
 
@@ -17,6 +18,10 @@
     (do
       (reset! a/ansatz-env kenv)
       (coll/install!)
+      ;; Re-install the Option-narrowing nil?/some? this test depends on, so it is robust to a prior
+      ;; test having installed the dynamic-EDN Value nil?/some? into the process-global registry
+      ;; (the Value handlers throw on a non-Value operand). Don't rely on load-order.
+      (option/install!)
       (binding [a/*verbose* false]
         (eval '(ansatz.core/defn nz-iflet  [xs :- (List Nat)] Nat (if-let [x (first xs)] (+ x 1) 0)))
         (eval '(ansatz.core/defn nz-ifsome [xs :- (List Nat)] Nat (if-some [x (first xs)] (* x 2) 99)))
