@@ -119,3 +119,56 @@
                                       :old-plan clean-plan :new-plan clean-plan
                                       :kenv (a/env) :laws ["aggJoin_split"]})]
             (is (:ok? d) (str "differential failed: " d))))))))
+
+;; ── Phase 7 cutover GATE: the differential CORPUS ────────────────────────────────────────────
+;; A representative corpus of ordinary-Clojure surface queries, each run through BOTH the old wandler
+;; surface+optimizer and the clean surface+optimizer. For every subject we assert the strangler
+;; equivalence (clean ≡ old ≡ clojure.core on a battery of inputs) AND that the clean optimizer produces
+;; an independently kernel-certified plan. Passing this corpus is what justifies the cutover: the clean
+;; core is a faithful drop-in for the old core across the surface it covers.
+(def ^:private CORPUS-INPUTS [[] [1 2 3] [10 20 30 40] [5] [0 1 2 3 4 5] [2 2 2 2]])
+(def ^:private CORPUS
+  ;; {:label, :sig (return type form), :body (clojure query over `xs`), :truth (clojure.core reference)}
+  [{:label "map∘map"       :sig '(List Nat)
+    :body '(mapv (fn [x] (inc x)) (mapv (fn [x] (inc x)) xs))
+    :truth (fn [xs] (mapv inc (mapv inc xs)))}
+   {:label "filter∘filter" :sig '(List Nat)
+    :body '(filterv (fn [x] (Nat.ble 2 x)) (filterv (fn [x] (Nat.ble 1 x)) xs))
+    :truth (fn [xs] (filterv #(<= 2 %) (filterv #(<= 1 %) xs)))}
+   {:label "map∘filter"    :sig '(List Nat)
+    :body '(mapv (fn [x] (inc x)) (filterv (fn [x] (Nat.ble 2 x)) xs))
+    :truth (fn [xs] (mapv inc (filterv #(<= 2 %) xs)))}
+   {:label "filter→map→reduce" :sig 'Nat
+    :body '(->> xs (filterv (fn [x] (Nat.ble 2 x))) (mapv (fn [x] (inc x))) (reduce + 0))
+    :truth (fn [xs] (reduce + 0 (mapv inc (filterv #(<= 2 %) xs))))}
+   {:label "map∘map∘map"   :sig '(List Nat)
+    :body '(mapv (fn [x] (inc x)) (mapv (fn [x] (inc x)) (mapv (fn [x] (inc x)) xs)))
+    :truth (fn [xs] (mapv inc (mapv inc (mapv inc xs))))}])
+
+(deftest cutover-differential-corpus
+  (when (ready?)
+    ;; (1) build EVERY old subject first — the fixture left the OLD surface installed.
+    (let [old-fns (binding [a/*verbose* false]
+                    (into {} (map-indexed
+                               (fn [i {:keys [label sig body]}]
+                                 (let [nm (symbol (str "corp-old-" i))]
+                                   (eval (list 'ansatz.core/defn nm '[xs :- (List Nat)] sig body))
+                                   [label @(resolve nm)]))
+                               CORPUS)))]
+      ;; (2) switch to the CLEAN surface, build every clean subject + its certified plan.
+      (surf/install!)
+      (doseq [[i {:keys [label sig body truth]}] (map-indexed vector CORPUS)]
+        (testing label
+          (let [nm (symbol (str "corp-clean-" i))
+                clean-fn (binding [a/*verbose* false]
+                           (eval (list 'ansatz.core/defn nm '[xs :- (List Nat)] sig body))
+                           @(resolve nm))
+                clean-body (.value (kenv/lookup (a/env) (nm/from-string (str nm))))
+                clean-plan (diff/clean-plan-report (a/env) clean-body)
+                old-fn (get old-fns label)]
+            (is (:ok? (diff/result-parity clean-fn old-fn CORPUS-INPUTS))
+                (str label ": clean diverged from OLD wandler"))
+            (is (:ok? (diff/result-parity clean-fn truth CORPUS-INPUTS))
+                (str label ": clean diverged from clojure.core ground truth"))
+            (is (:verified? clean-plan)
+                (str label ": the clean optimizer plan is NOT kernel-certified"))))))))

@@ -122,12 +122,19 @@
 
 
 (defn optimize
-  "Optimize + self-certify in one step. Returns the `optimize-term` result with
-   `:verified?` set by the independent kernel check — the value a caller trusts.
-   Pass `:lctx` for pipelines with free variables."
+  "Optimize + self-certify in one step — the CERTIFY GATE. Returns the `optimize-term` result with
+   `:verified?` set by the independent kernel check. SOUND BY CONSTRUCTION: if the rewrite's proof does
+   NOT strict-verify, the change is REJECTED and the ORIGINAL term is returned unchanged — the optimizer
+   never emits an unverified plan (a partial simp normalization whose congruence proof fails the strict
+   `.check` is dropped, not shipped). So `:term` is ALWAYS either the original or a kernel-certified
+   rewrite of it. Pass `:lctx` for pipelines with free variables."
   [^Env env term & {:keys [lctx] :as opts}]
-  (let [res (apply optimize-term env term (mapcat identity opts))]
-    (assoc res :verified? (verified-rewrite? env term res :lctx lctx))))
+  (let [res (apply optimize-term env term (mapcat identity opts))
+        ok  (verified-rewrite? env term res :lctx lctx)]
+    (if (or ok (not (:changed? res)))
+      (assoc res :verified? ok)
+      ;; unverifiable change → reject it, keep the original (the gate's whole point)
+      {:term term :proof nil :changed? false :verified? true})))
 
 
 (defn- ulvl [u] (if (zero? u) lvl/zero (lvl/succ lvl/zero)))
