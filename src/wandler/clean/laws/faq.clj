@@ -88,6 +88,29 @@
                (rw [(ih_tail (g e head))])))
       (catch Throwable _ nil)))
 
+  ;; lookup_map_kv: probing a key/value-mapped assoc list = mapping the value-fn over the probe —
+  ;;   lookup k (map (λp. (p.1, f p.2)) l) = Option.map f (lookup k l).
+  ;; THE pre-aggregated-index crux (the index is built by value-mapping group_by; a lookup of a key's
+  ;; bucket then equals mapping the bucket-fn over the raw lookup). Thin: induction on l; the cons head
+  ;; is opaque so `Prod.eta`-rewrite it to `(head.1, head.2)` first (else `lookup_cons` won't fire on the
+  ;; RHS), reduce both sides to the same `BEq.beq k head.1` matcher, then `by_cases` that Bool — each
+  ;; branch closes by `simp_all` (true → `some (f head.2)` both sides; false → parallel via the IH).
+  (when-not (has? "List.lookup_map_kv")
+    (try
+      (eval '(ansatz.core/theorem List.lookup_map_kv
+               [K :- Type, V :- Type, W :- Type, inst :- (BEq K), f :- (=> V W), k :- K, l :- (List (Prod K V))]
+               (= (Option W)
+                  (List.lookup K W inst k
+                    (List.map (Prod K V) (Prod K W)
+                      (fn [p :- (Prod K V)] (Prod.mk K W (Prod.fst K V p) (f (Prod.snd K V p)))) l))
+                  (Option.map V W f (List.lookup K V inst k l)))
+               (induction l)
+               (all_goals (try (rw [<- (Prod.eta K V head)])))
+               (all_goals (simp [List.map_nil List.map_cons List.lookup_nil List.lookup_cons]))
+               (all_goals (try (by_cases (BEq.beq K inst k (Prod.fst K V head)))))
+               (all_goals (try (simp_all [Option.map List.lookup_cons])))))
+      (catch Throwable _ nil)))
+
   ;; sum_map_add_distrib: ∑ distributes over a pointwise sum (accumulator-generalized over a, b). The
   ;; cons accumulator `(a+b)+(f h+g h)` is reassociated to `(a+f h)+(b+g h)` by `Nat.add_add_add_comm`,
   ;; then the ∀a∀b IH at those two accumulators closes it.
