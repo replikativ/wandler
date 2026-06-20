@@ -145,6 +145,27 @@
                (rw [<- (List.sum_map_const_mul_gen f c xs Nat.zero)])))
       (catch Throwable _ nil)))
 
+  ;; ── SEMIRING-GENERIC const-factor pull (building block for the frame rule) ──────────────────────
+  ;; foldl_const_mul_pull (accumulator-generalized): a loop-invariant left factor `c·` pulls out of an
+  ;; additive fold over ANY semiring — `foldl (λa y. a + c·g y) (c·acc) l = c·(foldl (λa y. a + g y) acc l)`.
+  ;; The algebra is passed as HYPOTHESES (`hMA` left-distrib, `hMZ` annihilator) rather than WSemiring
+  ;; accessors — the same shape the generic frame proof threads. cons reassociates the accumulator with
+  ;; the distributivity hyp REVERSED (`rw [<- (hMA c acc (g head))]`), then the quantified IH closes it.
+  (when-not (has? "List.foldl_const_mul_pull_gen")
+    (try
+      (eval '(ansatz.core/theorem List.foldl_const_mul_pull_gen
+               [S :- (Sort 1), add :- (=> S (=> S S)), mul :- (=> S (=> S S)), zero :- S,
+                hMA :- (forall [x S] (forall [y S] (forall [w S] (= S (mul x (add y w)) (add (mul x y) (mul x w)))))),
+                hMZ :- (forall [x S] (= S (mul x zero) zero)),
+                al :- (Sort 1), c :- S, g :- (=> al S), l :- (List al), acc :- S]
+               (= S (List.foldl S al (fn [a :- S] (fn [y :- al] (add a (mul c (g y))))) (mul c acc) l)
+                    (mul c (List.foldl S al (fn [a :- S] (fn [y :- al] (add a (g y)))) acc l)))
+               (induction l generalizing acc)
+               (all_goals (simp [List.foldl_cons List.foldl_nil]))
+               (rw [<- (hMA c acc (g head))])
+               (rw [(ih_tail (add acc (g head)))])))
+      (catch Throwable _ nil)))
+
   ;; ── CONDITIONAL SEPARATION (semiring-generic) ───────────────────────────────────────────────────
   ;; cond_and_mul_split: a separable conjunctive guard factors a weighted product —
   ;;   cond(a&&b)(u·v) 0 = (cond a u 0)·(cond b v 0) — so a guarded join weight splits per side and the
