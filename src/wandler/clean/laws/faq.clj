@@ -218,6 +218,50 @@
                                                      (ac_rfl)))))))
       (catch Throwable _ nil)))
 
+  ;; ── WSemiring multiplicative-pull foundation (for the frame rule's f(x)· factor) ─────────────────
+  ;; foldl_add_init_wsem: the WSemiring-spelled sibling of foldl_add_init_generic (so the frame chain
+  ;; stays in one spelling). Closed by `ac_rfl` over the registered WSemiring.add provider.
+  (when-not (has? "List.foldl_add_init_wsem")
+    (try
+      (eval '(ansatz.core/theorem List.foldl_add_init_wsem
+               [S :- (Sort 1), inst :- (WSemiring S), Y :- (Sort 1), g :- (=> Y S), l :- (List Y), acc :- S]
+               (= S (List.foldl S Y (fn [a :- S] (fn [y :- Y] (WSemiring.add S inst a (g y)))) acc l)
+                    (WSemiring.add S inst acc (List.foldl S Y (fn [a :- S] (fn [y :- Y] (WSemiring.add S inst a (g y)))) (WSemiring.zero S inst) l)))
+               (induction l generalizing acc)
+               (all_goals (simp [List.foldl_cons List.foldl_nil]))
+               (all_goals (first (ac_rfl)
+                                 (and_then (rw [(ih_tail (WSemiring.add S inst acc (g head)))])
+                                           (and_then (rw [(ih_tail (WSemiring.add S inst (WSemiring.zero S inst) (g head)))])
+                                                     (ac_rfl)))))))
+      (catch Throwable _ nil)))
+  ;; foldl_const_mul_pull (acc-general): a loop-invariant LEFT factor `c·` pulls out of an additive
+  ;; WSemiring fold — `foldl (λa y. a + c·g y) (c·acc) l = c·(foldl (λa y. a + g y) acc l)`. cons
+  ;; reassociates the accumulator with mul_add REVERSED, then the quantified IH. (Distributivity, not
+  ;; AC — so ac_rfl does NOT apply; this is the genuine semiring step the frame rule needs.)
+  (when-not (has? "List.foldl_const_mul_pull_wsem_gen")
+    (try
+      (eval '(ansatz.core/theorem List.foldl_const_mul_pull_wsem_gen
+               [S :- (Sort 1), inst :- (WSemiring S), al :- (Sort 1), c :- S, g :- (=> al S), l :- (List al), acc :- S]
+               (= S (List.foldl S al (fn [a :- S] (fn [y :- al] (WSemiring.add S inst a (WSemiring.mul S inst c (g y))))) (WSemiring.mul S inst c acc) l)
+                    (WSemiring.mul S inst c (List.foldl S al (fn [a :- S] (fn [y :- al] (WSemiring.add S inst a (g y)))) acc l)))
+               (induction l generalizing acc)
+               (all_goals (simp [List.foldl_cons List.foldl_nil]))
+               (rw [<- (WSemiring.mul_add S inst c acc (g head))])
+               (rw [(ih_tail (WSemiring.add S inst acc (g head)))])))
+      (catch Throwable _ nil)))
+  ;; foldl_const_mul_pull (0-init): the consumed form, derived from the acc-general lemma by
+  ;; instantiating acc := zero and collapsing the `c·0 → 0` annihilator (the thin form of the old
+  ;; `Eq.trans … (Eq.symm mul_zero)`).
+  (when-not (has? "List.foldl_const_mul_pull")
+    (try
+      (eval '(ansatz.core/theorem List.foldl_const_mul_pull
+               [S :- (Sort 1), inst :- (WSemiring S), al :- (Sort 1), c :- S, g :- (=> al S), l :- (List al)]
+               (= S (List.foldl S al (fn [a :- S] (fn [y :- al] (WSemiring.add S inst a (WSemiring.mul S inst c (g y))))) (WSemiring.zero S inst) l)
+                    (WSemiring.mul S inst c (List.foldl S al (fn [a :- S] (fn [y :- al] (WSemiring.add S inst a (g y)))) (WSemiring.zero S inst) l)))
+               (rw [<- (List.foldl_const_mul_pull_wsem_gen S inst al c g l (WSemiring.zero S inst))])
+               (rw [(WSemiring.mul_zero S inst c)])))
+      (catch Throwable _ nil)))
+
   ;; ── CONDITIONAL SEPARATION (semiring-generic) ───────────────────────────────────────────────────
   ;; cond_and_mul_split: a separable conjunctive guard factors a weighted product —
   ;;   cond(a&&b)(u·v) 0 = (cond a u 0)·(cond b v 0) — so a guarded join weight splits per side and the
