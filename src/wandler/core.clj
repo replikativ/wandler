@@ -23,7 +23,6 @@
             [wandler.kmap :as kmap]
             [wandler.algebra :as algebra]
             [wandler.runtime :as rt]
-            [wandler.optimize :as opt]
             [wandler.clean.optimize :as copt]))
 
 (defonce ^{:doc "fn-name → the optimizer report for its last definition (the explain source)."}
@@ -199,7 +198,7 @@
    also :static (the plan WITHOUT the measured profile)."
   [env term sample & {:keys [lctx compare?]}]
   (let [profile (profile-selectivity env term sample)
-        res (assoc (opt/optimize-cost env term :lctx lctx :selectivity profile) :profile profile)]
+        res (assoc (copt/optimize-cost env term :lctx lctx :selectivity profile) :profile profile)]
     (if compare?
-      (assoc res :static (opt/optimize-cost env term :lctx lctx))
+      (assoc res :static (copt/optimize-cost env term :lctx lctx))
       res)))
