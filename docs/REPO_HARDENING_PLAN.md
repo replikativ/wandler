@@ -335,7 +335,25 @@ Phase 5.1 is therefore a pure **wandler law-statement thinning**, no ansatz work
 - **Deferred (deeper):** making wandler `Map.*` signatures implicit (unlocks the Map.*-heavy
   verbosity); the instance-coercion `(WSemiring.toWAddMonoid m)` sites (5.2).
 
-### 5.2 Instance-argument synthesis in statement position — L — ☐
+### 5.2 Instance-argument synthesis — L — ☐ BLOCKED on a recursion-machinery fix
+Investigated against `../lean4` (per request). **Lean-4 finding** (`Elab/Structure.lean:1514`
+`addParentInstances`): Lean does NOT term-coerce explicit structure-parent args — it registers
+`{Sub}.to{Super}` as an INSTANCE and fills the parent by INSTANCE RESOLUTION. So the faithful
+fix is: make `wsum`'s monoid arg instance-implicit `[WAddMonoid S]`, register the parent
+projection as an instance, write laws with `[WSemiring S]` hyps; resolution then supplies
+`WAddMonoid` from a local `WSemiring` (no `(WSemiring.toWAddMonoid m)`). Surface supports the
+`:inst` binder marker; `parent-class-sources` (instance.clj) is extensible.
+
+**BLOCKER found (attempted, reverted to keep ansatz green):** making `wsum`'s `m` instance-
+implicit breaks `wsum`'s OWN structural-recursion verification. The self-call `(wsum tl)` is
+missed by the structural-recursion detector (`surface/match.clj:419-432` `replace-self-ih`):
+it resolves an *implicit* fixed-prefix arg (`{S}`, via zonk) but NOT a *synthesized inst-implicit*
+arg back to the param fvar, so the call routes to the WF path → "not structurally decreasing".
+Fix = resolve the synthesized inst-implicit prefix arg to the param fvar before `replace-self-ih`
+(instance-synthesis ordering inside recursion detection) — a focused, subtle change to the
+verified recursion core, deserving its own session. THEN: wsum :inst + parent instance + all
+laws/tactic-refs + new ansatz release. Until then, the explicit `(WSemiring.toWAddMonoid m)` is
+correct (Lean's `m.toWAddMonoid` longhand), just not synthesized.
 ~35 explicit instance args (`(WSemiring.toWAddMonoid m)`, `instBEqOfDecidableEq`).
 Lean's instance resolution fills these. Implement instance synthesis for the
 registered carrier/typeclass instances (we already have the registry). Composes
