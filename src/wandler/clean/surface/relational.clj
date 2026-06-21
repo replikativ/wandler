@@ -61,9 +61,13 @@
 ;; ---- elaborators -----------------------------------------------------------
 
 (defn- distinct-elaborator [est args]
-  ;; (distinct coll) → List.eraseDups α (BEq α) coll
-  (let [coll (api/elab est (first args))
-        a (coll/list-elem est coll)
+  ;; (distinct coll) → List.eraseDups α (BEq α) coll. A refined `:set` receiver is coerced to its
+  ;; base List (Subtype.val) while the Nodup refinement rides on it — so the optimizer's certified
+  ;; DISTINCT-removal can then drop this eraseDups outright (the dedup is provably redundant).
+  (let [coll0 (api/elab est (first args))
+        [coll a] (or (coll/unwrap-refined-list est coll0)
+                     (throw (ex-info "distinct: receiver type is not an inferable (List _) or a refined :set"
+                                     {:kind :uninferable-receiver})))
         beq (or (resolve-beq (:env est) a)
                 (throw (ex-info "distinct: no BEq/DecidableEq instance for element type"
                                 {:elem (when a (type-name a))})))]

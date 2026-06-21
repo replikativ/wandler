@@ -4,6 +4,7 @@
    kernel-checked whole-term proof (congrArg over List.filter_eq_self.mpr ∘ prove-const). Gated on
    an Init env."
   (:require [wandler.clean.optimize.filter-elim :as fe]
+            [wandler.clean.optimize :as opt]
             [wandler.clean.laws.uniqueness :as uniq]
             [wandler.test-env :as test-env]
             [ansatz.core :as a]
@@ -74,6 +75,11 @@
             (is (true? (:verified? res)) "the whole-term rewrite re-checks (LawfulBEq synthesized)")
             (is (= [:distinct-elim] (:rewrites res)))
             (is (= (:term res) (e/app* (C "List.length" [u]) Nat xs)) "dedup gone → length (val s)"))
+          (testing "the full cost-driven cascade ADOPTS distinct-elim (the :rw composition key)"
+            (let [oc (opt/optimize-cost ke orig :lctx lctx)]
+              (is (= [:distinct-elim] (vec (:rewrites oc))) "the cascade keeps the rewrite label")
+              (is (true? (:verified? oc)))
+              (is (= (:term oc) (e/app* (C "List.length" [u]) Nat xs)) "cascade output = dedup-free")))
           (testing "an eraseDups over a PLAIN (non-refined) list is NOT eliminated (sound)"
             (let [plain (e/fvar 2)
                   lctx2 {2 {:name "ys" :type listNat}}

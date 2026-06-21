@@ -42,6 +42,26 @@
                                            (if t (e/->string t) "nil")) ")")
                       {:kind :uninferable-receiver}))))
 
+(defn unwrap-refined-list
+  "Coerce a collection receiver to a bare `List α` for a list verb. Returns `[list-coll α]`:
+   for `coll : List α` → `[coll α]`; for a refined `coll : Subtype (List α) P` (e.g. a malli `:set`)
+   → `[(Subtype.val … coll) α]` (the underlying list); nil if neither. This is what lets a verb like
+   `distinct` operate over a `:set` param: it works on the base list and the refinement (Nodup) rides
+   on `coll` for the optimizer to consume."
+  [est coll]
+  (let [t (api/arg-type est coll)
+        [h args] (when t (e/get-app-fn-args t))
+        hn (when (and h (e/const? h)) (name/->string (e/const-name h)))]
+    (cond
+      (and (= hn "List") (seq args)) [coll (first args)]
+      (and (= hn "Subtype") (= 2 (count args)))
+      (let [base (first args) P (second args)
+            [bh bargs] (e/get-app-fn-args base)]
+        (when (and bh (e/const? bh) (= "List" (name/->string (e/const-name bh))) (seq bargs))
+          (let [u (or (first (e/const-levels h)) lvl/zero)]
+            [(e/app* (e/const' (name/from-string "Subtype.val") [u]) base P coll) (first bargs)])))
+      :else nil)))
+
 ;; operator sugar: a bare `+`/`*`/… function argument → its kernel constant
 (def ^:private op->const
   {'+ "Nat.add" '* "Nat.mul" '- "Nat.sub" 'inc "Nat.succ"})

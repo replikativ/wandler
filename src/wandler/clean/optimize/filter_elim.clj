@@ -120,8 +120,10 @@
                            (filter-eq-nil-eq  u alpha p xs (:proof pc)))  ; filter = []
                       result (replace-closed term flt repl)
                       proof (congr-whole env (or lctx {}) term flt repl eq u)
-                      res {:term result :proof proof
-                           :rewrites [(if always-true? :filter-elim :filter-elim-empty)]}]
+                      rw (if always-true? :filter-elim :filter-elim-empty)
+                      ;; `:rw` (singular) is the cascade's composition key (faq.clj reorder branch);
+                      ;; `:rewrites` is for direct callers/tests.
+                      res {:term result :proof proof :rw rw :rewrites [rw]}]
                   (when (cert/verified-rewrite? env term res :lctx lctx)
                     (assoc res :verified? true)))))
             (catch Throwable _ nil)))
@@ -181,7 +183,7 @@
                 (let [eq (e/app* (C "nodup_eraseDups" []) alpha inst linst xs prop)
                       result (replace-closed term ed xs)
                       proof (congr-whole env (or lctx {}) term ed xs eq lvl/zero)
-                      res {:term result :proof proof :rewrites [:distinct-elim]}]
+                      res {:term result :proof proof :rw :distinct-elim :rewrites [:distinct-elim]}]
                   (when (cert/verified-rewrite? env term res :lctx lctx)
                     (assoc res :verified? true)))))
             (catch Throwable _ nil)))

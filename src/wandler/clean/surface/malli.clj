@@ -200,6 +200,15 @@
 (defn- klist [a] (e/app (e/const' (nm "List") [lvl/zero]) a))
 (defn- koption [a] (e/app (e/const' (nm "Option") [lvl/zero]) a))
 
+(defn- ksubtype-nodup
+  "`Subtype (List X) (fun l => List.Nodup X l)` — the carrier for a malli `:set` (a no-duplicates
+   list). The Nodup proof rides the value (`Subtype.property`) and licenses the optimizer's certified
+   DISTINCT-removal (`nodup_eraseDups`), so a `(distinct xs)` over a `:set` param drops away."
+  [X]
+  (let [listX (klist X)
+        P (e/lam "l" listX (e/app* (e/const' (nm "List.Nodup") [lvl/zero]) X (e/bvar 0)) :default)]
+    (e/app* (e/const' (nm "Subtype") [u1]) listX P)))
+
 (defn- deref-registry
   "Resolve a malli schema REFERENCE — a registered keyword (`:order`, `:user/email`),
    `[:ref k]`, or `[:schema {:registry …} k]` — through the registry to its underlying
@@ -256,6 +265,9 @@
         :string (let [props (when (map? (first more)) (first more))]
                   (or (ksubtype-string (:min props) (:max props)) (kconst "String")))
         :sequential (klist (malli->type-expr (first more)))
+        ;; a `:set` is a no-duplicates list → the Nodup refinement carrier, which licenses certified
+        ;; DISTINCT-removal (a `(distinct xs)` over it is provably redundant).
+        :set (ksubtype-nodup (malli->type-expr (first more)))
         :maybe (koption (malli->type-expr (first more)))
         :tuple (kprods (map malli->type-expr more))
         :map (kprods (map (fn [entry]
