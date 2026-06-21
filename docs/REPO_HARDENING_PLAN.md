@@ -344,16 +344,24 @@ projection as an instance, write laws with `[WSemiring S]` hyps; resolution then
 `WAddMonoid` from a local `WSemiring` (no `(WSemiring.toWAddMonoid m)`). Surface supports the
 `:inst` binder marker; `parent-class-sources` (instance.clj) is extensible.
 
-**BLOCKER found (attempted, reverted to keep ansatz green):** making `wsum`'s `m` instance-
-implicit breaks `wsum`'s OWN structural-recursion verification. The self-call `(wsum tl)` is
-missed by the structural-recursion detector (`surface/match.clj:419-432` `replace-self-ih`):
-it resolves an *implicit* fixed-prefix arg (`{S}`, via zonk) but NOT a *synthesized inst-implicit*
-arg back to the param fvar, so the call routes to the WF path → "not structurally decreasing".
-Fix = resolve the synthesized inst-implicit prefix arg to the param fvar before `replace-self-ih`
-(instance-synthesis ordering inside recursion detection) — a focused, subtle change to the
-verified recursion core, deserving its own session. THEN: wsum :inst + parent instance + all
-laws/tactic-refs + new ansatz release. Until then, the explicit `(WSemiring.toWAddMonoid m)` is
-correct (Lean's `m.toWAddMonoid` longhand), just not synthesized.
+**Foundation blocker FIXED (faithful to Lean), validated:** making `wsum`'s `m` instance-implicit
+broke `wsum`'s OWN structural-recursion verification — the self-call `(wsum tl)` was missed by
+`surface/match.clj` `replace-self-ih`, which required every non-recursive prefix arg to be the
+*bare unchanged param fvar*; the synthesized inst-implicit `[m]` isn't, so it routed to the WF
+path → "not structurally decreasing".
+
+Checked `../lean4` (`Elab/PreDefinition/FixedParams.lean:217`): Lean's fixed-param test is
+`isDefEq param arg` (def-eq, reducible) on fully-elaborated calls — NOT a skip-by-binder-kind.
+So the FAITHFUL fix (committed-pending suite) = replace the syntactic bare-fvar check with the
+elaborator's `unify` (def-eq + mvar-solving, snapshot/restore on failure), so a synthesized
+`{S}`/`[m]` self-call arg resolves to its param fvar. VALIDATED: instance-implicit `wsum` now
+defines `wsum => [[S :implicit] [m :inst-implicit] [xs :default]]`. Generalizes to any
+instance-implicit recursive `a/defn`.
+
+**Remaining 5.2 (on top of the recursion fix):** register the `WAddMonoid ← WSemiring` parent
+projection (`tactic/instance.clj` `parent-class-sources`), convert `wsum` + all law binders to
+`[…]`-instance form, drop `(WSemiring.toWAddMonoid m)`/explicit `(wsum m …)`, fix law tactic-refs,
+new ansatz release. Suite-gated per layer.
 ~35 explicit instance args (`(WSemiring.toWAddMonoid m)`, `instBEqOfDecidableEq`).
 Lean's instance resolution fills these. Implement instance synthesis for the
 registered carrier/typeclass instances (we already have the registry). Composes
