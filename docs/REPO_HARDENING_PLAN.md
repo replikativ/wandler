@@ -54,9 +54,13 @@ PR opened: replikativ/ansatz#44 (`rethink-dev-experience` → `main`, 93 commits
 description). CI runs on the PR; CircleCI deploys (Clojars) + GitHub-releases only on
 merge to `main` — owner-driven, not automated here.
 
-### 0.3 Bump wandler's pin — ☐ BLOCKED on the #44 merge+release
-Once CI publishes the new `0.1.x`, set `../wandler/deps.edn` `0.1.60` → new release; keep
-`:local-ansatz` for dev. (Until then, wandler develops against `:local-ansatz`.)
+### 0.3 Bump wandler's pin — ☑ DONE (0.1.60 → 0.1.61, commit b9fbd02)
+PR #44 squash-merged + released as **0.1.61**. Pin bumped; wandler compiles + frame-test
+passes against the PUBLISHED jar (helpers confirmed in-jar). Full suite green on identical
+code (355/1609/0). NB: some integration tests (`faq-plan-test` etc.) error when run in
+ISOLATION (`ClassNotFoundException: List.foldl` — unpopulated surface-registry, the known
+test-isolation quarantine, pin-independent); they pass in the full suite. `:local-ansatz`
+remains for unreleased-feature dev.
 
 ### 0.2-orig Cut the ansatz PR + release — (superseded; see 0.2 above)
 - Open PR `rethink-dev-experience → main` for ansatz with a curated description
