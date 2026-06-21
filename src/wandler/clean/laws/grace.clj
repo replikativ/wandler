@@ -20,7 +20,11 @@
             [ansatz.kernel.env :as env]
             [ansatz.kernel.name :as nm]
             [ansatz.kernel.expr :as e]
-            [ansatz.kernel.level :as lvl]))
+            [ansatz.kernel.level :as lvl]
+            ;; Stage 2 (blockfold) reuses the verified hand-built Perm-cluster builders. They sit on
+            ;; the clean foundation (Map.join, Map.bucket_content) — only the Perm slice + blockfold
+            ;; need admitting. (To be inlined here when wandler.laws.proofs is deleted.)
+            [wandler.laws.proofs :as rp]))
 
 ;; ── helpers ─────────────────────────────────────────────────────────────────
 (defn- nmk [s] (nm/from-string s))
@@ -123,10 +127,43 @@
                (#(e/lam "B" natT (e/abstract1 % 2) :default)) (#(e/lam "A" type0 (e/abstract1 % 1) :default)))]
     (env/mk-thm (nmk "List.chunk_nil") [] goal pf)))
 
+(defn- thm! [s builder]
+  (when-not (has? s)
+    (let [[g p] (builder)]
+      (when (and g p) (admit! (env/mk-thm (nmk s) [] g p))))))
+
+(defn- install-blockfold!
+  "Stage 2 — the block-partition spill algebra `Map.foldl_join_blockfold` and its Perm-cluster
+   dependencies, on top of the clean foundation (Map.join, Map.bucket_content). Each builder is
+   the verified hand-built proof (kernel `check-constant` strict). NO Fubini reformulation yet —
+   this is the drop-in port that retires the OLD relational.clj as the grace-hash provider."
+  []
+  ;; Map.join's defining equation (`Map.join.eq_unfold`) — the filter-form Perm proofs simp with it.
+  ;; Clean foundation provides Map.join but not its unfold lemma; admit it here (as old relational did).
+  (when-not (has? "Map.join.eq_unfold")
+    (try (admit! ((requiring-resolve 'wandler.clean.optimize/unfold-eqn-ci) (a/env) "Map.join"))
+         (catch Throwable _ nil)))
+  ;; §2 List.Perm helpers
+  (thm! "List.flatMap_const_nil"           rp/prove-flatMap-const-nil)
+  (thm! "List.flatMap_congr_perm"          rp/prove-flatMap-congr-perm)
+  (thm! "List.flatMap_append_distrib_perm" rp/prove-flatMap-append-distrib)
+  (thm! "List.flatMap_cons_distrib_perm"   rp/prove-flatMap-cons-distrib)
+  (thm! "List.flatMap_map_comm"            rp/prove-flatMap-map-comm)
+  (thm! "List.foldl_cons_perm"             rp/prove-foldflip-perm)
+  ;; §5 grace-hash: build-side distributes over append (filter form) → process in blocks; a
+  ;; left-commutative aggregate is invariant under the block partition's permutation.
+  (thm! "Map.join_filter_append_perm"      rp/prove-join-filter-append-perm)
+  (thm! "List.foldl_perm_lcomm"            rp/prove-foldl-perm-lcomm)
+  (thm! "Map.join_filter_form_perm"        rp/prove-join-filter-form-perm)
+  (thm! "Map.join_append_perm"             rp/prove-join-append-perm)
+  (thm! "Map.join_nil_right"               rp/prove-join-nil-right)
+  (thm! "Map.join_blockfold_perm"          rp/prove-join-blockfold-perm)
+  (thm! "Map.foldl_join_blockfold"         rp/prove-foldl-join-blockfold))
+
 (defn install!
   "Install the grace-hash spill laws (idempotent). Returns :installed.
    Stage 1: List.chunk + support lemmas + the THIN List.flatten_chunk.
-   Stage 2 (pending): Map.foldl_join_blockfold."
+   Stage 2: Map.foldl_join_blockfold + its Perm-cluster deps (on the clean foundation)."
   []
   (when-not (has? "List.chunk") (admit! (chunk-def-ci)))
   (when-not (has? "List.casesOn_nil") (admit! (casesOn-nil-ci)))
@@ -158,4 +195,5 @@
                (all_goals (try (simp_all [List.casesOn_nil List.casesOn_cons List.flatten_cond Bool.cond_self
                                           List.chunk_nil List.flatten_nil List.flatten_cons List.cons_append List.nil_append])))))
       (catch Throwable _ nil)))
+  (install-blockfold!)
   :installed)
