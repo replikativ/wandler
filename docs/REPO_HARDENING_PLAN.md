@@ -335,7 +335,20 @@ Phase 5.1 is therefore a pure **wandler law-statement thinning**, no ansatz work
 - **Deferred (deeper):** making wandler `Map.*` signatures implicit (unlocks the Map.*-heavy
   verbosity); the instance-coercion `(WSemiring.toWAddMonoid m)` sites (5.2).
 
-### 5.2 Instance-argument synthesis — L — ☐ BLOCKED on a recursion-machinery fix
+### 5.2 Instance-argument synthesis — L — ☑ DONE (ansatz PR #45 → 0.1.62; wandler 44f7d3c)
+**Shipped.** `wsum`'s monoid is now instance-implicit `[m : WAddMonoid S]`, synthesized at
+every call site; `parent-class-sources` registers `WAddMonoid ← WSemiring` so resolution fills a
+`WAddMonoid` goal from a local `WSemiring` instance via the `toWAddMonoid` projection. ansatz
+side (PR #45, commits d84edea + d0f5ae1): the def-eq fixed-param recursion fix + `wsum` + all 11
+prelude big-operator laws converted, suite 485/1248/0. wandler side (44f7d3c, gated on 0.1.62):
+frame/bucket/reorder laws drop every `(WSemiring.toWAddMonoid m)` coercion and threaded
+`(wsum m …)`; all 8 laws kernel-verify, suite 355/1609/0 against `:local-ansatz`. faq.clj is OUT
+of scope (0 `wsum`; it's the Map-`foldl` `inst`-explicit cluster — a separate idiom).
+The elaborated kernel terms are unchanged (instance-implicit changes only the surface), so the
+optimizer/egraph/physical recognizers are unaffected. The detailed investigation record below is
+retained for provenance.
+
+#### Original investigation (retained)
 Investigated against `../lean4` (per request). **Lean-4 finding** (`Elab/Structure.lean:1514`
 `addParentInstances`): Lean does NOT term-coerce explicit structure-parent args — it registers
 `{Sub}.to{Super}` as an INSTANCE and fills the parent by INSTANCE RESOLUTION. So the faithful
