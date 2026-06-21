@@ -110,13 +110,13 @@
   ;; aggregate frame laws (`aggJoin_split`/`aggJoin_factor`) apply to a real group_by Map.join.
   (a/deftheorem wsum_map_Map_join
     [K :- Type, X :- Type, Y :- Type, S :- Type, d :- (DecidableEq K),
-     m :- (WAddMonoid S), hc :- (Std.Commutative S (WAddMonoid.add m)),
+     m :- (WAddMonoid S) :inst, hc :- (Std.Commutative S (WAddMonoid.add m)),
      kf :- (=> X K), lf :- (=> Y K), h :- (=> (Prod X Y) S), xs :- (List X), ys :- (List Y)]
     (= S
-       (wsum m (List.map h (Map.join K X Y d kf lf xs ys)))
-       (wsum m (List.map h
-                 (List.flatMap (fn [x :- X] (List.map (fn [y :- Y] (Prod.mk x y))
-                                 (List.filter (fn [y :- Y] (BEq.beq K (instBEqOfDecidableEq K d) (kf x) (lf y))) ys))) xs))))
+       (wsum (List.map h (Map.join K X Y d kf lf xs ys)))
+       (wsum (List.map h
+               (List.flatMap (fn [x :- X] (List.map (fn [y :- Y] (Prod.mk x y))
+                               (List.filter (fn [y :- Y] (BEq.beq K (instBEqOfDecidableEq K d) (kf x) (lf y))) ys))) xs))))
     (rw (Map.join_eq K X Y d kf lf xs ys))
     (induction xs)
     (all_goals (simp_all [List.flatMap_nil List.flatMap_cons List.map_append List.map_nil
@@ -129,21 +129,21 @@
   ;; `wsum_map_Map_join` (real join → clean filter-flatMap form) then the clean `aggJoin_factor`
   ;; (frame). Carrier-generic over any commutative WSemiring.
   (a/deftheorem Map_aggJoin_factor
-    [K :- Type, X :- Type, Y :- Type, S :- Type, dec :- (DecidableEq K), m :- (WSemiring S),
+    [K :- Type, X :- Type, Y :- Type, S :- Type, dec :- (DecidableEq K), m :- (WSemiring S) :inst,
      hc :- (Std.Commutative S (WAddMonoid.add (WSemiring.toWAddMonoid m))),
      kf :- (=> X K), lf :- (=> Y K), w :- (=> X S), v :- (=> Y S), xs :- (List X), ys :- (List Y)]
     (= S
-       (wsum (WSemiring.toWAddMonoid m)
+       (wsum
          (List.map (fn [pr :- (Prod X Y)] (WSemiring.mul m (w (Prod.fst pr)) (v (Prod.snd pr))))
            (Map.join K X Y dec kf lf xs ys)))
-       (wsum (WSemiring.toWAddMonoid m)
+       (wsum
          (List.map (fn [x :- X]
            (WSemiring.mul m (w x)
-             (wsum (WSemiring.toWAddMonoid m)
+             (wsum
                (List.map v (List.filter (fn [y :- Y] (BEq.beq K (instBEqOfDecidableEq K dec) (kf x) (lf y))) ys))))) xs)))
-    (rw (wsum_map_Map_join K X Y S dec (WSemiring.toWAddMonoid m) hc kf lf
+    (rw (wsum_map_Map_join K X Y S dec hc kf lf
           (fn [pr :- (Prod X Y)] (WSemiring.mul m (w (Prod.fst pr)) (v (Prod.snd pr)))) xs ys))
-    (rw (aggJoin_factor X Y S m
+    (rw (aggJoin_factor X Y S
           (fn [x :- X] (fn [y :- Y] (BEq.beq K (instBEqOfDecidableEq K dec) (kf x) (lf y)))) w v xs ys)))
   ;; Map_aggJoin_reorder — THE JOIN-COMMUTATIVITY / DRIVE-DIRECTION law over a real Map.join: the
   ;; aggregate of an equi-join is invariant under swapping the two inputs, so the planner may build the
@@ -153,18 +153,18 @@
   ;; with the swapped-drive `lf y == kf x`. Retires the old `Map.join_length_comm`/Perm reorder cluster.
   (a/deftheorem Map_aggJoin_reorder
     [K :- Type, X :- Type, Y :- Type, S :- Type, dec :- (DecidableEq K),
-     m :- (WAddMonoid S), hc :- (Std.Commutative S (WAddMonoid.add m)),
+     m :- (WAddMonoid S) :inst, hc :- (Std.Commutative S (WAddMonoid.add m)),
      kf :- (=> X K), lf :- (=> Y K), f :- (=> X (=> Y S)), xs :- (List X), ys :- (List Y)]
     (= S
-       (wsum m (List.map (fn [pr :- (Prod X Y)] (f (Prod.fst pr) (Prod.snd pr)))
-                 (Map.join K X Y dec kf lf xs ys)))
-       (wsum m (List.map (fn [pr :- (Prod Y X)] (f (Prod.snd pr) (Prod.fst pr)))
-                 (Map.join K Y X dec lf kf ys xs))))
-    (rw (wsum_map_Map_join K X Y S dec m hc kf lf
+       (wsum (List.map (fn [pr :- (Prod X Y)] (f (Prod.fst pr) (Prod.snd pr)))
+               (Map.join K X Y dec kf lf xs ys)))
+       (wsum (List.map (fn [pr :- (Prod Y X)] (f (Prod.snd pr) (Prod.fst pr)))
+               (Map.join K Y X dec lf kf ys xs))))
+    (rw (wsum_map_Map_join K X Y S dec hc kf lf
           (fn [pr :- (Prod X Y)] (f (Prod.fst pr) (Prod.snd pr))) xs ys))
-    (rw (aggJoin_reorder X Y S m hc
+    (rw (aggJoin_reorder X Y S hc
           (fn [x :- X] (fn [y :- Y] (BEq.beq K (instBEqOfDecidableEq K dec) (kf x) (lf y)))) f xs ys))
-    (rw (wsum_map_Map_join K Y X S dec m hc lf kf
+    (rw (wsum_map_Map_join K Y X S dec hc lf kf
           (fn [pr :- (Prod Y X)] (f (Prod.snd pr) (Prod.fst pr))) ys xs))
     ;; goal-only simp (not simp_all) — the predicate reconciliation needs only the goal, and
     ;; the lighter pass installs reliably under full-suite memory pressure.

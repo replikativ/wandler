@@ -45,16 +45,16 @@
   ;; aggJoin_split — the FAQ factorization. Pure simp: unfold the inlined join (map over a flatMap of
   ;; a filtered map), fuse the maps, push the sum through flatten, reduce the composition. No List.Perm.
   (a/deftheorem aggJoin_split
-    [X :- Type, Y :- Type, S :- Type, m :- (WAddMonoid S),
+    [X :- Type, Y :- Type, S :- Type, m :- (WAddMonoid S) :inst,
      p :- (=> X (=> Y Bool)), f :- (=> X (=> Y S)), xs :- (List X), ys :- (List Y)]
     (= S
-       (wsum m (List.map (fn [pr :- (Prod X Y)] (f (Prod.fst pr) (Prod.snd pr)))
-                 (List.flatMap
-                   (fn [x :- X] (List.map (fn [y :- Y] (Prod.mk x y))
-                                 (List.filter (p x) ys))) xs)))
-       (wsum m (List.map (fn [x :- X]
-                 (wsum m (List.map (fn [y :- Y] (f x y))
-                           (List.filter (p x) ys)))) xs)))
+       (wsum (List.map (fn [pr :- (Prod X Y)] (f (Prod.fst pr) (Prod.snd pr)))
+               (List.flatMap
+                 (fn [x :- X] (List.map (fn [y :- Y] (Prod.mk x y))
+                               (List.filter (p x) ys))) xs)))
+       (wsum (List.map (fn [x :- X]
+               (wsum (List.map (fn [y :- Y] (f x y))
+                       (List.filter (p x) ys)))) xs)))
     (simp [List.map_flatMap List.map_map wsum_flatten Function.comp_def]))
   ;; aggJoin_factor — THE FAQ FRAME RULE for a separable weight `w x * v y` (lean-wandler Laws/Frame.lean
   ;; `aggJoin_factor`): the right factor `v` is summed ONCE per matching bucket, not once per pair, so an
@@ -64,41 +64,41 @@
   ;; (`aggJoin_split` with the separable f) then pull the loop-invariant `w x` out of each inner sum
   ;; (`wsum_map_mul_left`). Carrier-generic over any WSemiring (the multiplication lives there).
   (a/deftheorem aggJoin_factor
-    [X :- Type, Y :- Type, S :- Type, m :- (WSemiring S),
+    [X :- Type, Y :- Type, S :- Type, m :- (WSemiring S) :inst,
      p :- (=> X (=> Y Bool)), w :- (=> X S), v :- (=> Y S), xs :- (List X), ys :- (List Y)]
     (= S
-       (wsum (WSemiring.toWAddMonoid m)
+       (wsum
          (List.map
            (fn [pr :- (Prod X Y)] (WSemiring.mul m (w (Prod.fst pr)) (v (Prod.snd pr))))
            (List.flatMap
              (fn [x :- X] (List.map (fn [y :- Y] (Prod.mk x y))
                            (List.filter (p x) ys))) xs)))
-       (wsum (WSemiring.toWAddMonoid m)
+       (wsum
          (List.map (fn [x :- X]
            (WSemiring.mul m (w x)
-             (wsum (WSemiring.toWAddMonoid m) (List.map v (List.filter (p x) ys))))) xs)))
-    (rw (aggJoin_split X Y S (WSemiring.toWAddMonoid m) p
+             (wsum (List.map v (List.filter (p x) ys))))) xs)))
+    (rw (aggJoin_split X Y S p
           (fn [x :- X] (fn [y :- Y] (WSemiring.mul m (w x) (v y)))) xs ys))
     (simp [wsum_map_mul_left]))
   ;; aggJoin_reorder — the join-commutativity capstone. Factor both orders, filter→guard, Fubini.
   (a/deftheorem aggJoin_reorder
-    [X :- Type, Y :- Type, S :- Type, m :- (WAddMonoid S),
+    [X :- Type, Y :- Type, S :- Type, m :- (WAddMonoid S) :inst,
      hc :- (Std.Commutative S (WAddMonoid.add m)),
      p :- (=> X (=> Y Bool)), f :- (=> X (=> Y S)),
      xs :- (List X), ys :- (List Y)]
     (= S
-       (wsum m (List.map (fn [pr :- (Prod X Y)] (f (Prod.fst pr) (Prod.snd pr)))
-                 (List.flatMap
-                   (fn [x :- X] (List.map (fn [y :- Y] (Prod.mk x y))
-                                 (List.filter (p x) ys))) xs)))
-       (wsum m (List.map (fn [pr :- (Prod Y X)] (f (Prod.snd pr) (Prod.fst pr)))
-                 (List.flatMap
-                   (fn [y :- Y] (List.map (fn [x :- X] (Prod.mk y x))
-                                 (List.filter (fn [x :- X] (p x y)) xs))) ys))))
-    (rw (aggJoin_split X Y S m p f xs ys))
-    (rw (aggJoin_split Y X S m (fn [y :- Y] (fn [x :- X] (p x y)))
+       (wsum (List.map (fn [pr :- (Prod X Y)] (f (Prod.fst pr) (Prod.snd pr)))
+               (List.flatMap
+                 (fn [x :- X] (List.map (fn [y :- Y] (Prod.mk x y))
+                               (List.filter (p x) ys))) xs)))
+       (wsum (List.map (fn [pr :- (Prod Y X)] (f (Prod.snd pr) (Prod.fst pr)))
+               (List.flatMap
+                 (fn [y :- Y] (List.map (fn [x :- X] (Prod.mk y x))
+                               (List.filter (fn [x :- X] (p x y)) xs))) ys))))
+    (rw (aggJoin_split X Y S p f xs ys))
+    (rw (aggJoin_split Y X S (fn [y :- Y] (fn [x :- X] (p x y)))
                       (fn [y :- Y] (fn [x :- X] (f x y))) ys xs))
     (simp [sum_filter_map])
-    (rw (wsum_map_sum_comm X Y S m hc
+    (rw (wsum_map_sum_comm X Y S hc
           (fn [x :- X] (fn [y :- Y] (if (p x y) (f x y) (WAddMonoid.zero m)))) xs ys)))
   :installed)
