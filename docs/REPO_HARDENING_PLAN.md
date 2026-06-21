@@ -133,7 +133,13 @@ shipping small/medium alone does NOT un-skip the integration suite — those 269
 need full Init, which is not git-shippable. (And `init-small` is too thin regardless;
 if we ship a git fixture it's `init-medium`.)
 
-### 2.1 Make storeless runs honest — M — ☐ — **decision point**
+### 2.0 CI honesty gate — S — ☑ (test/wandler/store_gate_test.clj)
+`wandler.store-gate-test`: prints a loud banner when the store is absent (never silent
+green); with `WANDLER_REQUIRE_STORE=1` (CI) a missing store is a HARD FAILURE. Verified:
+passes store-present (±env var); fails store-absent+env var; banners store-absent local.
+This is the mechanism — the items below wire it / widen coverage and are the remainder.
+
+### 2.1 Make storeless runs honest — M — ◐ — **decision point**
 Three composable pieces (recommend **B now + C as the real-coverage follow-up**):
 - **A. Git-track `init-medium` (3.2M)** + migrate a meaningful subset of the 269
   tests onto `init-medium-env` where they only need core lemmas → a genuine CI
