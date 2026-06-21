@@ -48,13 +48,13 @@
     [X :- Type, Y :- Type, S :- Type, m :- (WAddMonoid S),
      p :- (=> X (=> Y Bool)), f :- (=> X (=> Y S)), xs :- (List X), ys :- (List Y)]
     (= S
-       (wsum m (List.map (Prod X Y) S (fn [pr :- (Prod X Y)] (f (Prod.fst pr) (Prod.snd pr)))
-                 (List.flatMap X (Prod X Y)
-                   (fn [x :- X] (List.map Y (Prod X Y) (fn [y :- Y] (Prod.mk x y))
-                                 (List.filter Y (p x) ys))) xs)))
-       (wsum m (List.map X S (fn [x :- X]
-                 (wsum m (List.map Y S (fn [y :- Y] (f x y))
-                           (List.filter Y (p x) ys)))) xs)))
+       (wsum m (List.map (fn [pr :- (Prod X Y)] (f (Prod.fst pr) (Prod.snd pr)))
+                 (List.flatMap
+                   (fn [x :- X] (List.map (fn [y :- Y] (Prod.mk x y))
+                                 (List.filter (p x) ys))) xs)))
+       (wsum m (List.map (fn [x :- X]
+                 (wsum m (List.map (fn [y :- Y] (f x y))
+                           (List.filter (p x) ys)))) xs)))
     (simp [List.map_flatMap List.map_map wsum_flatten Function.comp_def]))
   ;; aggJoin_factor — THE FAQ FRAME RULE for a separable weight `w x * v y` (lean-wandler Laws/Frame.lean
   ;; `aggJoin_factor`): the right factor `v` is summed ONCE per matching bucket, not once per pair, so an
@@ -68,15 +68,15 @@
      p :- (=> X (=> Y Bool)), w :- (=> X S), v :- (=> Y S), xs :- (List X), ys :- (List Y)]
     (= S
        (wsum (WSemiring.toWAddMonoid m)
-         (List.map (Prod X Y) S
+         (List.map
            (fn [pr :- (Prod X Y)] (WSemiring.mul m (w (Prod.fst pr)) (v (Prod.snd pr))))
-           (List.flatMap X (Prod X Y)
-             (fn [x :- X] (List.map Y (Prod X Y) (fn [y :- Y] (Prod.mk x y))
-                           (List.filter Y (p x) ys))) xs)))
+           (List.flatMap
+             (fn [x :- X] (List.map (fn [y :- Y] (Prod.mk x y))
+                           (List.filter (p x) ys))) xs)))
        (wsum (WSemiring.toWAddMonoid m)
-         (List.map X S (fn [x :- X]
+         (List.map (fn [x :- X]
            (WSemiring.mul m (w x)
-             (wsum (WSemiring.toWAddMonoid m) (List.map Y S v (List.filter Y (p x) ys))))) xs)))
+             (wsum (WSemiring.toWAddMonoid m) (List.map v (List.filter (p x) ys))))) xs)))
     (rw (aggJoin_split X Y S (WSemiring.toWAddMonoid m) p
           (fn [x :- X] (fn [y :- Y] (WSemiring.mul m (w x) (v y)))) xs ys))
     (simp [wsum_map_mul_left]))
@@ -87,14 +87,14 @@
      p :- (=> X (=> Y Bool)), f :- (=> X (=> Y S)),
      xs :- (List X), ys :- (List Y)]
     (= S
-       (wsum m (List.map (Prod X Y) S (fn [pr :- (Prod X Y)] (f (Prod.fst pr) (Prod.snd pr)))
-                 (List.flatMap X (Prod X Y)
-                   (fn [x :- X] (List.map Y (Prod X Y) (fn [y :- Y] (Prod.mk x y))
-                                 (List.filter Y (p x) ys))) xs)))
-       (wsum m (List.map (Prod Y X) S (fn [pr :- (Prod Y X)] (f (Prod.snd pr) (Prod.fst pr)))
-                 (List.flatMap Y (Prod Y X)
-                   (fn [y :- Y] (List.map X (Prod Y X) (fn [x :- X] (Prod.mk y x))
-                                 (List.filter X (fn [x :- X] (p x y)) xs))) ys))))
+       (wsum m (List.map (fn [pr :- (Prod X Y)] (f (Prod.fst pr) (Prod.snd pr)))
+                 (List.flatMap
+                   (fn [x :- X] (List.map (fn [y :- Y] (Prod.mk x y))
+                                 (List.filter (p x) ys))) xs)))
+       (wsum m (List.map (fn [pr :- (Prod Y X)] (f (Prod.snd pr) (Prod.fst pr)))
+                 (List.flatMap
+                   (fn [y :- Y] (List.map (fn [x :- X] (Prod.mk y x))
+                                 (List.filter (fn [x :- X] (p x y)) xs))) ys))))
     (rw (aggJoin_split X Y S m p f xs ys))
     (rw (aggJoin_split Y X S m (fn [y :- Y] (fn [x :- X] (p x y)))
                       (fn [y :- Y] (fn [x :- X] (f x y))) ys xs))
