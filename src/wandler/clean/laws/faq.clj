@@ -225,6 +225,21 @@
                                                      (ac_rfl)))))))
       (catch Throwable _ nil)))
 
+  ;; List.foldl_add_init — the Nat instance of the generic. The DBSP differential join builds with it
+  ;; (exec/dbsp.clj's Map.join_count_incr). Derived by applying the generic to the Nat WAddMonoid
+  ;; instance (WAddMonoid.add Nat (mk …) ≡ Nat.add by def-eq). Was admitted by the retired
+  ;; wandler.laws.proofs.frame/prove-foldl-add-init.
+  (when-not (has? "List.foldl_add_init")
+    (try
+      (eval '(ansatz.core/theorem List.foldl_add_init
+               [Y :- Type, g :- (=> Y Nat), l :- (List Y), acc :- Nat]
+               (= Nat (List.foldl Nat Y (fn [a :- Nat] (fn [y :- Y] (Nat.add a (g y)))) acc l)
+                      (Nat.add acc (List.foldl Nat Y (fn [a :- Nat] (fn [y :- Y] (Nat.add a (g y)))) Nat.zero l)))
+               (exact (List.foldl_add_init_generic Nat
+                        (WAddMonoid.mk Nat Nat.add Nat.zero Nat.add_assoc Nat.zero_add Nat.add_zero)
+                        Y g l acc))))
+      (catch Throwable _ nil)))
+
   ;; ── WSemiring multiplicative-pull foundation (for the frame rule's f(x)· factor) ─────────────────
   ;; foldl_add_init_wsem: the WSemiring-spelled sibling of foldl_add_init_generic (so the frame chain
   ;; stays in one spelling). Closed by `ac_rfl` over the registered WSemiring.add provider.
