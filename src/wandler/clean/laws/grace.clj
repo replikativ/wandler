@@ -140,9 +140,8 @@
   []
   ;; Map.join's defining equation (`Map.join.eq_unfold`) — the filter-form Perm proofs simp with it.
   ;; Clean foundation provides Map.join but not its unfold lemma; admit it here (as old relational did).
-  (when-not (has? "Map.join.eq_unfold")
-    (try (admit! ((requiring-resolve 'wandler.clean.optimize/unfold-eqn-ci) (a/env) "Map.join"))
-         (catch Throwable _ nil)))
+  (a/install-guarded! "Map.join.eq_unfold"
+    (admit! ((requiring-resolve 'wandler.clean.optimize/unfold-eqn-ci) (a/env) "Map.join")))
   ;; §2 List.Perm helpers
   (thm! "List.flatMap_const_nil"           rp/prove-flatMap-const-nil)
   (thm! "List.flatMap_congr_perm"          rp/prove-flatMap-congr-perm)
@@ -174,29 +173,23 @@
   (when-not (has? "List.chunk_cons") (admit! (chunk-cons-ci)))
   (when-not (has? "List.chunk_nil") (admit! (chunk-nil-ci)))
   ;; List.flatten_cond : flatten (bif b X Y) = bif b (flatten X) (flatten Y) — by `cases b`.
-  (when-not (has? "List.flatten_cond")
-    (try
-      (eval '(ansatz.core/theorem List.flatten_cond
-               [A :- Type, b :- Bool, X :- (List (List A)), Y :- (List (List A))]
-               (= (List A) (List.flatten A (bif b X Y)) (bif b (List.flatten A X) (List.flatten A Y)))
-               (cases b) (all_goals (rfl))))
-      (catch Throwable _ nil)))
+  (a/deftheorem List.flatten_cond
+    [A :- Type, b :- Bool, X :- (List (List A)), Y :- (List (List A))]
+    (= (List A) (List.flatten A (bif b X Y)) (bif b (List.flatten A X) (List.flatten A Y)))
+    (cases b) (all_goals (rfl)))
   ;; List.flatten_chunk : flatten (chunk B l) = l — THE grace-hash certificate. THIN: structural
   ;; induction, then case-split the chunk recursion (the #149 nested-scrutinee machinery).
-  (when-not (has? "List.flatten_chunk")
-    (try
-      (eval '(ansatz.core/theorem List.flatten_chunk [A :- Type, B :- Nat, l :- (List A)]
-               (= (List A) (List.flatten A (List.chunk A B l)) l)
-               (induction l)
-               (all_goals (try (rw [List.chunk_cons])))
-               (all_goals (try (generalize c hc (List.chunk A B tail))))
-               (all_goals (try (intro c))) (all_goals (try (intro hc)))
-               (all_goals (try (cases c)))
-               (all_goals (try (simp_all [List.casesOn_nil List.casesOn_cons List.flatten_cond Bool.cond_self
-                                          List.chunk_nil List.flatten_nil List.flatten_cons List.cons_append List.nil_append])))
-               (all_goals (try (subst_vars)))
-               (all_goals (try (simp_all [List.casesOn_nil List.casesOn_cons List.flatten_cond Bool.cond_self
-                                          List.chunk_nil List.flatten_nil List.flatten_cons List.cons_append List.nil_append])))))
-      (catch Throwable _ nil)))
+  (a/deftheorem List.flatten_chunk [A :- Type, B :- Nat, l :- (List A)]
+    (= (List A) (List.flatten A (List.chunk A B l)) l)
+    (induction l)
+    (all_goals (try (rw [List.chunk_cons])))
+    (all_goals (try (generalize c hc (List.chunk A B tail))))
+    (all_goals (try (intro c))) (all_goals (try (intro hc)))
+    (all_goals (try (cases c)))
+    (all_goals (try (simp_all [List.casesOn_nil List.casesOn_cons List.flatten_cond Bool.cond_self
+                               List.chunk_nil List.flatten_nil List.flatten_cons List.cons_append List.nil_append])))
+    (all_goals (try (subst_vars)))
+    (all_goals (try (simp_all [List.casesOn_nil List.casesOn_cons List.flatten_cond Bool.cond_self
+                               List.chunk_nil List.flatten_nil List.flatten_cons List.cons_append List.nil_append]))))
   (install-blockfold!)
   :installed)

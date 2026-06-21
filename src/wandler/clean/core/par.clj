@@ -35,6 +35,9 @@
   []
   (monoid/install!)
   ;; parFold — curried divide-and-conquer fold; recursion on depth, list rides the function-motive.
+  ;; The brecOn-with-function-motive recursion encoding is fragile (a known-deferred ansatz gap,
+  ;; see core/monoid.clj parFold_eq): install best-effort and LOG if the elaborator can't yet admit
+  ;; it, rather than silently swallowing (old behaviour) or crashing the whole installer.
   (when-not (has? "parFold")
     (try
       (eval '(ansatz.core/defn parFold
@@ -46,16 +49,14 @@
                              (WAddMonoid.add m
                                ((parFold m d) (List.take S (Nat.div (List.length S xs) 2) xs))
                                ((parFold m d) (List.drop S (Nat.div (List.length S xs) 2) xs))))))))
-      (catch Throwable _ nil)))
+      (catch Throwable e
+        (when a/*verbose* (println "⚠ parFold install deferred (recursion encoding):" (.getMessage e))))))
   ;; parFold_eq — THE CERTIFICATE: parallel fold ≡ sequential fold. Consumes split_certificate.
-  (when-not (has? "parFold_eq")
-    (try
-      (eval '(ansatz.core/theorem parFold_eq
-               [S :- Type, m :- (WAddMonoid S), depth :- Nat, xs :- (List S)]
-               (= S ((parFold m depth) xs)
-                    (List.foldl S S (WAddMonoid.add m) (WAddMonoid.zero m) xs))
-               (induction depth generalizing xs)
-               (all_goals (try (simp_all [parFold.eq_1 parFold.eq_2])))
-               (all_goals (try (rw (split_certificate S m (Nat.div (List.length S xs) 2) xs))))))
-      (catch Throwable _ nil)))
+  (a/deftheorem parFold_eq
+    [S :- Type, m :- (WAddMonoid S), depth :- Nat, xs :- (List S)]
+    (= S ((parFold m depth) xs)
+         (List.foldl S S (WAddMonoid.add m) (WAddMonoid.zero m) xs))
+    (induction depth generalizing xs)
+    (all_goals (try (simp_all [parFold.eq_1 parFold.eq_2])))
+    (all_goals (try (rw (split_certificate S m (Nat.div (List.length S xs) 2) xs)))))
   :installed)

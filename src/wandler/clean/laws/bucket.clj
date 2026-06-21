@@ -49,21 +49,17 @@
   (plist/install!)
   (frame/install!)
   ;; Map.lookup_insert — def-eq to List.lookup_insert at m.val (opaque Map ops unfold in is-def-eq).
-  (when-not (has? "Map.lookup_insert")
-    (try
-      (eval '(ansatz.core/theorem Map.lookup_insert
-               [α :- Type, β :- Type, dec :- (DecidableEq α), k :- α, k' :- α, v :- β, m :- (Map α β)]
-               (= (Option β)
-                  (Map.lookup α β dec k (Map.insert α β dec k' v m))
-                  (bif (BEq.beq α (instBEqOfDecidableEq α dec) k k')
-                       (Option.some β v) (Map.lookup α β dec k m)))
-               (exact (List.lookup_insert α β dec k k' v
-                        (Subtype.val (List (Prod α β)) (Map.NodupKeys α β) m)))))
-      (catch Throwable _ nil)))
+  (a/deftheorem Map.lookup_insert
+    [α :- Type, β :- Type, dec :- (DecidableEq α), k :- α, k' :- α, v :- β, m :- (Map α β)]
+    (= (Option β)
+       (Map.lookup α β dec k (Map.insert α β dec k' v m))
+       (bif (BEq.beq α (instBEqOfDecidableEq α dec) k k')
+            (Option.some β v) (Map.lookup α β dec k m)))
+    (exact (List.lookup_insert α β dec k k' v
+             (Subtype.val (List (Prod α β)) (Map.NodupKeys α β) m))))
   ;; Map.bucket_content_gen — the foldl-of-inserts invariant, accumulator-generalized.
-  (when-not (has? "Map.bucket_content_gen")
-    (try
-      (eval (concat
+  (a/install-guarded! "Map.bucket_content_gen"
+    (eval (concat
               '(ansatz.core/theorem Map.bucket_content_gen
                  [α :- Type, β :- Type, dec :- (DecidableEq α), f :- (=> β α), k :- α,
                   ys :- (List β), m :- (Map α (List β))]
@@ -85,36 +81,29 @@
               (mapcat (fn [_] (list (list 'all_goals (list 'try (list 'simp_all bucket-lem)))
                                     '(all_goals (try (dsimp)))))
                       (range 4))
-              (list (list 'all_goals (list 'try (list 'simp_all bucket-lem))))))
-      (catch Throwable _ nil)))
+              (list (list 'all_goals (list 'try (list 'simp_all bucket-lem)))))))
   ;; Map.bucket_content — closed form at empty: bucket_content_gen specialized (all def-eq).
-  (when-not (has? "Map.bucket_content")
-    (try
-      (eval '(ansatz.core/theorem Map.bucket_content
-               [α :- Type, β :- Type, dec :- (DecidableEq α), f :- (=> β α), k :- α, ys :- (List β)]
-               (= (List β)
-                  (Option.getD (List β) (Map.lookup α (List β) dec k (Map.group_by α β dec f ys)) (List.nil β))
-                  (List.foldl (List β) β (fn [acc :- (List β) x :- β] (List.cons β x acc))
-                    (List.nil β)
-                    (List.filter β (fn [x :- β] (BEq.beq α (instBEqOfDecidableEq α dec) k (f x))) ys)))
-               (exact (Map.bucket_content_gen α β dec f k ys (Map.empty α (List β))))))
-      (catch Throwable _ nil)))
+  (a/deftheorem Map.bucket_content
+    [α :- Type, β :- Type, dec :- (DecidableEq α), f :- (=> β α), k :- α, ys :- (List β)]
+    (= (List β)
+       (Option.getD (List β) (Map.lookup α (List β) dec k (Map.group_by α β dec f ys)) (List.nil β))
+       (List.foldl (List β) β (fn [acc :- (List β) x :- β] (List.cons β x acc))
+         (List.nil β)
+         (List.filter β (fn [x :- β] (BEq.beq α (instBEqOfDecidableEq α dec) k (f x))) ys)))
+    (exact (Map.bucket_content_gen α β dec f k ys (Map.empty α (List β)))))
   ;; Map.join_eq — the rfl-unfolding of the opaque `Map.join` to its flatMap-of-grouped-buckets body.
   ;; Lets simp/rw expose the bucket so `Map.bucket_content` can rewrite it.
-  (when-not (has? "Map.join_eq")
-    (try
-      (eval '(ansatz.core/theorem Map.join_eq
-               [K :- Type, X :- Type, Y :- Type, d :- (DecidableEq K), kf :- (=> X K), lf :- (=> Y K),
-                xs :- (List X), ys :- (List Y)]
-               (= (List (Prod X Y))
-                  (Map.join K X Y d kf lf xs ys)
-                  (List.flatMap X (Prod X Y)
-                    (fn [x :- X]
-                      (List.map Y (Prod X Y) (fn [y :- Y] (Prod.mk X Y x y))
-                        (Option.getD (List Y) (Map.lookup K (List Y) d (kf x) (Map.group_by K Y d lf ys)) (List.nil Y))))
-                    xs))
-               (rfl)))
-      (catch Throwable _ nil)))
+  (a/deftheorem Map.join_eq
+    [K :- Type, X :- Type, Y :- Type, d :- (DecidableEq K), kf :- (=> X K), lf :- (=> Y K),
+     xs :- (List X), ys :- (List Y)]
+    (= (List (Prod X Y))
+       (Map.join K X Y d kf lf xs ys)
+       (List.flatMap X (Prod X Y)
+         (fn [x :- X]
+           (List.map Y (Prod X Y) (fn [y :- Y] (Prod.mk X Y x y))
+             (Option.getD (List Y) (Map.lookup K (List Y) d (kf x) (Map.group_by K Y d lf ys)) (List.nil Y))))
+         xs))
+    (rfl))
   ;; wsum_map_Map_join — THE AGGREGATE BRIDGE: the sum of an abstract weight `h` over a REAL `Map.join`
   ;; equals the same sum over the clean `filter`-`flatMap` join form (`aggJoin_split`'s input). The two
   ;; lists differ per-bucket by the group_by reversal (`Map.bucket_content` = foldl(::)[] = reverse), so
@@ -122,76 +111,67 @@
   ;; the grouped bucket; `induction xs` splits the flatMap; each cons head reduces (map_append/wsum_append/
   ;; map_map) to exactly `wsum_map_foldl_cons` on its bucket, the tail to the IH. This is what lets the
   ;; aggregate frame laws (`aggJoin_split`/`aggJoin_factor`) apply to a real group_by Map.join.
-  (when-not (has? "wsum_map_Map_join")
-    (try
-      (eval '(ansatz.core/theorem wsum_map_Map_join
-               [K :- Type, X :- Type, Y :- Type, S :- Type, d :- (DecidableEq K),
-                m :- (WAddMonoid S), hc :- (Std.Commutative S (WAddMonoid.add m)),
-                kf :- (=> X K), lf :- (=> Y K), h :- (=> (Prod X Y) S), xs :- (List X), ys :- (List Y)]
-               (= S
-                  (wsum m (List.map (Prod X Y) S h (Map.join K X Y d kf lf xs ys)))
-                  (wsum m (List.map (Prod X Y) S h
-                            (List.flatMap X (Prod X Y)
-                              (fn [x :- X] (List.map Y (Prod X Y) (fn [y :- Y] (Prod.mk X Y x y))
-                                            (List.filter Y (fn [y :- Y] (BEq.beq K (instBEqOfDecidableEq K d) (kf x) (lf y))) ys))) xs))))
-               (rw (Map.join_eq K X Y d kf lf xs ys))
-               (induction xs)
-               (all_goals (simp_all [List.flatMap_nil List.flatMap_cons List.map_append List.map_nil
-                                     wsum_append wsum.eq_1 wsum.eq_2 List.map_map Function.comp_def
-                                     Map.bucket_content wsum_map_foldl_cons (WAddMonoid.zero_add m)]))))
-      (catch Throwable _ nil)))
+  (a/deftheorem wsum_map_Map_join
+    [K :- Type, X :- Type, Y :- Type, S :- Type, d :- (DecidableEq K),
+     m :- (WAddMonoid S), hc :- (Std.Commutative S (WAddMonoid.add m)),
+     kf :- (=> X K), lf :- (=> Y K), h :- (=> (Prod X Y) S), xs :- (List X), ys :- (List Y)]
+    (= S
+       (wsum m (List.map (Prod X Y) S h (Map.join K X Y d kf lf xs ys)))
+       (wsum m (List.map (Prod X Y) S h
+                 (List.flatMap X (Prod X Y)
+                   (fn [x :- X] (List.map Y (Prod X Y) (fn [y :- Y] (Prod.mk X Y x y))
+                                 (List.filter Y (fn [y :- Y] (BEq.beq K (instBEqOfDecidableEq K d) (kf x) (lf y))) ys))) xs))))
+    (rw (Map.join_eq K X Y d kf lf xs ys))
+    (induction xs)
+    (all_goals (simp_all [List.flatMap_nil List.flatMap_cons List.map_append List.map_nil
+                          wsum_append wsum.eq_1 wsum.eq_2 List.map_map Function.comp_def
+                          Map.bucket_content wsum_map_foldl_cons (WAddMonoid.zero_add m)])))
   ;; Map_aggJoin_factor — THE PLANNER-FACING KEYED FACTOR LAW (replaces term-built
   ;; Map.foldl_join_sum_factor). For a separable weight `w x * v y`, the aggregate over a REAL group_by
   ;; `Map.join` factors so the right factor `v` is summed ONCE per matching bucket — the O(|xs|·|ys|) →
   ;; O(|xs|+|ys|) FAQ win, via a pre-aggregated index. TWO rewrites: the aggregate bridge
   ;; `wsum_map_Map_join` (real join → clean filter-flatMap form) then the clean `aggJoin_factor`
   ;; (frame). Carrier-generic over any commutative WSemiring.
-  (when-not (has? "Map_aggJoin_factor")
-    (try
-      (eval '(ansatz.core/theorem Map_aggJoin_factor
-               [K :- Type, X :- Type, Y :- Type, S :- Type, dec :- (DecidableEq K), m :- (WSemiring S),
-                hc :- (Std.Commutative S (WAddMonoid.add (WSemiring.toWAddMonoid m))),
-                kf :- (=> X K), lf :- (=> Y K), w :- (=> X S), v :- (=> Y S), xs :- (List X), ys :- (List Y)]
-               (= S
-                  (wsum (WSemiring.toWAddMonoid m)
-                    (List.map (Prod X Y) S
-                      (fn [pr :- (Prod X Y)] (WSemiring.mul m (w (Prod.fst X Y pr)) (v (Prod.snd X Y pr))))
-                      (Map.join K X Y dec kf lf xs ys)))
-                  (wsum (WSemiring.toWAddMonoid m)
-                    (List.map X S (fn [x :- X]
-                      (WSemiring.mul m (w x)
-                        (wsum (WSemiring.toWAddMonoid m)
-                          (List.map Y S v (List.filter Y (fn [y :- Y] (BEq.beq K (instBEqOfDecidableEq K dec) (kf x) (lf y))) ys))))) xs)))
-               (rw (wsum_map_Map_join K X Y S dec (WSemiring.toWAddMonoid m) hc kf lf
-                     (fn [pr :- (Prod X Y)] (WSemiring.mul m (w (Prod.fst X Y pr)) (v (Prod.snd X Y pr)))) xs ys))
-               (rw (aggJoin_factor X Y S m
-                     (fn [x :- X] (fn [y :- Y] (BEq.beq K (instBEqOfDecidableEq K dec) (kf x) (lf y)))) w v xs ys))))
-      (catch Throwable _ nil)))
+  (a/deftheorem Map_aggJoin_factor
+    [K :- Type, X :- Type, Y :- Type, S :- Type, dec :- (DecidableEq K), m :- (WSemiring S),
+     hc :- (Std.Commutative S (WAddMonoid.add (WSemiring.toWAddMonoid m))),
+     kf :- (=> X K), lf :- (=> Y K), w :- (=> X S), v :- (=> Y S), xs :- (List X), ys :- (List Y)]
+    (= S
+       (wsum (WSemiring.toWAddMonoid m)
+         (List.map (Prod X Y) S
+           (fn [pr :- (Prod X Y)] (WSemiring.mul m (w (Prod.fst X Y pr)) (v (Prod.snd X Y pr))))
+           (Map.join K X Y dec kf lf xs ys)))
+       (wsum (WSemiring.toWAddMonoid m)
+         (List.map X S (fn [x :- X]
+           (WSemiring.mul m (w x)
+             (wsum (WSemiring.toWAddMonoid m)
+               (List.map Y S v (List.filter Y (fn [y :- Y] (BEq.beq K (instBEqOfDecidableEq K dec) (kf x) (lf y))) ys))))) xs)))
+    (rw (wsum_map_Map_join K X Y S dec (WSemiring.toWAddMonoid m) hc kf lf
+          (fn [pr :- (Prod X Y)] (WSemiring.mul m (w (Prod.fst X Y pr)) (v (Prod.snd X Y pr)))) xs ys))
+    (rw (aggJoin_factor X Y S m
+          (fn [x :- X] (fn [y :- Y] (BEq.beq K (instBEqOfDecidableEq K dec) (kf x) (lf y)))) w v xs ys)))
   ;; Map_aggJoin_reorder — THE JOIN-COMMUTATIVITY / DRIVE-DIRECTION law over a real Map.join: the
   ;; aggregate of an equi-join is invariant under swapping the two inputs, so the planner may build the
   ;; group_by index on whichever side is smaller. `f : X→Y→S` the per-pair weight. FOUR rewrites:
   ;; bridge LHS to the clean form (`wsum_map_Map_join`), the clean `aggJoin_reorder` (Fubini, NO Perm),
   ;; bridge the swapped Map.join BACK, then `simp [beq_comm]` reconciles the key predicate `kf x == lf y`
   ;; with the swapped-drive `lf y == kf x`. Retires the old `Map.join_length_comm`/Perm reorder cluster.
-  (when-not (has? "Map_aggJoin_reorder")
-    (try
-      (eval '(ansatz.core/theorem Map_aggJoin_reorder
-               [K :- Type, X :- Type, Y :- Type, S :- Type, dec :- (DecidableEq K),
-                m :- (WAddMonoid S), hc :- (Std.Commutative S (WAddMonoid.add m)),
-                kf :- (=> X K), lf :- (=> Y K), f :- (=> X (=> Y S)), xs :- (List X), ys :- (List Y)]
-               (= S
-                  (wsum m (List.map (Prod X Y) S (fn [pr :- (Prod X Y)] (f (Prod.fst X Y pr) (Prod.snd X Y pr)))
-                            (Map.join K X Y dec kf lf xs ys)))
-                  (wsum m (List.map (Prod Y X) S (fn [pr :- (Prod Y X)] (f (Prod.snd Y X pr) (Prod.fst Y X pr)))
-                            (Map.join K Y X dec lf kf ys xs))))
-               (rw (wsum_map_Map_join K X Y S dec m hc kf lf
-                     (fn [pr :- (Prod X Y)] (f (Prod.fst X Y pr) (Prod.snd X Y pr))) xs ys))
-               (rw (aggJoin_reorder X Y S m hc
-                     (fn [x :- X] (fn [y :- Y] (BEq.beq K (instBEqOfDecidableEq K dec) (kf x) (lf y)))) f xs ys))
-               (rw (wsum_map_Map_join K Y X S dec m hc lf kf
-                     (fn [pr :- (Prod Y X)] (f (Prod.snd Y X pr) (Prod.fst Y X pr))) ys xs))
-               ;; goal-only simp (not simp_all) — the predicate reconciliation needs only the goal, and
-               ;; the lighter pass installs reliably under full-suite memory pressure.
-               (simp [beq_comm])))
-      (catch Throwable _ nil)))
+  (a/deftheorem Map_aggJoin_reorder
+    [K :- Type, X :- Type, Y :- Type, S :- Type, dec :- (DecidableEq K),
+     m :- (WAddMonoid S), hc :- (Std.Commutative S (WAddMonoid.add m)),
+     kf :- (=> X K), lf :- (=> Y K), f :- (=> X (=> Y S)), xs :- (List X), ys :- (List Y)]
+    (= S
+       (wsum m (List.map (Prod X Y) S (fn [pr :- (Prod X Y)] (f (Prod.fst X Y pr) (Prod.snd X Y pr)))
+                 (Map.join K X Y dec kf lf xs ys)))
+       (wsum m (List.map (Prod Y X) S (fn [pr :- (Prod Y X)] (f (Prod.snd Y X pr) (Prod.fst Y X pr)))
+                 (Map.join K Y X dec lf kf ys xs))))
+    (rw (wsum_map_Map_join K X Y S dec m hc kf lf
+          (fn [pr :- (Prod X Y)] (f (Prod.fst X Y pr) (Prod.snd X Y pr))) xs ys))
+    (rw (aggJoin_reorder X Y S m hc
+          (fn [x :- X] (fn [y :- Y] (BEq.beq K (instBEqOfDecidableEq K dec) (kf x) (lf y)))) f xs ys))
+    (rw (wsum_map_Map_join K Y X S dec m hc lf kf
+          (fn [pr :- (Prod Y X)] (f (Prod.snd Y X pr) (Prod.fst Y X pr))) ys xs))
+    ;; goal-only simp (not simp_all) — the predicate reconciliation needs only the goal, and
+    ;; the lighter pass installs reliably under full-suite memory pressure.
+    (simp [beq_comm]))
   :installed)

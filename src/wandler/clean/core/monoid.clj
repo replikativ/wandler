@@ -36,35 +36,29 @@
   []
   (alg/install-classes!)
   ;; foldl_hom — fold-from-accumulator factors as op a (fold-from-identity). The homomorphism under split.
-  (when-not (has? "foldl_hom")
-    (try
-      (eval '(ansatz.core/theorem foldl_hom
-               [S :- Type, m :- (WAddMonoid S), a :- S, ys :- (List S)]
-               (= S (List.foldl S S (WAddMonoid.add m) a ys)
-                    (WAddMonoid.add m a (List.foldl S S (WAddMonoid.add m) (WAddMonoid.zero m) ys)))
-               (induction ys generalizing a)
-               (all_goals (simp [List.foldl_nil List.foldl_cons]))
-               (all_goals (try (rw (WAddMonoid.add_zero m a))))
-               (all_goals (try (rw (ih_tail (WAddMonoid.add m a head)))))
-               (all_goals (try (rw (ih_tail (WAddMonoid.add m (WAddMonoid.zero m) head)))))
-               (all_goals (try (rw (WAddMonoid.zero_add m head))))
-               (all_goals (try (rw (WAddMonoid.add_assoc m a head
-                                     (List.foldl S S (WAddMonoid.add m) (WAddMonoid.zero m) tail)))))))
-      (catch Throwable _ nil)))
+  (a/deftheorem foldl_hom
+    [S :- Type, m :- (WAddMonoid S), a :- S, ys :- (List S)]
+    (= S (List.foldl S S (WAddMonoid.add m) a ys)
+         (WAddMonoid.add m a (List.foldl S S (WAddMonoid.add m) (WAddMonoid.zero m) ys)))
+    (induction ys generalizing a)
+    (all_goals (simp [List.foldl_nil List.foldl_cons]))
+    (all_goals (try (rw (WAddMonoid.add_zero m a))))
+    (all_goals (try (rw (ih_tail (WAddMonoid.add m a head)))))
+    (all_goals (try (rw (ih_tail (WAddMonoid.add m (WAddMonoid.zero m) head)))))
+    (all_goals (try (rw (WAddMonoid.zero_add m head))))
+    (all_goals (try (rw (WAddMonoid.add_assoc m a head
+                          (List.foldl S S (WAddMonoid.add m) (WAddMonoid.zero m) tail))))))
   ;; foldl_split — THE LICENCE: (xs ++ ys).fold = xs.fold ⊕ ys.fold. Fork-join is sound by proof.
-  (when-not (has? "foldl_split")
-    (try
-      (eval '(ansatz.core/theorem foldl_split
-               [S :- Type, m :- (WAddMonoid S), xs :- (List S), ys :- (List S)]
-               (= S
-                  (List.foldl S S (WAddMonoid.add m) (WAddMonoid.zero m)
-                    (HAppend.hAppend (List S) (List S) (List S)
-                      (instHAppendOfAppend (List S) (List.instAppend S)) xs ys))
-                  (WAddMonoid.add m
-                    (List.foldl S S (WAddMonoid.add m) (WAddMonoid.zero m) xs)
-                    (List.foldl S S (WAddMonoid.add m) (WAddMonoid.zero m) ys)))
-               (simp [List.foldl_append foldl_hom])))
-      (catch Throwable _ nil)))
+  (a/deftheorem foldl_split
+    [S :- Type, m :- (WAddMonoid S), xs :- (List S), ys :- (List S)]
+    (= S
+       (List.foldl S S (WAddMonoid.add m) (WAddMonoid.zero m)
+         (HAppend.hAppend (List S) (List S) (List S)
+           (instHAppendOfAppend (List S) (List.instAppend S)) xs ys))
+       (WAddMonoid.add m
+         (List.foldl S S (WAddMonoid.add m) (WAddMonoid.zero m) xs)
+         (List.foldl S S (WAddMonoid.add m) (WAddMonoid.zero m) ys)))
+    (simp [List.foldl_append foldl_hom]))
   ;; split_certificate — THE FORK-JOIN STEP, CONSUMED. Folding the two halves at ANY split point `n`
   ;; (take n / drop n) and combining with `op` equals the sequential fold. This is `foldl_split`
   ;; CONSUMED into the soundness statement a parallel runtime actually needs: split anywhere, fold the
@@ -73,16 +67,13 @@
   ;; pending an ansatz gap — `a/defn` structural recursion rejects a recursive call that TRANSFORMS a
   ;; non-measured argument (`parFold m d (xs.take n)`), so the depth-bounded executable parFold + its
   ;; @[csimp] Task lowering land with the runtime phase. The certificate below is the algebraic content.
-  (when-not (has? "split_certificate")
-    (try
-      (eval '(ansatz.core/theorem split_certificate
-               [S :- Type, m :- (WAddMonoid S), n :- Nat, xs :- (List S)]
-               (= S
-                  (WAddMonoid.add m
-                    (List.foldl S S (WAddMonoid.add m) (WAddMonoid.zero m) (List.take S n xs))
-                    (List.foldl S S (WAddMonoid.add m) (WAddMonoid.zero m) (List.drop S n xs)))
-                  (List.foldl S S (WAddMonoid.add m) (WAddMonoid.zero m) xs))
-               (rw <- (foldl_split S m (List.take S n xs) (List.drop S n xs)))
-               (rw (List.take_append_drop S n xs))))
-      (catch Throwable _ nil)))
+  (a/deftheorem split_certificate
+    [S :- Type, m :- (WAddMonoid S), n :- Nat, xs :- (List S)]
+    (= S
+       (WAddMonoid.add m
+         (List.foldl S S (WAddMonoid.add m) (WAddMonoid.zero m) (List.take S n xs))
+         (List.foldl S S (WAddMonoid.add m) (WAddMonoid.zero m) (List.drop S n xs)))
+       (List.foldl S S (WAddMonoid.add m) (WAddMonoid.zero m) xs))
+    (rw <- (foldl_split S m (List.take S n xs) (List.drop S n xs)))
+    (rw (List.take_append_drop S n xs)))
   :installed)

@@ -58,16 +58,13 @@
 
   ;; isSome_lookup_insert: presence after an insert — `isSome (lookup k (insert k' v m)) = (k==k') ∨
   ;; isSome (lookup k m)`. The per-step lemma the group_by invariant rewrites with.
-  (when-not (has? "Map.isSome_lookup_insert")
-    (try
-      (eval '(ansatz.core/theorem Map.isSome_lookup_insert
-               [K :- Type, V :- Type, dec :- (DecidableEq K), k :- K, k' :- K, v :- V, m :- (Map K V)]
-               (= Bool (Option.isSome V (Map.lookup K V dec k (Map.insert K V dec k' v m)))
-                       (Bool.or (BEq.beq K (instBEqOfDecidableEq K dec) k k') (Option.isSome V (Map.lookup K V dec k m))))
-               (rewrite Map.lookup_insert)
-               (split)
-               (all_goals (simp_all [cond cond_true cond_false Option.isSome Bool.true_or Bool.false_or Bool.or_true Bool.or_false]))))
-      (catch Throwable _ nil)))
+  (a/deftheorem Map.isSome_lookup_insert
+    [K :- Type, V :- Type, dec :- (DecidableEq K), k :- K, k' :- K, v :- V, m :- (Map K V)]
+    (= Bool (Option.isSome V (Map.lookup K V dec k (Map.insert K V dec k' v m)))
+            (Bool.or (BEq.beq K (instBEqOfDecidableEq K dec) k k') (Option.isSome V (Map.lookup K V dec k m))))
+    (rewrite Map.lookup_insert)
+    (split)
+    (all_goals (simp_all [cond cond_true cond_false Option.isSome Bool.true_or Bool.false_or Bool.or_true Bool.or_false])))
 
   ;; lookup_group_by_gen: the accumulator-generalized presence invariant —
   ;;   isSome (lookup k (foldl gbStepId m xs)) = (k ∈ xs) ∨ isSome (lookup k m).
@@ -75,64 +72,52 @@
   ;; simp_all), `unfold Map.gbStepId` exposes the insert so `rewrite Map.isSome_lookup_insert` fires
   ;; across the Subtype boundary, then `by_cases (k == head)` resolves the elem-cons matcher and the
   ;; Bool.or rearrangement closes.
-  (when-not (has? "Map.lookup_group_by_gen")
-    (try
-      (eval '(ansatz.core/theorem Map.lookup_group_by_gen
-               [K :- Type, dec :- (DecidableEq K), k :- K, xs :- (List K), m :- (Map K (List K))]
-               (= Bool
-                  (Option.isSome (List K) (Map.lookup K (List K) dec k (List.foldl (Map K (List K)) K (Map.gbStepId K dec) m xs)))
-                  (Bool.or (List.elem K (instBEqOfDecidableEq K dec) k xs) (Option.isSome (List K) (Map.lookup K (List K) dec k m))))
-               (induction xs generalizing m)
-               (all_goals (simp_all [List.foldl_nil List.foldl_cons]))
-               (all_goals (try (unfold Map.gbStepId)))
-               (all_goals (try (rewrite Map.isSome_lookup_insert)))
-               (all_goals (try (by_cases (BEq.beq K (instBEqOfDecidableEq K dec) k head))))
-               (all_goals (try (simp_all [List.elem_cons List.elem_nil Bool.or_assoc Bool.or_comm Bool.false_or Bool.or_false Bool.true_or Bool.or_true beq_iff_eq beq_self_eq_true cond cond_true cond_false])))))
-      (catch Throwable _ nil)))
+  (a/deftheorem Map.lookup_group_by_gen
+    [K :- Type, dec :- (DecidableEq K), k :- K, xs :- (List K), m :- (Map K (List K))]
+    (= Bool
+       (Option.isSome (List K) (Map.lookup K (List K) dec k (List.foldl (Map K (List K)) K (Map.gbStepId K dec) m xs)))
+       (Bool.or (List.elem K (instBEqOfDecidableEq K dec) k xs) (Option.isSome (List K) (Map.lookup K (List K) dec k m))))
+    (induction xs generalizing m)
+    (all_goals (simp_all [List.foldl_nil List.foldl_cons]))
+    (all_goals (try (unfold Map.gbStepId)))
+    (all_goals (try (rewrite Map.isSome_lookup_insert)))
+    (all_goals (try (by_cases (BEq.beq K (instBEqOfDecidableEq K dec) k head))))
+    (all_goals (try (simp_all [List.elem_cons List.elem_nil Bool.or_assoc Bool.or_comm Bool.false_or Bool.or_false Bool.true_or Bool.or_true beq_iff_eq beq_self_eq_true cond cond_true cond_false]))))
 
   ;; lookup_group_by: closed form at `Map.group_by id` (what the semijoin consumes). From the gen at
   ;; m := empty; the `isSome (lookup k empty)` disjunct collapses by `Bool.or_false` (def-eq to false).
-  (when-not (has? "Map.lookup_group_by")
-    (try
-      (eval '(ansatz.core/theorem Map.lookup_group_by
-               [K :- Type, dec :- (DecidableEq K), k :- K, xs :- (List K)]
-               (= Bool (Option.isSome (List K) (Map.lookup K (List K) dec k (Map.group_by K K dec (fn [x :- K] x) xs)))
-                       (List.elem K (instBEqOfDecidableEq K dec) k xs))
-               (rewrite (Map.lookup_group_by_gen K dec k xs (Map.empty K (List K))))
-               (exact (Bool.or_false (List.elem K (instBEqOfDecidableEq K dec) k xs)))))
-      (catch Throwable _ nil)))
+  (a/deftheorem Map.lookup_group_by
+    [K :- Type, dec :- (DecidableEq K), k :- K, xs :- (List K)]
+    (= Bool (Option.isSome (List K) (Map.lookup K (List K) dec k (Map.group_by K K dec (fn [x :- K] x) xs)))
+            (List.elem K (instBEqOfDecidableEq K dec) k xs))
+    (rewrite (Map.lookup_group_by_gen K dec k xs (Map.empty K (List K))))
+    (exact (Bool.or_false (List.elem K (instBEqOfDecidableEq K dec) k xs))))
 
   ;; semijoin: a membership filter equals the index-probe filter — `filter (x ∈ ys) xs =
   ;; filter (isSome (lookup x (group_by id ys))) xs`. Induction on xs; per element the predicates agree
   ;; by `lookup_group_by` (explicit-args rewrite of the ite condition), tails by the IH.
-  (when-not (has? "List.elem_filter_eq_index_probe")
-    (try
-      (eval '(ansatz.core/theorem List.elem_filter_eq_index_probe
-               [K :- Type, dec :- (DecidableEq K), xs :- (List K), ys :- (List K)]
-               (= (List K)
-                  (List.filter K (fn [x :- K] (List.elem K (instBEqOfDecidableEq K dec) x ys)) xs)
-                  (List.filter K (fn [x :- K] (Option.isSome (List K) (Map.lookup K (List K) dec x (Map.group_by K K dec (fn [x :- K] x) ys)))) xs))
-               (induction xs)
-               (all_goals (simp_all [List.filter_nil List.filter_cons]))
-               (all_goals (try (rewrite (Map.lookup_group_by K dec head ys))))
-               (all_goals (try (rfl)))
-               (all_goals (try (simp_all [List.filter_nil List.filter_cons])))))
-      (catch Throwable _ nil)))
+  (a/deftheorem List.elem_filter_eq_index_probe
+    [K :- Type, dec :- (DecidableEq K), xs :- (List K), ys :- (List K)]
+    (= (List K)
+       (List.filter K (fn [x :- K] (List.elem K (instBEqOfDecidableEq K dec) x ys)) xs)
+       (List.filter K (fn [x :- K] (Option.isSome (List K) (Map.lookup K (List K) dec x (Map.group_by K K dec (fn [x :- K] x) ys)))) xs))
+    (induction xs)
+    (all_goals (simp_all [List.filter_nil List.filter_cons]))
+    (all_goals (try (rewrite (Map.lookup_group_by K dec head ys))))
+    (all_goals (try (rfl)))
+    (all_goals (try (simp_all [List.filter_nil List.filter_cons]))))
 
   ;; anti-join: the negated semijoin — `filter (x ∉ ys) xs = filter (¬isSome (lookup x …)) xs`.
-  (when-not (has? "List.elem_not_filter_eq_index_probe")
-    (try
-      (eval '(ansatz.core/theorem List.elem_not_filter_eq_index_probe
-               [K :- Type, dec :- (DecidableEq K), xs :- (List K), ys :- (List K)]
-               (= (List K)
-                  (List.filter K (fn [x :- K] (Bool.not (List.elem K (instBEqOfDecidableEq K dec) x ys))) xs)
-                  (List.filter K (fn [x :- K] (Bool.not (Option.isSome (List K) (Map.lookup K (List K) dec x (Map.group_by K K dec (fn [x :- K] x) ys))))) xs))
-               (induction xs)
-               (all_goals (simp_all [List.filter_nil List.filter_cons]))
-               (all_goals (try (rewrite (Map.lookup_group_by K dec head ys))))
-               (all_goals (try (rfl)))
-               (all_goals (try (simp_all [List.filter_nil List.filter_cons])))))
-      (catch Throwable _ nil)))
+  (a/deftheorem List.elem_not_filter_eq_index_probe
+    [K :- Type, dec :- (DecidableEq K), xs :- (List K), ys :- (List K)]
+    (= (List K)
+       (List.filter K (fn [x :- K] (Bool.not (List.elem K (instBEqOfDecidableEq K dec) x ys))) xs)
+       (List.filter K (fn [x :- K] (Bool.not (Option.isSome (List K) (Map.lookup K (List K) dec x (Map.group_by K K dec (fn [x :- K] x) ys))))) xs))
+    (induction xs)
+    (all_goals (simp_all [List.filter_nil List.filter_cons]))
+    (all_goals (try (rewrite (Map.lookup_group_by K dec head ys))))
+    (all_goals (try (rfl)))
+    (all_goals (try (simp_all [List.filter_nil List.filter_cons]))))
 
   ;; ── filter→join PUSHDOWN (B + A here; C = TODO) — push a key-predicate through Map.join ──────────
   ;; The OLD engine proved B/A by hand-built induction + a custom step-driver; here they are THIN.
@@ -146,40 +131,34 @@
   ;; unfolds filter-on-cons UNCONDITIONALLY into a cond and `simp_all` loops on it forever.
   ;;
   ;; B: filter (λpr. p pr.fst) (map (λy.(x,y)) L) = bif (p x) (map (λy.(x,y)) L) [].
-  (when-not (has? "List.filter_map_pair_eq_cond")
-    (try
-      (eval '(ansatz.core/theorem List.filter_map_pair_eq_cond
-               [X :- Type, Y :- Type, p :- (=> X Bool), x :- X, L :- (List Y)]
-               (= (List (Prod X Y))
-                  (List.filter (Prod X Y) (fn [pr :- (Prod X Y)] (p (Prod.fst X Y pr)))
-                    (List.map Y (Prod X Y) (fn [y :- Y] (Prod.mk X Y x y)) L))
-                  (bif (p x) (List.map Y (Prod X Y) (fn [y :- Y] (Prod.mk X Y x y)) L) (List.nil (Prod X Y))))
-               (induction L)
-               (all_goals (simp [List.map_cons List.map_nil List.filter_nil]))
-               (all_goals (try (by_cases (p x))))
-               (all_goals (try (simp_all [List.filter_cons_of_pos List.filter_cons_of_neg
-                                          List.filter_nil List.map_nil List.map_cons cond_true cond_false])))))
-      (catch Throwable _ nil)))
+  (a/deftheorem List.filter_map_pair_eq_cond
+    [X :- Type, Y :- Type, p :- (=> X Bool), x :- X, L :- (List Y)]
+    (= (List (Prod X Y))
+       (List.filter (Prod X Y) (fn [pr :- (Prod X Y)] (p (Prod.fst X Y pr)))
+         (List.map Y (Prod X Y) (fn [y :- Y] (Prod.mk X Y x y)) L))
+       (bif (p x) (List.map Y (Prod X Y) (fn [y :- Y] (Prod.mk X Y x y)) L) (List.nil (Prod X Y))))
+    (induction L)
+    (all_goals (simp [List.map_cons List.map_nil List.filter_nil]))
+    (all_goals (try (by_cases (p x))))
+    (all_goals (try (simp_all [List.filter_cons_of_pos List.filter_cons_of_neg
+                               List.filter_nil List.map_nil List.map_cons cond_true cond_false]))))
 
   ;; A: per-row premise ⇒ filter pushes through flatMap —
   ;;   (∀x. filter q (g x) = bif (p x) (g x) []) → filter q (flatMap g xs) = flatMap g (filter p xs).
-  (when-not (has? "List.filter_flatMap_cond")
-    (try
-      (eval '(ansatz.core/theorem List.filter_flatMap_cond
-               [A :- (Sort 1), B :- (Sort 1), g :- (=> A (List B)), q :- (=> B Bool),
-                p :- (=> A Bool), xs :- (List A),
-                H :- (forall [x A] (= (List B) (List.filter B q (g x)) (bif (p x) (g x) (List.nil B))))]
-               (= (List B) (List.filter B q (List.flatMap A B g xs)) (List.flatMap A B g (List.filter A p xs)))
-               (induction xs)
-               (all_goals (simp [List.flatMap_cons List.flatMap_nil List.filter_nil]))
-               (all_goals (try (simp [List.filter_append])))
-               (all_goals (try (rw [(H head)])))
-               (all_goals (try (by_cases (p head))))
-               (all_goals (try (simp_all [List.filter_cons_of_pos List.filter_cons_of_neg
-                                          cond_true cond_false List.filter_append
-                                          List.flatMap_cons List.flatMap_nil List.filter_nil
-                                          List.append_nil List.nil_append])))))
-      (catch Throwable _ nil)))
+  (a/deftheorem List.filter_flatMap_cond
+    [A :- (Sort 1), B :- (Sort 1), g :- (=> A (List B)), q :- (=> B Bool),
+     p :- (=> A Bool), xs :- (List A),
+     H :- (forall [x A] (= (List B) (List.filter B q (g x)) (bif (p x) (g x) (List.nil B))))]
+    (= (List B) (List.filter B q (List.flatMap A B g xs)) (List.flatMap A B g (List.filter A p xs)))
+    (induction xs)
+    (all_goals (simp [List.flatMap_cons List.flatMap_nil List.filter_nil]))
+    (all_goals (try (simp [List.filter_append])))
+    (all_goals (try (rw [(H head)])))
+    (all_goals (try (by_cases (p head))))
+    (all_goals (try (simp_all [List.filter_cons_of_pos List.filter_cons_of_neg
+                               cond_true cond_false List.filter_append
+                               List.flatMap_cons List.flatMap_nil List.filter_nil
+                               List.append_nil List.nil_append]))))
 
   ;; C: Map.filter_join_pushdown — filter (p∘fst) (join kf lf xs ys) = join kf lf (filter p xs) ys.
   ;; THIN: `rw [Map.join_eq]` (×2) exposes the join's `flatMap g` on both sides, `apply A`
@@ -188,16 +167,13 @@
   ;; whnf's the bucket `g a → map mk L` once WITHOUT normalizing the stuck `group_by` inside the
   ;; bucket list — see the apply lazy-isDefEq fix). Shape-agnostic: no manual subterm extraction
   ;; (the earlier term-composition port of `compose-C` is retired now that `apply` doesn't diverge).
-  (when-not (has? "Map.filter_join_pushdown")
-    (try
-      (eval '(ansatz.core/theorem Map.filter_join_pushdown
-               [p :- (=> Nat Bool), kf :- (=> Nat Nat), lf :- (=> Nat Nat),
-                ys :- (List Nat), xs :- (List Nat)]
-               (= (List (Prod Nat Nat))
-                  (List.filter (Prod Nat Nat) (fn [pr :- (Prod Nat Nat)] (p (Prod.fst Nat Nat pr)))
-                    (Map.join Nat Nat Nat instDecidableEqNat kf lf xs ys))
-                  (Map.join Nat Nat Nat instDecidableEqNat kf lf (List.filter Nat p xs) ys))
-               (rw [Map.join_eq]) (rw [Map.join_eq])
-               (apply List.filter_flatMap_cond) (intro a) (apply List.filter_map_pair_eq_cond)))
-      (catch Throwable _ nil)))
+  (a/deftheorem Map.filter_join_pushdown
+    [p :- (=> Nat Bool), kf :- (=> Nat Nat), lf :- (=> Nat Nat),
+     ys :- (List Nat), xs :- (List Nat)]
+    (= (List (Prod Nat Nat))
+       (List.filter (Prod Nat Nat) (fn [pr :- (Prod Nat Nat)] (p (Prod.fst Nat Nat pr)))
+         (Map.join Nat Nat Nat instDecidableEqNat kf lf xs ys))
+       (Map.join Nat Nat Nat instDecidableEqNat kf lf (List.filter Nat p xs) ys))
+    (rw [Map.join_eq]) (rw [Map.join_eq])
+    (apply List.filter_flatMap_cond) (intro a) (apply List.filter_map_pair_eq_cond))
   :installed)
