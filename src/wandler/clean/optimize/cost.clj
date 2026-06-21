@@ -222,19 +222,36 @@
   {:eq 0.1 :range 0.33 :neq 0.9 :other 0.5})
 
 
+(declare range-pred-rate)
+
 (defn- pred-selectivity
-  "Estimate a filter predicate's pass-rate from the comparator heading its
-   β-reduced body; unknown predicates → 0.5. A measured profile or a
-   refinement-derived bound overrides this via pipeline-cost's :selectivity."
+  "Estimate a filter predicate's pass-rate. REFINEMENT-AWARE (Step 3b): first try the predicate's
+   OWN binder type — the element type the filter ranges over — for a `Subtype Nat` range; if present,
+   a literal comparison gets the exact domain rate (sound at the empty/identity ends). Else fall back
+   to the comparator-head guess off the β-reduced body. The element type is carried locally on every
+   filter predicate (`p : ElemType → Bool`), so no fact threading is needed."
   [pred]
-  (let [body (loop [b pred] (if (e/lam? b) (recur (e/lam-body b)) b))
-        [h _] (e/get-app-fn-args body)
-        nm (when (e/const? h) (name/->string (e/const-name h)))]
-    (case nm
-      ("Eq" "BEq.beq" "Nat.beq" "Nat.decEq" "decide") (:eq default-selectivity)
-      ("Nat.ble" "Nat.blt" "Nat.le" "Nat.lt" "LE.le" "LT.lt" "GE.ge" "GT.gt") (:range default-selectivity)
-      ("Ne" "ne") (:neq default-selectivity)
-      (:other default-selectivity))))
+  (or (when (e/lam? pred)
+        (when-let [rng (refine/nat-range (e/lam-type pred))]
+          (range-pred-rate pred rng)))
+      (let [body (loop [b pred] (if (e/lam? b) (recur (e/lam-body b)) b))
+            [h _] (e/get-app-fn-args body)
+            nm (when (e/const? h) (name/->string (e/const-name h)))]
+        (case nm
+          ("Eq" "BEq.beq" "Nat.beq" "Nat.decEq" "decide") (:eq default-selectivity)
+          ("Nat.ble" "Nat.blt" "Nat.le" "Nat.lt" "LE.le" "LT.lt" "GE.ge" "GT.gt") (:range default-selectivity)
+          ("Ne" "ne") (:neq default-selectivity)
+          (:other default-selectivity)))))
+
+
+(defn- bound-value?
+  "The refinement variable itself, or its `Subtype.val` projection — both denote the bounded element
+   value a range fact constrains (`x` for a refined Nat, `Subtype.val … x` for a refined element)."
+  [x]
+  (or (e/bvar? x)
+      (let [[h args] (e/get-app-fn-args x)]
+        (and (e/const? h) (= "Subtype.val" (name/->string (e/const-name h)))
+             (e/bvar? (last args))))))
 
 
 (defn- cmp-kind [nm]
@@ -267,8 +284,8 @@
           kv (cond (and b (e/lit-nat? b)) (long (e/lit-nat-val b))
                    (and a (e/lit-nat? a)) (long (e/lit-nat-val a))
                    :else nil)
-          ;; orient: bound var on the LEFT (v CMP k) keeps the op; on the RIGHT (k CMP v) flips it
-          op (when (and k a) (if (e/bvar? a) k (case k :lt :gt :le :ge :gt :lt :ge :le :eq :eq)))]
+          ;; orient: bound value on the LEFT (v CMP k) keeps the op; on the RIGHT (k CMP v) flips it
+          op (when (and k a) (if (bound-value? a) k (case k :lt :gt :le :ge :gt :lt :ge :le :eq :eq)))]
       (when (and op kv)
         (let [mn (long lo) mx (long hi)
               dom (inc (- mx mn))

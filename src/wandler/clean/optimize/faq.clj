@@ -11,6 +11,7 @@
             [ansatz.codegen :as cg]
             [wandler.clean.optimize.certify :as cert]
             [wandler.clean.optimize.cost :as cost]
+            [wandler.clean.optimize.filter-elim :as fe]
             [wandler.laws.semiring :as sreg]
             [wandler.semiring-class :as sc])
   (:import [ansatz.kernel Env]))
@@ -833,7 +834,11 @@
         ;; pool): FIRST factorize the join away (aggregation-through-join, biggest win), else
         ;; reorder which side is indexed. Both reduce to length/sum over xs, then fuse normally.
         reorder (when-not skip-reorder?
-                  (or (try-count-factor env term :lctx lctx :selectivity selectivity :sizes sizes)
+                  (or ;; Step 3c: certified refinement filter-elimination — drop a filter the element
+                      ;; type proves redundant (always-true), composed with downstream fusion. Folds
+                      ;; Subsystem B's capability into the one cascade. Sound (verified-rewrite?).
+                      (fe/try-filter-elim env term :lctx lctx)
+                      (try-count-factor env term :lctx lctx :selectivity selectivity :sizes sizes)
                       ;; RECURSIVE FAQ variable elimination: factor EVERY join in a multi-way tree, not
                       ;; just the outermost (iterate the proven single step to a fixpoint, composing proofs).
                       (try-fold-factor* env term :lctx lctx :selectivity selectivity :sizes sizes)

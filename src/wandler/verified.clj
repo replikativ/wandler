@@ -11,6 +11,16 @@
 ;; provable. Opaque closures are fusion barriers: the pipeline still runs, it
 ;; just isn't optimized across them.
 ;;
+;; SUPERSEDED (Step 3c). This is the original "Subsystem B" surface; its
+;; refinement filter-elimination (`reducers.plan/eliminate-filters`) is now also
+;; provided — certified, over the SAME `refine/prove-const` engine — directly in
+;; the main optimizer cascade (`clean.optimize.filter-elim/try-filter-elim`), so
+;; an ordinary `a/defn` over a malli-refined element drops its redundant filters
+;; without going through this separate transducer-native surface. This surface is
+;; retained for its native-run path + as the reducers demonstration; prefer the
+;; `a/defn` + certified optimizer path for new code. Removing the duplicate
+;; `eliminate-filters` plumbing is a follow-up once the v/* surface migrates.
+;;
 ;; Example:
 ;;   (require '[wandler.verified :as v])
 ;;   (def succ (r/certified-fn {:name 'Nat.succ :kernel-term … :runtime inc}))
