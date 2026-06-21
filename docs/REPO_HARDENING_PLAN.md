@@ -152,7 +152,16 @@ green); with `WANDLER_REQUIRE_STORE=1` (CI) a missing store is a HARD FAILURE. V
 passes store-present (±env var); fails store-absent+env var; banners store-absent local.
 This is the mechanism — the items below wire it / widen coverage and are the remainder.
 
-### 2.1 Make storeless runs honest — M — ◐ — **decision point**
+### 2.2 On-demand fetch + local PSS cache — ☑ (test_env.clj, commit 6939dca)
+The store-shipping mechanism (your release-asset + cache design): `init-full-env` resolution
+gains (3) reuse a previously-fetched `$XDG_CACHE_HOME/wandler/init-store` cache and (4) OPT-IN
+`WANDLER_FETCH_INIT=1` → download `init.ndjson` from `WANDLER_INIT_URL` (default the ansatz
+0.1.61 release) → import to the cache once. Compile + local-store resolution verified; failures
+degrade to nil (gate makes it loud). **Remaining ops step (yours): attach `init.ndjson` to a
+release** (it's Init-only ~96M, NOT Mathlib; init-medium too thin — lacks List.Nodup). A curated
+slice (~10M, just the constants the suite touches) is an optional later optimization.
+
+### 2.1 Make storeless runs honest — ☑ (gate + loader) — **decision point resolved**
 Three composable pieces (recommend **B now + C as the real-coverage follow-up**):
 - **A. Git-track `init-medium` (3.2M)** + migrate a meaningful subset of the 269
   tests onto `init-medium-env` where they only need core lemmas → a genuine CI
