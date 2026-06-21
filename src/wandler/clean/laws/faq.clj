@@ -32,6 +32,7 @@
             [wandler.clean.laws.bucket :as bucket]
             [wandler.clean.laws.reorder :as reorder]
             [wandler.clean.laws.relational :as relational]
+            [wandler.clean.laws.grace :as grace]
             [wandler.clean.laws.ac :as ac-providers]))
 
 (defn- has? [s] (some? (env/lookup (a/env) (nm/from-string s))))
@@ -46,6 +47,7 @@
   (bucket/install!)
   (reorder/install!)       ;; count drive-direction reorder (Map.join_length_comm) — aggregate corollary, NO Perm
   (relational/install!)    ;; semijoin / anti-join (membership filter → group_by index probe)
+  (grace/install!)         ;; grace-hash spill: List.chunk + flatten_chunk + Map.foldl_join_blockfold
   ;; AC providers for WAddMonoid.add / WSemiring.add — feed `ac_rfl` (the monoid normalizer that
   ;; closes the abstract associativity+identity reshuffles in the `_generic` proofs below).
   (ac-providers/register!)
