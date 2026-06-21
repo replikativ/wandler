@@ -292,15 +292,25 @@ terms). The residual gap is statement-level boilerplate driven by elaborator
 inference limits — statements run ~4–6× longer than Lean. These are ansatz
 *elaborator* features; each shrinks every wandler statement. Highest leverage first.
 
-### 5.1 Implicit type-arg synthesis at applied heads — L — ☐ — biggest lever
-~104 occurrences of explicit type args (`(List.map X S f xs)` vs Lean `xs.map f`).
-Lean infers these from the argument types during elaboration. Implement
-argument-driven implicit inference for fully-applied heads in the ansatz elaborator
-(study `../lean4` `elabApp` / `mkApp` insertion of implicit/instance args).
-- Staged: first infer leading type params from later explicit args (the common case),
-  then generalize. Suite-gated, differential-tested against current explicit forms.
-- **Verify:** a corpus of the 104 sites elaborates with the type args dropped, each
-  producing a def-eq term to the explicit version; suites green.
+### 5.1 Thin the law statements — ◐ frame.clj done — **NO elaborator change needed**
+**MAJOR FINDING (overturns the review):** the ansatz elaborator ALREADY infers dropped
+type args. Init signatures keep implicit binder info (`List.map => [α:implicit β:implicit
+f l]`), so `insert-implicits` + unification solves them. PROVEN: `(List.map (fn x => x) xs)`
+elaborates to the SAME kernel term as `(List.map Nat Nat (fn x => x) xs)`, by `rfl`. So the
+"~104 explicit type args" are the LAW FILES written verbose — not a surface limitation.
+Phase 5.1 is therefore a pure **wandler law-statement thinning**, no ansatz work.
+
+- **frame.clj DONE** (commit 857fd31): all 3 aggregate laws thinned (~30% shorter, near-Lean);
+  re-prove + frame_test + frame_index_test + surface_keyfactor_test green. The thin form is
+  def-eq, so the optimizer (which matches on statement structure) is unaffected.
+- **Head-dependence caveat (found surveying relational.clj):** the sweep is NOT uniform.
+  Init SOAC heads (`List.map/filter/foldl/flatMap`) + `Prod.mk/fst/snd` are `:implicit` →
+  thinnable. wandler-defined heads (`Map.lookup`, `Map.group_by`, `Option.isSome`,
+  `List.elem`) may have EXPLICIT type params → not thinnable without changing their kmap
+  signatures to mark the params implicit (a separate, deeper change). So a clean full sweep
+  needs per-head triage + possibly kmap signature work.
+- **Remaining:** relational(8)/bucket(6)/faq(23)/reorder(2)/grace(2)/monoid(3) — scope TBD
+  (cosmetic, high-volume, head-dependent). Each file suite-gated.
 
 ### 5.2 Instance-argument synthesis in statement position — L — ☐
 ~35 explicit instance args (`(WSemiring.toWAddMonoid m)`, `instBEqOfDecidableEq`).
