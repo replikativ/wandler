@@ -49,7 +49,16 @@ Shipped THREE primitives (ansatz suite stays green):
 - **Verify:** ansatz suite green; a deliberately-broken proof re-raises; a duplicate
   install is a no-op.
 
-### 0.2 Cut the ansatz PR + release — M — ☐ — **decision point**
+### 0.2 Cut the ansatz PR + release — ☑ PR OPEN (release on merge)
+PR opened: replikativ/ansatz#44 (`rethink-dev-experience` → `main`, 93 commits, themed
+description). CI runs on the PR; CircleCI deploys (Clojars) + GitHub-releases only on
+merge to `main` — owner-driven, not automated here.
+
+### 0.3 Bump wandler's pin — ☐ BLOCKED on the #44 merge+release
+Once CI publishes the new `0.1.x`, set `../wandler/deps.edn` `0.1.60` → new release; keep
+`:local-ansatz` for dev. (Until then, wandler develops against `:local-ansatz`.)
+
+### 0.2-orig Cut the ansatz PR + release — (superseded; see 0.2 above)
 - Open PR `rethink-dev-experience → main` for ansatz with a curated description
   grouping the 92 commits by theme (unify · tactics · simp · prelude · elab).
 - Confirm ansatz suite green (`clj -M:test`), `clj -T:build javac` clean.
