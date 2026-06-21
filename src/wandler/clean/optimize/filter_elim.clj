@@ -126,3 +126,63 @@
                     (assoc res :verified? true)))))
             (catch Throwable _ nil)))
         (all-filters term)))
+
+
+;; ── Step 4: certified DISTINCT-removal (uniqueness-licensed) ─────────────────────────────────────
+(defn- all-eraseDups
+  "Every bvar-free `List.eraseDups α inst xs` application subterm, preorder."
+  [t]
+  (let [acc (volatile! [])]
+    (letfn [(go [t]
+              (when (e/app? t)
+                (let [[h args] (e/get-app-fn-args t)]
+                  (when (and (= "List.eraseDups" (cname h)) (= 3 (count args)) (zero? (e/bvar-range t)))
+                    (vswap! acc conj t))))
+              (cond (e/app? t)    (do (go (e/app-fn t)) (go (e/app-arg t)))
+                    (e/lam? t)    (do (go (e/lam-type t)) (go (e/lam-body t)))
+                    (e/forall? t) (do (go (e/forall-type t)) (go (e/forall-body t)))))]
+      (go t))
+    @acc))
+
+(defn- nodup-property
+  "If `xs` is `Subtype.val.{u} (List α) P s`, return `Subtype.property.{u} (List α) P s : P (val s)`
+   (= `P xs`; when `P` is `Nodup`, that is `Nodup xs`). Else nil. We do NOT verify P is literally
+   Nodup here — a non-Nodup P makes the `nodup_eraseDups` citation ill-typed, so verified-rewrite?
+   rejects it. The Nodup proof carried by a declared-`:set` refinement IS exactly this property."
+  [xs]
+  (let [[h args] (e/get-app-fn-args xs)]
+    (when (and (= "Subtype.val" (cname h)) (= 3 (count args)))
+      (let [u (or (first (e/const-levels h)) lvl/zero)]
+        (e/app* (C "Subtype.property" [u]) (nth args 0) (nth args 1) (nth args 2))))))
+
+(defn- synth-lawful-beq
+  "Synthesize `LawfulBEq.{0} α inst` (the law's monomorphic Type-0 instance), or nil."
+  [^Env env alpha inst]
+  (let [goal (e/app* (C "LawfulBEq" [lvl/zero]) alpha inst)]
+    (try ((requiring-resolve 'ansatz.tactic.instance/synthesize)
+          env ((requiring-resolve 'ansatz.core/instance-index)) goal)
+         (catch Throwable _ nil))))
+
+(defn try-distinct-elim
+  "If `term` contains a closed `List.eraseDups α inst xs` whose `xs` is a `Subtype.val` carrying a
+   `Nodup` refinement (a declared-uniqueness `:set`), rewrite the dedup AWAY (→ xs) with a kernel
+   proof: `nodup_eraseDups α inst (synth LawfulBEq) xs (Subtype.property …)` lifted whole-term by
+   congrArg, re-checked by verified-rewrite?. The DISTINCT-removal capability — sound ONLY given the
+   declared key (a stats planner can't do it). Requires `nodup_eraseDups` installed
+   (wandler.clean.laws.uniqueness/install!)."
+  [^Env env term & {:keys [lctx]}]
+  (some (fn [ed]
+          (try
+            (let [[_ args] (e/get-app-fn-args ed)
+                  alpha (nth args 0) inst (nth args 1) xs (nth args 2)
+                  prop (nodup-property xs)
+                  linst (when prop (synth-lawful-beq env alpha inst))]
+              (when linst
+                (let [eq (e/app* (C "nodup_eraseDups" []) alpha inst linst xs prop)
+                      result (replace-closed term ed xs)
+                      proof (congr-whole env (or lctx {}) term ed xs eq lvl/zero)
+                      res {:term result :proof proof :rewrites [:distinct-elim]}]
+                  (when (cert/verified-rewrite? env term res :lctx lctx)
+                    (assoc res :verified? true)))))
+            (catch Throwable _ nil)))
+        (all-eraseDups term)))

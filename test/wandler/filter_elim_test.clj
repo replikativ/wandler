@@ -4,7 +4,9 @@
    kernel-checked whole-term proof (congrArg over List.filter_eq_self.mpr ∘ prove-const). Gated on
    an Init env."
   (:require [wandler.clean.optimize.filter-elim :as fe]
+            [wandler.clean.laws.uniqueness :as uniq]
             [wandler.test-env :as test-env]
+            [ansatz.core :as a]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.level :as lvl]
@@ -46,3 +48,36 @@
           (is (= (:term res3) (e/app* (C "List.length" [u]) T (e/app (C "List.nil" [u]) T)))
               "filter → [] → length []"))))
     (println "SKIP refinement-filter-eliminated: no Init env")))
+
+(deftest distinct-eliminated-on-nodup-refinement
+  (if-let [ke0 @test-env/init-full-env]
+    (do (reset! a/ansatz-env ke0)
+        (uniq/install!)
+        ;; Env is immutable — install! produced a NEW env in the atom; use the post-install one.
+        (let [ke (a/env)
+              u lvl/zero u1 (lvl/succ lvl/zero)
+              C C
+              Nat (C "Nat" [])
+              instBEq (e/app* (C "instBEqOfDecidableEq" [u]) Nat (C "instDecidableEqNat" []))
+              listNat (e/app (C "List" [u]) Nat)
+              ;; {l : List Nat // Nodup l} — a declared `:set`
+              P (e/lam "l" listNat (e/app* (C "List.Nodup" [u]) Nat (e/bvar 0)) :default)
+              subT (e/app* (C "Subtype" [u1]) listNat P)
+              s (e/fvar 1)
+              lctx {1 {:name "s" :type subT}}
+              xs (e/app* (C "Subtype.val" [u1]) listNat P s)   ; the underlying List Nat
+              orig (e/app* (C "List.length" [u]) Nat
+                           (e/app* (C "List.eraseDups" [u]) Nat instBEq xs))
+              res (fe/try-distinct-elim ke orig :lctx lctx)]
+          (testing "eraseDups over a Nodup-refined (declared :set) list is dropped, kernel-certified"
+            (is (some? res) "distinct-elim fired")
+            (is (true? (:verified? res)) "the whole-term rewrite re-checks (LawfulBEq synthesized)")
+            (is (= [:distinct-elim] (:rewrites res)))
+            (is (= (:term res) (e/app* (C "List.length" [u]) Nat xs)) "dedup gone → length (val s)"))
+          (testing "an eraseDups over a PLAIN (non-refined) list is NOT eliminated (sound)"
+            (let [plain (e/fvar 2)
+                  lctx2 {2 {:name "ys" :type listNat}}
+                  orig2 (e/app* (C "List.length" [u]) Nat
+                                (e/app* (C "List.eraseDups" [u]) Nat instBEq plain))]
+              (is (nil? (fe/try-distinct-elim ke orig2 :lctx lctx2)))))))
+    (println "SKIP distinct-eliminated-on-nodup-refinement: no Init env")))
