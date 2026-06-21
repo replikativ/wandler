@@ -9,7 +9,7 @@
   (:require [clojure.test :refer [deftest is testing]]
             [ansatz.core :as a]
             [wandler.kmap :as km]
-            [wandler.laws.relational :as rl]
+            [wandler.clean.laws.faq :as rl]
             [wandler.exec.dbsp :as dbsp]
             [wandler.test-env :as test-env]
             [ansatz.kernel.env :as kenv]

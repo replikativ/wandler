@@ -12,7 +12,7 @@
   (:require [ansatz.core :as a]
             [wandler.core :as w]
             [wandler.kmap :as km]
-            [wandler.laws.relational :as rl]
+            [wandler.clean.laws.faq :as rl]
             [wandler.test-env :as test-env]
             [clojure.test :refer [deftest is use-fixtures]]))
 

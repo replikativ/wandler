@@ -24,7 +24,7 @@
             [wandler.bridge :as bridge]
             [wandler.bridge.datahike :as dh]
             [wandler.clean.optimize :as opt]
-            [wandler.laws.relational :as rl]
+            [wandler.clean.laws.faq :as rl]
             [wandler.kmap :as kmap]
             [wandler.test-env :as test-env]
             [ansatz.kernel.expr :as e]

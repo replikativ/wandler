@@ -13,7 +13,7 @@
             [ansatz.core :as a]
             [wandler.core :as wc]
             [wandler.kmap :as km]
-            [wandler.laws.relational :as rl]
+            [wandler.clean.laws.faq :as rl]
             [wandler.laws.tropical :as trop]
             [wandler.test-env :as test-env]
             [ansatz.kernel.name :as name]

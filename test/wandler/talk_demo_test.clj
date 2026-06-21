@@ -11,7 +11,7 @@
             [wandler.exec.live :as live]
             [wandler.bridge :as bridge]
             [wandler.bridge.datahike :as dh]
-            [wandler.laws.relational :as rl]
+            [wandler.clean.laws.faq :as rl]
             [wandler.kmap :as kmap]
             [ansatz.core :as a]
             [wandler.test-env :as test-env]

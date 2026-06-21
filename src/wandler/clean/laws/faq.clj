@@ -33,7 +33,8 @@
             [wandler.clean.laws.reorder :as reorder]
             [wandler.clean.laws.relational :as relational]
             [wandler.clean.laws.grace :as grace]
-            [wandler.clean.laws.ac :as ac-providers]))
+            [wandler.clean.laws.ac :as ac-providers]
+            [wandler.laws.semiring :as sreg]))
 
 (defn- has? [s] (some? (env/lookup (a/env) (nm/from-string s))))
 
@@ -503,4 +504,14 @@
   ;;   filter→join pushdown + semijoin foundation (relational.clj, already tactic-based — straight port).
   ;; Then: repoint wandler.clean.surface.core → faq/install!, retarget the Perm reorder/grace-hash
   ;; strategies to the aggregate Map_aggJoin_reorder (option 1a), delete wandler.laws.*, suite-gate.
+
+  ;; Semiring CARRIER ROWS (Nat counting/SUM + Bool provenance) for the physical optimizer's
+  ;; recognizers/emitters — relocated from the retired wandler.laws.relational/install!. Idempotent
+  ;; (last wins); the named consts are all Init lemmas (present in the store regardless of install).
+  (sreg/register! "Nat"  {:add "Nat.add" :mul "Nat.mul" :zero "Nat.zero"
+                          :hAA "Nat.add_assoc" :hZA "Nat.zero_add" :hAZ "Nat.add_zero"
+                          :hMA "Nat.mul_add" :hMZ "Nat.mul_zero" :hZM "Nat.zero_mul"})
+  (sreg/register! "Bool" {:add "Bool.or" :mul "Bool.and" :zero "Bool.false"
+                          :hAA "Bool.or_assoc" :hZA "Bool.false_or" :hAZ "Bool.or_false"
+                          :hMA "Bool.and_or_distrib_left" :hMZ "Bool.and_false" :hZM "Bool.false_and"})
   :installed)

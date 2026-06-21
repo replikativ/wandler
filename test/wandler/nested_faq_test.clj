@@ -7,7 +7,7 @@
             [ansatz.core :as a]
             [wandler.core :as wc]
             [wandler.kmap :as km]
-            [wandler.laws.relational :as rl]
+            [wandler.clean.laws.faq :as rl]
             [wandler.clean.optimize.egraph :as ege]
             [wandler.clean.optimize.cost :as cost]
             [wandler.test-env :as test-env]

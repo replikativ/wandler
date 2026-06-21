@@ -10,7 +10,7 @@
    Π or Σ; they write `[:int {:min 0}]` and the kernel reads a dependent type."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [ansatz.core :as a]
-            [wandler.core :as wc] [wandler.kmap :as km] [wandler.laws.relational :as rl]
+            [wandler.core :as wc] [wandler.kmap :as km] [wandler.clean.laws.faq :as rl]
             [wandler.clean.optimize :as opt] [wandler.clean.optimize.cost :as cost]
             [wandler.clean.surface.malli :as am]
             [wandler.reducers.record :as rec]

@@ -21,7 +21,7 @@
        -M:x -e \"(require 'wandler.cross-engine-source-test)(clojure.test/run-tests 'wandler.cross-engine-source-test)\""
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [ansatz.core :as a]
-            [wandler.core :as wc] [wandler.kmap :as km] [wandler.laws.relational :as rl]
+            [wandler.core :as wc] [wandler.kmap :as km] [wandler.clean.laws.faq :as rl]
             [wandler.clean.optimize :as opt] [wandler.clean.optimize.cost :as cost]
             [wandler.reducers.record :as rec]
             [wandler.test-env :as test-env]

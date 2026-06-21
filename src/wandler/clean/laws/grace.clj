@@ -21,10 +21,10 @@
             [ansatz.kernel.name :as nm]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.level :as lvl]
-            ;; Stage 2 (blockfold) reuses the verified hand-built Perm-cluster builders. They sit on
-            ;; the clean foundation (Map.join, Map.bucket_content) — only the Perm slice + blockfold
-            ;; need admitting. (To be inlined here when wandler.laws.proofs is deleted.)
-            [wandler.laws.proofs :as rp]))
+            ;; Stage 2 (blockfold) reuses the verified hand-built Perm-cluster builders, relocated into
+            ;; the clean tree. They sit on the clean foundation (Map.join, Map.bucket_content) — only
+            ;; the Perm slice + blockfold need admitting.
+            [wandler.clean.laws.grace-proofs :as rp]))
 
 ;; ── helpers ─────────────────────────────────────────────────────────────────
 (defn- nmk [s] (nm/from-string s))

@@ -14,7 +14,7 @@
             [wandler.clean.optimize.cost :as cost]
             [wandler.core :as wc]
             [wandler.kmap :as km]
-            [wandler.laws.relational :as rl]
+            [wandler.clean.laws.faq :as rl]
             [wandler.test-env :as test-env]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]

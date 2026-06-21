@@ -6,7 +6,7 @@
             [ansatz.core :as a]
             [wandler.clean.surface.collections :as coll]
             [wandler.clean.surface.relational :as rel]
-            [wandler.laws.relational :as rl]
+            [wandler.clean.laws.faq :as rl]
             [wandler.kmap :as kmap]
             [wandler.test-env :as test-env]
             [clojure.test :refer [deftest is]]))

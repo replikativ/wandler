@@ -11,7 +11,7 @@
    is EXACTLY the factorization's win, and the kernel proof IS the variable-elimination certificate."
   (:require [ansatz.core :as a]
             [wandler.kmap :as kmap]
-            [wandler.laws.relational :as rl]
+            [wandler.clean.laws.faq :as rl]
             [wandler.clean.optimize :as opt]
             [wandler.test-env :as test-env]
             [ansatz.kernel.expr :as e]

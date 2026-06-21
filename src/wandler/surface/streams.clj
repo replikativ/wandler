@@ -311,7 +311,7 @@
    kmap/rel-laws/dbsp are installed first. Idempotent."
   []
   ((requiring-resolve 'wandler.kmap/install!))
-  ((requiring-resolve 'wandler.laws.relational/install!))
+  ((requiring-resolve 'wandler.clean.laws.faq/install!))
   ((requiring-resolve 'wandler.exec.dbsp/install!))
   (install!)
   (when-not (kenv/lookup (a/env) (nm "Strm.joinCount2_step"))

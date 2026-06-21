@@ -10,7 +10,7 @@
             [ansatz.core :as a]
             [wandler.core :as wc]
             [wandler.kmap :as km]
-            [wandler.laws.relational :as rl]
+            [wandler.clean.laws.faq :as rl]
             [wandler.clean.surface.records :as wrec]
             [wandler.test-env :as test-env]
             [wandler.clean.optimize :as opt]

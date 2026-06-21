@@ -8,7 +8,7 @@
   (:require [clojure.test :refer [deftest is testing]]
             [ansatz.core :as a]
             [wandler.core :as w]
-            [wandler.laws.relational :as rl]
+            [wandler.clean.laws.faq :as rl]
             [wandler.test-env :as test-env]))
 
 (deftest clean-count-factor-through-join
