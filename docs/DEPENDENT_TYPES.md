@@ -50,7 +50,7 @@ Consequences the planner relies on:
 
 ## 2. The type drives the planner — three ways
 
-The planner (`wandler.optimize`) reads the elaborated *type* of a pipeline to pick
+The planner (`wandler.clean.optimize`) reads the elaborated *type* of a pipeline to pick
 a rewrite, then hands the composed proof to the kernel gate
 (`cert/verified-rewrite?`). The search is untrusted; only the certificate counts.
 Three places the type is load-bearing:

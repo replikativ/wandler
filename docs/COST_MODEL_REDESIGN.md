@@ -1,5 +1,11 @@
 # Cost model redesign: tree-aware, binder-aware, descriptor-driven
 
+> **Status update:** the core of this redesign SHIPPED as `wandler.clean.optimize.cost`
+> (tree/let/binder-aware, descriptor-driven op-cost table). The §4 SIGNATURE-derived
+> `:list`/`output-list?` and the B2 cost-based backend push-down remain live roadmap items
+> (referenced from `clean/optimize/cost.clj`, `exec/physical.clj`, `backend/raster.clj`).
+> The original plan below is kept for the rationale.
+
 Status: PLAN (not yet implemented). Goal: make `wandler.optimize.cost` cost *trees* and
 *lets*, so the planner can reward sharing (CSE), cost a backend push-down, and serve as the
 single seam where engine capabilities (raster / datahike / stratum) declare their cost. Done
