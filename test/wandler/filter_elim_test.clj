@@ -35,5 +35,14 @@
       (testing "a NON-constant filter (= x 7) is left untouched (sound: only redundant ones drop)"
         (let [pred2 (e/lam "x" T (e/app* (C "Nat.beq" []) valx (e/lit-nat 7)) :default)
               orig2 (e/app* (C "List.length" [u]) T (e/app* (C "List.filter" [u]) T pred2 xs))]
-          (is (nil? (fe/try-filter-elim ke orig2 :lctx lctx))))))
+          (is (nil? (fe/try-filter-elim ke orig2 :lctx lctx)))))
+      (testing "a CONTRADICTORY filter (val x < 5 over {v // 5≤v}) empties → length [], certified"
+        (let [pred3 (e/lam "x" T (e/app* (C "Nat.blt" []) valx (e/lit-nat 5)) :default)  ; provably false
+              orig3 (e/app* (C "List.length" [u]) T (e/app* (C "List.filter" [u]) T pred3 xs))
+              res3 (fe/try-filter-elim ke orig3 :lctx lctx)]
+          (is (some? res3) "filter-elim-empty fired")
+          (is (true? (:verified? res3)) "the empty-rewrite re-checks")
+          (is (= [:filter-elim-empty] (:rewrites res3)))
+          (is (= (:term res3) (e/app* (C "List.length" [u]) T (e/app (C "List.nil" [u]) T)))
+              "filter → [] → length []"))))
     (println "SKIP refinement-filter-eliminated: no Init env")))

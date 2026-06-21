@@ -9,11 +9,11 @@
    fvar + `abstract1`, so it works at any nesting depth). The whole proof is then re-checked by the
    strict `verified-rewrite?` gate, exactly like every other cascade strategy.
 
-   This folds the filter-elimination capability that previously lived ONLY on the separate
-   `wandler.verified` / `reducers.plan` surface into the one optimizer cascade — so an `a/defn` over a
-   malli-refined element now drops its redundant filters automatically, certified. (Always-FALSE /
-   provably-empty filters are not eliminated here yet — the rarer case — so this is sound but not yet
-   complete; those remain a no-op.)"
+   Always-TRUE drops the filter (→ xs); always-FALSE empties it (→ [], via `List.filter_eq_nil_iff`
+   and `Bool.not_eq_true`). This folds the filter-elimination capability that previously lived ONLY on
+   the separate `wandler.verified` / `reducers.plan` surface into the one optimizer cascade — so an
+   `a/defn` over a malli-refined element now drops its redundant (or empties its contradictory) filters
+   automatically, certified, both directions."
   (:require [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.level :as lvl]
@@ -65,6 +65,29 @@
         hb (e/lam "a" alpha (e/lam "_m" (mem (e/bvar 0)) (e/app h (e/bvar 1)) :default) :default)]
     (e/app* (C "Iff.mpr" []) A B (e/app* (C "List.filter_eq_self" [u]) alpha p xs) hb)))
 
+(defn- filter-eq-nil-eq
+  "`filter α p xs = []` from the pointwise `h : ∀x:α, p x = false` (List.filter_eq_nil_iff.mpr,
+   with `Bool.not_eq_true` turning `p a = false` into the required `¬(p a = true)`)."
+  [u alpha p xs h]
+  (let [u1 (lvl/succ u)
+        bl1 (lvl/succ lvl/zero)                                   ; Bool lives at Sort 1, always
+        listA (e/app (C "List" [u]) alpha)
+        flt (e/app* (C "List.filter" [u]) alpha p xs)
+        nilA (e/app (C "List.nil" [u]) alpha)
+        A (e/app* (C "Eq" [u1]) listA flt nilA)
+        Bool (C "Bool" [])
+        inst (e/app (C "List.instMembership" [u]) alpha)
+        mem (fn [a] (e/app* (C "Membership.mem" [u u]) alpha listA inst xs a))
+        pa-true (fn [a] (e/app* (C "Eq" [bl1]) Bool (e/app p a) (C "Bool.true" [])))
+        pa-false (fn [a] (e/app* (C "Eq" [bl1]) Bool (e/app p a) (C "Bool.false" [])))
+        notp (fn [a] (e/app (C "Not" []) (pa-true a)))
+        ;; ¬(p a = true)  via  Eq.mpr (Bool.not_eq_true (p a) : ¬(p a=true) = (p a=false)) (h a)
+        npf (fn [a] (e/app* (C "Eq.mpr" [lvl/zero]) (notp a) (pa-false a)
+                            (e/app (C "Bool.not_eq_true" []) (e/app p a)) (e/app h a)))
+        B (e/forall' "a" alpha (e/forall' "_m" (mem (e/bvar 0)) (notp (e/bvar 1)) :default) :default)
+        hb (e/lam "a" alpha (e/lam "_m" (mem (e/bvar 0)) (npf (e/bvar 1)) :default) :default)]
+    (e/app* (C "Iff.mpr" []) A B (e/app* (C "List.filter_eq_nil_iff" [u]) alpha p xs) hb)))
+
 (defn- congr-whole
   "Lift subterm eq `flt = repl` (kernel proof `eq`) to a whole-term proof `orig = orig[flt:=repl]`
    via `congrArg` over the depth-aware motive `λ hole, orig[flt:=hole]`. `u` = element universe."
@@ -88,12 +111,17 @@
             (let [[_ args] (e/get-app-fn-args flt)
                   alpha (nth args 0) p (nth args 1) xs (nth args 2)
                   pc (refine/prove-const env p alpha)]
-              (when (and pc (true? (:value pc)))
+              (when (and pc (boolean? (:value pc)))
                 (let [u (or (first (e/const-levels (first (e/get-app-fn-args flt)))) lvl/zero)
-                      eq (filter-eq-self-eq u alpha p xs (:proof pc))
-                      result (replace-closed term flt xs)
-                      proof (congr-whole env (or lctx {}) term flt xs eq u)
-                      res {:term result :proof proof :rewrites [:filter-elim]}]
+                      always-true? (true? (:value pc))
+                      repl (if always-true? xs (e/app (C "List.nil" [u]) alpha))
+                      eq (if always-true?
+                           (filter-eq-self-eq u alpha p xs (:proof pc))   ; filter = xs
+                           (filter-eq-nil-eq  u alpha p xs (:proof pc)))  ; filter = []
+                      result (replace-closed term flt repl)
+                      proof (congr-whole env (or lctx {}) term flt repl eq u)
+                      res {:term result :proof proof
+                           :rewrites [(if always-true? :filter-elim :filter-elim-empty)]}]
                   (when (cert/verified-rewrite? env term res :lctx lctx)
                     (assoc res :verified? true)))))
             (catch Throwable _ nil)))
