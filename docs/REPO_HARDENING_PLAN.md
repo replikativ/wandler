@@ -313,8 +313,18 @@ Phase 5.1 is therefore a pure **wandler law-statement thinning**, no ansatz work
   `List.elem`) may have EXPLICIT type params → not thinnable without changing their kmap
   signatures to mark the params implicit (a separate, deeper change). So a clean full sweep
   needs per-head triage + possibly kmap signature work.
-- **Remaining:** relational(8)/bucket(6)/faq(23)/reorder(2)/grace(2)/monoid(3) — scope TBD
-  (cosmetic, high-volume, head-dependent). Each file suite-gated.
+- **Head triage (binder-info, verified against store):** thinnable (leading `:implicit`):
+  `List.map/filter/foldl/flatMap`, `Prod.mk/fst/snd`, `Option.isSome/getD`. NOT thinnable
+  (all-`:default`): every wandler `Map.*` (`lookup/group_by/gbStepId/insert/join`); also
+  `List.lookup/elem`, `Option.map`, `BEq.beq`, `List.nil` (instance-entangled or
+  result-type-only). To thin `Map.*` would need kmap signature changes (deeper, deferred).
+- **SWEEP APPLIED (◐ suite-validation running):** wrote a paren-aware drop-transform keyed by
+  the triaged head→count table (`/tmp/thin_typeargs.py`, skips comments/strings) and applied it
+  across all law files: **~173 sites thinned** (faq 98, bucket 37, relational 26, monoid 9, par 2,
+  reorder 1) + frame's 3 (manual). Whole chain re-proves (`install-laws!` clean); full suite +
+  published-pin validation in flight.
+- **Deferred (deeper):** making wandler `Map.*` signatures implicit (unlocks the Map.*-heavy
+  verbosity); the instance-coercion `(WSemiring.toWAddMonoid m)` sites (5.2).
 
 ### 5.2 Instance-argument synthesis in statement position — L — ☐
 ~35 explicit instance args (`(WSemiring.toWAddMonoid m)`, `instBEqOfDecidableEq`).
