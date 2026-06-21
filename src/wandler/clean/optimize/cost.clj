@@ -5,6 +5,7 @@
   (:require [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.env :as env]
+            [ansatz.refine :as refine]
             [wandler.clean.optimize.certify :as cert])
   (:import [ansatz.kernel Env]))
 
@@ -234,6 +235,61 @@
       ("Nat.ble" "Nat.blt" "Nat.le" "Nat.lt" "LE.le" "LT.lt" "GE.ge" "GT.gt") (:range default-selectivity)
       ("Ne" "ne") (:neq default-selectivity)
       (:other default-selectivity))))
+
+
+(defn- cmp-kind [nm]
+  (case nm
+    ("Nat.blt" "Nat.lt" "LT.lt") :lt
+    ("Nat.ble" "Nat.le" "LE.le") :le
+    ("GT.gt") :gt
+    ("GE.ge") :ge
+    ("Nat.beq" "Nat.decEq" "Eq" "BEq.beq") :eq
+    nil))
+
+(defn- range-pred-rate
+  "EXACT pass-rate of a literal comparison predicate `(fun v => v CMP k)` (or `k CMP v`) over a
+   value the TYPE proves lies in [min,max]. The 0.0 (provably empty) and 1.0 (provably identity)
+   ends are SOUND — the refinement discharges them, i.e. they are filter-elimination facts. The
+   interior is the uniform-distribution estimate over the known domain: a domain-aware prior,
+   strictly better than the comparator-head constant (`< 10` over [0,99] is 0.1, not the flat
+   0.33). nil if the predicate is not a literal comparison of the bound value."
+  [pred {lo :min hi :max}]
+  ;; the carrier is Nat, so the lower bound is implicitly 0 when the schema doesn't raise it
+  ;; (malli `{:min 0}` is definitionally Nat and leaves no refinement conjunct).
+  (when-let [lo (when hi (or lo 0))]
+   (when (<= ^long lo ^long hi)
+    (let [body (loop [b pred] (if (e/lam? b) (recur (e/lam-body b)) b))
+          [h args] (e/get-app-fn-args body)
+          nm (when (e/const? h) (name/->string (e/const-name h)))
+          k (cmp-kind nm)
+          a (when (>= (count args) 2) (nth args (- (count args) 2) nil))
+          b (when (>= (count args) 2) (nth args (- (count args) 1) nil))
+          kv (cond (and b (e/lit-nat? b)) (long (e/lit-nat-val b))
+                   (and a (e/lit-nat? a)) (long (e/lit-nat-val a))
+                   :else nil)
+          ;; orient: bound var on the LEFT (v CMP k) keeps the op; on the RIGHT (k CMP v) flips it
+          op (when (and k a) (if (e/bvar? a) k (case k :lt :gt :le :ge :gt :lt :ge :le :eq :eq)))]
+      (when (and op kv)
+        (let [mn (long lo) mx (long hi)
+              dom (inc (- mx mn))
+              cnt (case op
+                    :lt (max 0 (inc (- (min mx (dec kv)) mn)))
+                    :le (max 0 (inc (- (min mx kv) mn)))
+                    :gt (max 0 (inc (- mx (max mn (inc kv)))))
+                    :ge (max 0 (inc (- mx (max mn kv))))
+                    :eq (if (<= mn kv mx) 1 0))]
+          (double (/ cnt dom))))))))
+
+(defn refinement-selectivity
+  "Build a (pred → pass-rate) selectivity fn for a source whose ELEMENT type carries a
+   `Subtype Nat` range (read via ansatz.refine): a literal comparison of the bound value gets the
+   domain-aware rate (sound at the empty/identity ends), everything else falls back to the
+   comparator-head `pred-selectivity`. Pass the result as pipeline-cost's `:selectivity`. This is
+   the refinement → selection-axis bridge: a declared range turns a guess into a domain-aware
+   prior the join/aggregation cost model can trust."
+  [elem-type]
+  (let [rng (refine/nat-range elem-type)]
+    (fn [pred] (or (and rng (range-pred-rate pred rng)) (pred-selectivity pred)))))
 
 
 (def ^:private membership-scan-names
