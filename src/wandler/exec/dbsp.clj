@@ -316,7 +316,7 @@
   "Admit the insert-only IVM laws (`List.filter_count_incr`, `Map.join_count_incr`) into the global
    env (idempotent). After this, a windowed/streaming count over a filter or a join can be maintained
    incrementally with a kernel certificate that the incremental result equals the batch recomputation.
-   Requires kmap/install! + rel-laws/install! (for Map.join_append_perm)."
+   Requires kmap/install! + the relational laws (`wandler.core/install-laws!`, for Map.join_append_perm)."
   []
   (laws/cached-install! cache "Zset.weight_append"
     (fn []

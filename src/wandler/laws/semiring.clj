@@ -1,9 +1,9 @@
 (ns wandler.laws.semiring
   "The semiring CARRIER REGISTRY — carrier const-name → its ops + the axiom-PROOF const-names the generic
-   frame-family laws require. The optimizer's recognizers/emitters (wandler.optimize.physical) read the
-   carrier `S` off a fold op's binder type and look the entry up here; the emitter instantiates the
+   frame-family laws require. The optimizer's recognizers/emitters (wandler.clean.optimize.physical) read
+   the carrier `S` off a fold op's binder type and look the entry up here; the emitter instantiates the
    `_generic` law with the entry's ops + proofs. Each carrier registers its OWN row from where its kernel
-   laws are admitted: Nat/Bool in wandler.laws.relational, ℕ∞ tropical in wandler.laws.tropical. Adding a
+   laws are admitted: Nat/Bool in wandler.clean.laws.faq, ℕ∞ tropical in wandler.laws.tropical. Adding a
    semiring = `register!` one row (with that carrier's Init-proven distributive/annihilator/monoid lemma
    names) next to its laws. Soundness still rests entirely on check-constant in the optimizer — a bad row
    can't pass the kernel gate, it just fails to fire."

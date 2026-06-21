@@ -85,7 +85,8 @@
   "Install the classes, then build+verify a WSemiring instance for every carrier currently in the
    `wandler.laws.semiring` registry. Returns {carrier → status-map}. Carriers whose axiom lemmas
    are absent from the loaded store simply report :failed (graceful — the kernel gate can't be
-   fooled). Populate the registry first by requiring wandler.laws.relational / .tropical."
+   fooled). Populate the registry first via the clean law library — `wandler.core/install-laws!`
+   registers the Nat/Bool rows; `wandler.laws.tropical/install!` registers the ℕ∞ row."
   []
   (install-classes!)
   (into {} (for [c (sreg/registered)]

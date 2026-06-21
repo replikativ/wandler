@@ -308,7 +308,7 @@
 (defn install-join!
   "Admit the BILINEAR streaming join — `Strm.joinCount2` + `Strm.joinCount2_step` (the DBSP differential
    join's 4-term incremental recurrence). Opt-in (needs the relational + DBSP laws); ensures
-   kmap/rel-laws/dbsp are installed first. Idempotent."
+   kmap / the relational laws / dbsp are installed first. Idempotent."
   []
   ((requiring-resolve 'wandler.kmap/install!))
   ((requiring-resolve 'wandler.clean.laws.faq/install!))

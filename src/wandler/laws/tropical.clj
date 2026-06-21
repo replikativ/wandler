@@ -11,7 +11,7 @@
    (`Nat.add_min_distrib`), is proven here by `Nat.le_total` case analysis. The ENat laws are raw
    `ENat.casesOn` terms (the match-defined ops iota-reduce on constructors, so each leaf closes by
    reflexivity or `congrArg ENat.fin` of the Nat fact). All admitted via check-constant. See
-   [[faq-variable-elimination]]; consumed by the `ENat` row in wandler.optimize.physical/semiring-registry."
+   [[faq-variable-elimination]]; consumed by the `ENat` row the optimizer reads via wandler.laws.semiring."
   (:require [ansatz.core :as a]
             [ansatz.kernel.env :as kenv]
             [ansatz.kernel.name :as name]

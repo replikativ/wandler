@@ -4,7 +4,7 @@
    unlock more optimization at each tier. Every plan is kernel-certified equivalent to the original —
    richer annotations change only the PLAN, never the result.
 
-   Three entry points over `wandler.optimize`:
+   Three entry points over `wandler.clean.optimize`:
      (plan env term & opts)        — one call: optimize + `explain` the chosen plan.
      (gradient env term lctx tiers)— run the planner at increasing annotation tiers; report what each
                                      tier UNLOCKS (the legible 'more typing ⇒ more optimization' story).

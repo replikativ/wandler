@@ -36,8 +36,7 @@ transforms and optimizes.**
 
 ;; relational re-planning, certified per plan: install the PROVEN law library,
 ;; and an O(n·m) membership scan re-plans to a build-once hash-index semijoin
-(require '[wandler.laws.relational :as laws])
-(laws/install!)
+(w/install-laws!)                        ; the proven relational law DAG (semijoin · factorization · spill)
 (a/defn only-known [xs :- (List Nat), ys :- (List Nat)] (List Nat)
   (filter (fn [x] (member x ys)) xs))
 (w/explain 'only-known)
@@ -116,41 +115,46 @@ licensed by `Map.bucket_key_subst`), the parallel-fold licence (`Nat.add_assoc`
 fork-join), DBSP increment laws, Z-set group laws. Measured impact:
 [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
 
-## Layout (v0.1 core)
+## Layout
+
+The verified engine lives under `wandler.clean.*` (the canonical tree after the
+strangler reimplementation); `wandler.core` is the public front door over it, and
+the namespaces below it are the satellite engines.
 
 | prefix | role |
 |---|---|
-| `wandler.core` | the front door: `install!` (the three seams), `explain`/`plan`, the measure→replan loop |
-| `wandler.surface.*` | SEAM 1 — the Clojure verb vocabulary → kernel terms (collections · records · relational · streams · malli · refine; the dynamic EDN tier lives in `ansatz.surface.{data,schema}`) |
-| `wandler.optimize.*` | SEAM 2 — `certify` (the kernel gate) · `cost` (the resource model) · `physical` (plan drivers) · `egraph` · `cse` · `plan`/`faq` |
-| `wandler.laws.*` | the proven law library — `relational` · `proofs` (foundational List/Map/Perm) · `proofs.frame` (the FAQ frame-rule + semiring-generic family) · `semiring` (the carrier registry) · `tropical` (the ℕ∞ carrier) · `dist`; one DAG, strict admission |
-| `wandler.runtime` · `wandler.algebra` | SEAM 3 — lowering (unboxed scans, hash joins) + the law-gated licences (parallel monoid fold) |
+| `wandler.core` | the front door: `install!` (the three seams), `install-laws!` (the proven law DAG), `explain`/`plan`, `execute`, the measure→replan loop |
+| `wandler.clean.surface.*` | SEAM 1 — the Clojure verb vocabulary → kernel terms (collections · records · relational · refine · malli · option · strings); `wandler.surface.{vocabulary,streams}` host the verb-registry-as-data + the stream surface |
+| `wandler.clean.optimize` + `.optimize.*` | SEAM 2 — `certify` (the kernel gate) · `cost` (the resource model) · `physical` (plan drivers) · `egraph` · `cse` · `faq`. `wandler.optimize.plan` is the relational IR lens (term↔plan) the exec/bridge layers ride on |
+| `wandler.clean.laws.*` | the proven law library — `faq`/`frame`/`bucket` (the FAQ frame-rule + semiring-generic family) · `relational` (semijoin/anti-join) · `reorder` · `grace`(+`grace_proofs`) · `fusion`/`ac`; one DAG, strict admission. `wandler.laws.semiring` is the carrier registry; `wandler.laws.{tropical,dist}` are opt-in carriers |
+| `wandler.clean.core.*` · `wandler.runtime` · `wandler.algebra` | SEAM 3 — the parallel-fold monoid core + lowering (unboxed scans, hash joins) + the law-gated licences |
 | `wandler.exec.*` | the verified paths: batch is implicit; `zset`/`dbsp*` (incremental) · `stream` (windows/comonad) · `live`/`fork` (push) · `mode` + `mode-laws` (the lattice + its kernel proof) |
 | `wandler.jit.*` · `wandler.backend.*` | `jit.{estimate,pgo,stream}` (measure→replan→recompile) · `backend.{raster,stratum,simd}` (opt-in native/columnar engines) |
 | `wandler.inference.*` | semiring readings of the same core (semiring · dist · wmc · giry · lens) |
 | `wandler.bridge.*` | external engine adapters (datahike · spindel · stratum) — optional deps |
-| `wandler.kmap` · `wandler.reducers*` · `wandler.gradual` · `wandler.regex` · `wandler.verified` | the verified Map · the (deferred) reducer calculus · gradual UI · regex planning · transducer surface |
+| `wandler.kmap` · `wandler.reducers*` · `wandler.gradual` · `wandler.verified` · `wandler.stdlib` | the verified Map · the (deferred) reducer calculus · gradual UI · transducer surface · the stdlib shims |
 
 See [`docs/CORE.md`](docs/CORE.md) for the architecture spec.
 
 ## Status
 
-v0.2 — the cohesion release ([`docs/COHESION_AUDIT.md`](docs/COHESION_AUDIT.md)):
-role-prefixed layout, the optimizer split (certify/cost/physical), the
-`wandler.algebra` licence registry, one stream home, `mode/execute` (the type
-picks the lowering — batch fuse / pull-incremental / push live graph), and the
-vocabulary as data ([`docs/SURFACE.md`](docs/SURFACE.md) is generated from it).
+The verified engine has been re-implemented clean under `wandler.clean.*` (the
+strangler reimplementation) and is the canonical tree; the pre-migration optimizer,
+surface, and law engines have been removed. `wandler.core` reaches only the clean
+tree. Every adopted rewrite is independently kernel-`check-constant`-certified;
+a law that fails to admit degrades to a missed optimization, never a miscompile.
 
-Since: the **FAQ frame rule lifted off Nat** — the whole separable-weight
-factorization (frame + sum-factor + the FD keyfactor-float layer) is now
-**semiring-generic**, certified per-carrier and routed by a carrier registry that
-each carrier's laws register into; three carriers ship (Nat / Bool / tropical
-ℕ∞). A review-driven cleanup pass followed (4 reorg phases, dead-code removal, 4
-execution-glue bug fixes, a shared emitter adopt/verify point). Suite: **335 tests
-/ 1522 assertions**, green. [`test-deferred/`](test-deferred/) documents the
-remaining quarantine — most of it now passes standalone and is blocked on a shared
-test-isolation fixture (cross-namespace registry/env pollution in the single-JVM
-runner), not per-test bugs.
+The **FAQ frame rule is semiring-generic** — the whole separable-weight
+factorization (frame + sum-factor + the FD keyfactor-float layer) is certified
+per-carrier and routed by a carrier registry each carrier's laws register into;
+three carriers ship (Nat / Bool / tropical ℕ∞). `mode/execute` picks the lowering
+from the type (batch fuse / pull-incremental / push live graph), and the surface
+vocabulary is data ([`docs/SURFACE.md`](docs/SURFACE.md) is generated from it).
+
+Suite: **354 tests / 1608 assertions**, green — *with the full Init store mounted*
+(see Tests). [`test-deferred/`](test-deferred/) documents the remaining quarantine —
+most of it passes standalone and is blocked on a shared test-isolation fixture
+(cross-namespace registry/env pollution in the single-JVM runner), not per-test bugs.
 
 ## Tests
 

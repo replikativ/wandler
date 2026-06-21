@@ -99,6 +99,16 @@
   (algebra/install!)
   :installed)
 
+(defn install-laws!
+  "Install the proven relational law library so the optimizer can adopt those
+   rewrites: semijoin / anti-join index probes, aggregating-join factorization
+   (the FAQ frame family), drive-direction reorder, and grace-hash spill. Heavier
+   than `install!` (it admits the law DAG by proving each theorem once) and
+   idempotent. Call after `install!` and a loaded kernel env. Returns :installed."
+  []
+  ((requiring-resolve 'wandler.clean.laws.faq/install!))
+  :installed)
+
 (install-registries!)
 
 ;; ── the plan view + the measure→replan loop (the verified JIT) ───────────────────────────
