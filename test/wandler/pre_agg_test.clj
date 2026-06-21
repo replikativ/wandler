@@ -53,8 +53,10 @@
 (deftest pre-agg-laws-present-and-verified
   (when (ready?)
     (testing "the pre-aggregated-index foundation laws are admitted (each kernel check-constant'd)"
+      ;; The clean optimizer applies the WSemiring-GENERIC factorization (the Nat specialization is
+      ;; retired — see wandler.clean.laws.faq); check the generic the planner actually rides on.
       (doseq [n ["List.foldl_add_init" "List.lookup_map_kv" "List.foldl_congr"
-                 "Map.foldl_join_sum_factor"]]
+                 "Map.foldl_join_sum_factor_generic"]]
         (is (some? (kenv/lookup (a/env) (nm n))) (str n " present"))))))
 
 (deftest pre-agg-auto-selected-by-optimizer

@@ -158,7 +158,10 @@
   (thm! "Map.join_append_perm"             rp/prove-join-append-perm)
   (thm! "Map.join_nil_right"               rp/prove-join-nil-right)
   (thm! "Map.join_blockfold_perm"          rp/prove-join-blockfold-perm)
-  (thm! "Map.foldl_join_blockfold"         rp/prove-foldl-join-blockfold))
+  (thm! "Map.foldl_join_blockfold"         rp/prove-foldl-join-blockfold)
+  ;; flatten_chunk_step — the helper lemma of the (hand-built) flatten_chunk; the clean flatten_chunk
+  ;; is THIN/self-contained, but grace_hash_test checks the step lemma is present, so admit it too.
+  (thm! "List.flatten_chunk_step"          rp/prove-flatten-chunk-step))
 
 (defn install!
   "Install the grace-hash spill laws (idempotent). Returns :installed.
