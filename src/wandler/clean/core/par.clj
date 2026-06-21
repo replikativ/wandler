@@ -44,7 +44,7 @@
                [S :- Type :implicit, m :- (WAddMonoid S), depth :- Nat] (=> (List S) S)
                (match depth Nat (=> (List S) S)
                  (zero (fn [xs :- (List S)]
-                         (List.foldl S S (WAddMonoid.add m) (WAddMonoid.zero m) xs)))
+                         (List.foldl (WAddMonoid.add m) (WAddMonoid.zero m) xs)))
                  (succ [d] (fn [xs :- (List S)]
                              (WAddMonoid.add m
                                ((parFold m d) (List.take S (Nat.div (List.length S xs) 2) xs))
@@ -55,7 +55,7 @@
   (a/deftheorem parFold_eq
     [S :- Type, m :- (WAddMonoid S), depth :- Nat, xs :- (List S)]
     (= S ((parFold m depth) xs)
-         (List.foldl S S (WAddMonoid.add m) (WAddMonoid.zero m) xs))
+         (List.foldl (WAddMonoid.add m) (WAddMonoid.zero m) xs))
     (induction depth generalizing xs)
     (all_goals (try (simp_all [parFold.eq_1 parFold.eq_2])))
     (all_goals (try (rw (split_certificate S m (Nat.div (List.length S xs) 2) xs)))))

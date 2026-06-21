@@ -50,7 +50,7 @@
   ;; the `WAddMonoid.add` projection reduces to `Nat.add` for `omega`.)
   (a/deftheorem List.length_eq_wsum_one [T :- Type, l :- (List T)]
     (= Nat (List.length T l)
-           (wsum Nat instWAddMonoid_Nat (List.map T Nat (fn [_ :- T] (Nat.succ Nat.zero)) l)))
+           (wsum Nat instWAddMonoid_Nat (List.map (fn [_ :- T] (Nat.succ Nat.zero)) l)))
     (induction l)
     (all_goals (simp_all [List.length_nil List.length_cons List.map_nil List.map_cons
                           wsum.eq_1 wsum.eq_2 instWAddMonoid_Nat WAddMonoid.add WAddMonoid.zero]))

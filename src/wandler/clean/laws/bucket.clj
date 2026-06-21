@@ -64,17 +64,15 @@
                  [α :- Type, β :- Type, dec :- (DecidableEq α), f :- (=> β α), k :- α,
                   ys :- (List β), m :- (Map α (List β))]
                  (= (List β)
-                    (Option.getD (List β)
-                      (Map.lookup α (List β) dec k
-                        (List.foldl (Map α (List β)) β
-                          (fn [mm :- (Map α (List β)) x :- β]
+                    (Option.getD (Map.lookup α (List β) dec k
+                        (List.foldl (fn [mm :- (Map α (List β)) x :- β]
                             (Map.insert α (List β) dec (f x)
-                              (List.cons β x (Option.getD (List β) (Map.lookup α (List β) dec (f x) mm) (List.nil β))) mm))
+                              (List.cons β x (Option.getD (Map.lookup α (List β) dec (f x) mm) (List.nil β))) mm))
                           m ys))
                       (List.nil β))
-                    (List.foldl (List β) β (fn [acc :- (List β) x :- β] (List.cons β x acc))
-                      (Option.getD (List β) (Map.lookup α (List β) dec k m) (List.nil β))
-                      (List.filter β (fn [x :- β] (BEq.beq α (instBEqOfDecidableEq α dec) k (f x))) ys)))
+                    (List.foldl (fn [acc :- (List β) x :- β] (List.cons β x acc))
+                      (Option.getD (Map.lookup α (List β) dec k m) (List.nil β))
+                      (List.filter (fn [x :- β] (BEq.beq α (instBEqOfDecidableEq α dec) k (f x))) ys)))
                  (induction ys generalizing m)
                  (all_goals (try (simp_all [List.foldl_nil List.filter_nil Option.getD])))
                  (all_goals (try (by_cases (BEq.beq α (instBEqOfDecidableEq α dec) k (f head))))))
@@ -86,10 +84,10 @@
   (a/deftheorem Map.bucket_content
     [α :- Type, β :- Type, dec :- (DecidableEq α), f :- (=> β α), k :- α, ys :- (List β)]
     (= (List β)
-       (Option.getD (List β) (Map.lookup α (List β) dec k (Map.group_by α β dec f ys)) (List.nil β))
-       (List.foldl (List β) β (fn [acc :- (List β) x :- β] (List.cons β x acc))
+       (Option.getD (Map.lookup α (List β) dec k (Map.group_by α β dec f ys)) (List.nil β))
+       (List.foldl (fn [acc :- (List β) x :- β] (List.cons β x acc))
          (List.nil β)
-         (List.filter β (fn [x :- β] (BEq.beq α (instBEqOfDecidableEq α dec) k (f x))) ys)))
+         (List.filter (fn [x :- β] (BEq.beq α (instBEqOfDecidableEq α dec) k (f x))) ys)))
     (exact (Map.bucket_content_gen α β dec f k ys (Map.empty α (List β)))))
   ;; Map.join_eq — the rfl-unfolding of the opaque `Map.join` to its flatMap-of-grouped-buckets body.
   ;; Lets simp/rw expose the bucket so `Map.bucket_content` can rewrite it.
@@ -98,10 +96,9 @@
      xs :- (List X), ys :- (List Y)]
     (= (List (Prod X Y))
        (Map.join K X Y d kf lf xs ys)
-       (List.flatMap X (Prod X Y)
-         (fn [x :- X]
-           (List.map Y (Prod X Y) (fn [y :- Y] (Prod.mk X Y x y))
-             (Option.getD (List Y) (Map.lookup K (List Y) d (kf x) (Map.group_by K Y d lf ys)) (List.nil Y))))
+       (List.flatMap (fn [x :- X]
+           (List.map (fn [y :- Y] (Prod.mk x y))
+             (Option.getD (Map.lookup K (List Y) d (kf x) (Map.group_by K Y d lf ys)) (List.nil Y))))
          xs))
     (rfl))
   ;; wsum_map_Map_join — THE AGGREGATE BRIDGE: the sum of an abstract weight `h` over a REAL `Map.join`
@@ -116,11 +113,10 @@
      m :- (WAddMonoid S), hc :- (Std.Commutative S (WAddMonoid.add m)),
      kf :- (=> X K), lf :- (=> Y K), h :- (=> (Prod X Y) S), xs :- (List X), ys :- (List Y)]
     (= S
-       (wsum m (List.map (Prod X Y) S h (Map.join K X Y d kf lf xs ys)))
-       (wsum m (List.map (Prod X Y) S h
-                 (List.flatMap X (Prod X Y)
-                   (fn [x :- X] (List.map Y (Prod X Y) (fn [y :- Y] (Prod.mk X Y x y))
-                                 (List.filter Y (fn [y :- Y] (BEq.beq K (instBEqOfDecidableEq K d) (kf x) (lf y))) ys))) xs))))
+       (wsum m (List.map h (Map.join K X Y d kf lf xs ys)))
+       (wsum m (List.map h
+                 (List.flatMap (fn [x :- X] (List.map (fn [y :- Y] (Prod.mk x y))
+                                 (List.filter (fn [y :- Y] (BEq.beq K (instBEqOfDecidableEq K d) (kf x) (lf y))) ys))) xs))))
     (rw (Map.join_eq K X Y d kf lf xs ys))
     (induction xs)
     (all_goals (simp_all [List.flatMap_nil List.flatMap_cons List.map_append List.map_nil
@@ -138,16 +134,15 @@
      kf :- (=> X K), lf :- (=> Y K), w :- (=> X S), v :- (=> Y S), xs :- (List X), ys :- (List Y)]
     (= S
        (wsum (WSemiring.toWAddMonoid m)
-         (List.map (Prod X Y) S
-           (fn [pr :- (Prod X Y)] (WSemiring.mul m (w (Prod.fst X Y pr)) (v (Prod.snd X Y pr))))
+         (List.map (fn [pr :- (Prod X Y)] (WSemiring.mul m (w (Prod.fst pr)) (v (Prod.snd pr))))
            (Map.join K X Y dec kf lf xs ys)))
        (wsum (WSemiring.toWAddMonoid m)
-         (List.map X S (fn [x :- X]
+         (List.map (fn [x :- X]
            (WSemiring.mul m (w x)
              (wsum (WSemiring.toWAddMonoid m)
-               (List.map Y S v (List.filter Y (fn [y :- Y] (BEq.beq K (instBEqOfDecidableEq K dec) (kf x) (lf y))) ys))))) xs)))
+               (List.map v (List.filter (fn [y :- Y] (BEq.beq K (instBEqOfDecidableEq K dec) (kf x) (lf y))) ys))))) xs)))
     (rw (wsum_map_Map_join K X Y S dec (WSemiring.toWAddMonoid m) hc kf lf
-          (fn [pr :- (Prod X Y)] (WSemiring.mul m (w (Prod.fst X Y pr)) (v (Prod.snd X Y pr)))) xs ys))
+          (fn [pr :- (Prod X Y)] (WSemiring.mul m (w (Prod.fst pr)) (v (Prod.snd pr)))) xs ys))
     (rw (aggJoin_factor X Y S m
           (fn [x :- X] (fn [y :- Y] (BEq.beq K (instBEqOfDecidableEq K dec) (kf x) (lf y)))) w v xs ys)))
   ;; Map_aggJoin_reorder — THE JOIN-COMMUTATIVITY / DRIVE-DIRECTION law over a real Map.join: the
@@ -161,16 +156,16 @@
      m :- (WAddMonoid S), hc :- (Std.Commutative S (WAddMonoid.add m)),
      kf :- (=> X K), lf :- (=> Y K), f :- (=> X (=> Y S)), xs :- (List X), ys :- (List Y)]
     (= S
-       (wsum m (List.map (Prod X Y) S (fn [pr :- (Prod X Y)] (f (Prod.fst X Y pr) (Prod.snd X Y pr)))
+       (wsum m (List.map (fn [pr :- (Prod X Y)] (f (Prod.fst pr) (Prod.snd pr)))
                  (Map.join K X Y dec kf lf xs ys)))
-       (wsum m (List.map (Prod Y X) S (fn [pr :- (Prod Y X)] (f (Prod.snd Y X pr) (Prod.fst Y X pr)))
+       (wsum m (List.map (fn [pr :- (Prod Y X)] (f (Prod.snd pr) (Prod.fst pr)))
                  (Map.join K Y X dec lf kf ys xs))))
     (rw (wsum_map_Map_join K X Y S dec m hc kf lf
-          (fn [pr :- (Prod X Y)] (f (Prod.fst X Y pr) (Prod.snd X Y pr))) xs ys))
+          (fn [pr :- (Prod X Y)] (f (Prod.fst pr) (Prod.snd pr))) xs ys))
     (rw (aggJoin_reorder X Y S m hc
           (fn [x :- X] (fn [y :- Y] (BEq.beq K (instBEqOfDecidableEq K dec) (kf x) (lf y)))) f xs ys))
     (rw (wsum_map_Map_join K Y X S dec m hc lf kf
-          (fn [pr :- (Prod Y X)] (f (Prod.snd Y X pr) (Prod.fst Y X pr))) ys xs))
+          (fn [pr :- (Prod Y X)] (f (Prod.snd pr) (Prod.fst pr))) ys xs))
     ;; goal-only simp (not simp_all) — the predicate reconciliation needs only the goal, and
     ;; the lighter pass installs reliably under full-suite memory pressure.
     (simp [beq_comm]))

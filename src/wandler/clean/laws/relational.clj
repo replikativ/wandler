@@ -60,8 +60,8 @@
   ;; isSome (lookup k m)`. The per-step lemma the group_by invariant rewrites with.
   (a/deftheorem Map.isSome_lookup_insert
     [K :- Type, V :- Type, dec :- (DecidableEq K), k :- K, k' :- K, v :- V, m :- (Map K V)]
-    (= Bool (Option.isSome V (Map.lookup K V dec k (Map.insert K V dec k' v m)))
-            (Bool.or (BEq.beq K (instBEqOfDecidableEq K dec) k k') (Option.isSome V (Map.lookup K V dec k m))))
+    (= Bool (Option.isSome (Map.lookup K V dec k (Map.insert K V dec k' v m)))
+            (Bool.or (BEq.beq K (instBEqOfDecidableEq K dec) k k') (Option.isSome (Map.lookup K V dec k m))))
     (rewrite Map.lookup_insert)
     (split)
     (all_goals (simp_all [cond cond_true cond_false Option.isSome Bool.true_or Bool.false_or Bool.or_true Bool.or_false])))
@@ -75,8 +75,8 @@
   (a/deftheorem Map.lookup_group_by_gen
     [K :- Type, dec :- (DecidableEq K), k :- K, xs :- (List K), m :- (Map K (List K))]
     (= Bool
-       (Option.isSome (List K) (Map.lookup K (List K) dec k (List.foldl (Map K (List K)) K (Map.gbStepId K dec) m xs)))
-       (Bool.or (List.elem K (instBEqOfDecidableEq K dec) k xs) (Option.isSome (List K) (Map.lookup K (List K) dec k m))))
+       (Option.isSome (Map.lookup K (List K) dec k (List.foldl (Map.gbStepId K dec) m xs)))
+       (Bool.or (List.elem K (instBEqOfDecidableEq K dec) k xs) (Option.isSome (Map.lookup K (List K) dec k m))))
     (induction xs generalizing m)
     (all_goals (simp_all [List.foldl_nil List.foldl_cons]))
     (all_goals (try (unfold Map.gbStepId)))
@@ -88,7 +88,7 @@
   ;; m := empty; the `isSome (lookup k empty)` disjunct collapses by `Bool.or_false` (def-eq to false).
   (a/deftheorem Map.lookup_group_by
     [K :- Type, dec :- (DecidableEq K), k :- K, xs :- (List K)]
-    (= Bool (Option.isSome (List K) (Map.lookup K (List K) dec k (Map.group_by K K dec (fn [x :- K] x) xs)))
+    (= Bool (Option.isSome (Map.lookup K (List K) dec k (Map.group_by K K dec (fn [x :- K] x) xs)))
             (List.elem K (instBEqOfDecidableEq K dec) k xs))
     (rewrite (Map.lookup_group_by_gen K dec k xs (Map.empty K (List K))))
     (exact (Bool.or_false (List.elem K (instBEqOfDecidableEq K dec) k xs))))
@@ -99,8 +99,8 @@
   (a/deftheorem List.elem_filter_eq_index_probe
     [K :- Type, dec :- (DecidableEq K), xs :- (List K), ys :- (List K)]
     (= (List K)
-       (List.filter K (fn [x :- K] (List.elem K (instBEqOfDecidableEq K dec) x ys)) xs)
-       (List.filter K (fn [x :- K] (Option.isSome (List K) (Map.lookup K (List K) dec x (Map.group_by K K dec (fn [x :- K] x) ys)))) xs))
+       (List.filter (fn [x :- K] (List.elem K (instBEqOfDecidableEq K dec) x ys)) xs)
+       (List.filter (fn [x :- K] (Option.isSome (Map.lookup K (List K) dec x (Map.group_by K K dec (fn [x :- K] x) ys)))) xs))
     (induction xs)
     (all_goals (simp_all [List.filter_nil List.filter_cons]))
     (all_goals (try (rewrite (Map.lookup_group_by K dec head ys))))
@@ -111,8 +111,8 @@
   (a/deftheorem List.elem_not_filter_eq_index_probe
     [K :- Type, dec :- (DecidableEq K), xs :- (List K), ys :- (List K)]
     (= (List K)
-       (List.filter K (fn [x :- K] (Bool.not (List.elem K (instBEqOfDecidableEq K dec) x ys))) xs)
-       (List.filter K (fn [x :- K] (Bool.not (Option.isSome (List K) (Map.lookup K (List K) dec x (Map.group_by K K dec (fn [x :- K] x) ys))))) xs))
+       (List.filter (fn [x :- K] (Bool.not (List.elem K (instBEqOfDecidableEq K dec) x ys))) xs)
+       (List.filter (fn [x :- K] (Bool.not (Option.isSome (Map.lookup K (List K) dec x (Map.group_by K K dec (fn [x :- K] x) ys))))) xs))
     (induction xs)
     (all_goals (simp_all [List.filter_nil List.filter_cons]))
     (all_goals (try (rewrite (Map.lookup_group_by K dec head ys))))
@@ -134,9 +134,9 @@
   (a/deftheorem List.filter_map_pair_eq_cond
     [X :- Type, Y :- Type, p :- (=> X Bool), x :- X, L :- (List Y)]
     (= (List (Prod X Y))
-       (List.filter (Prod X Y) (fn [pr :- (Prod X Y)] (p (Prod.fst X Y pr)))
-         (List.map Y (Prod X Y) (fn [y :- Y] (Prod.mk X Y x y)) L))
-       (bif (p x) (List.map Y (Prod X Y) (fn [y :- Y] (Prod.mk X Y x y)) L) (List.nil (Prod X Y))))
+       (List.filter (fn [pr :- (Prod X Y)] (p (Prod.fst pr)))
+         (List.map (fn [y :- Y] (Prod.mk x y)) L))
+       (bif (p x) (List.map (fn [y :- Y] (Prod.mk x y)) L) (List.nil (Prod X Y))))
     (induction L)
     (all_goals (simp [List.map_cons List.map_nil List.filter_nil]))
     (all_goals (try (by_cases (p x))))
@@ -148,8 +148,8 @@
   (a/deftheorem List.filter_flatMap_cond
     [A :- (Sort 1), B :- (Sort 1), g :- (=> A (List B)), q :- (=> B Bool),
      p :- (=> A Bool), xs :- (List A),
-     H :- (forall [x A] (= (List B) (List.filter B q (g x)) (bif (p x) (g x) (List.nil B))))]
-    (= (List B) (List.filter B q (List.flatMap A B g xs)) (List.flatMap A B g (List.filter A p xs)))
+     H :- (forall [x A] (= (List B) (List.filter q (g x)) (bif (p x) (g x) (List.nil B))))]
+    (= (List B) (List.filter q (List.flatMap g xs)) (List.flatMap g (List.filter p xs)))
     (induction xs)
     (all_goals (simp [List.flatMap_cons List.flatMap_nil List.filter_nil]))
     (all_goals (try (simp [List.filter_append])))
@@ -171,9 +171,9 @@
     [p :- (=> Nat Bool), kf :- (=> Nat Nat), lf :- (=> Nat Nat),
      ys :- (List Nat), xs :- (List Nat)]
     (= (List (Prod Nat Nat))
-       (List.filter (Prod Nat Nat) (fn [pr :- (Prod Nat Nat)] (p (Prod.fst Nat Nat pr)))
+       (List.filter (fn [pr :- (Prod Nat Nat)] (p (Prod.fst pr)))
          (Map.join Nat Nat Nat instDecidableEqNat kf lf xs ys))
-       (Map.join Nat Nat Nat instDecidableEqNat kf lf (List.filter Nat p xs) ys))
+       (Map.join Nat Nat Nat instDecidableEqNat kf lf (List.filter p xs) ys))
     (rw [Map.join_eq]) (rw [Map.join_eq])
     (apply List.filter_flatMap_cond) (intro a) (apply List.filter_map_pair_eq_cond))
   :installed)

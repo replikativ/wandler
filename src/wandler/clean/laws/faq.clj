@@ -47,7 +47,7 @@
   ;; sum_map_zero: a fold of all-zeros leaves the accumulator. Base of the additive-structure cluster.
   (a/deftheorem List.sum_map_zero
     [ys :- (List Nat), acc :- Nat]
-    (= Nat (List.foldl Nat Nat Nat.add acc (List.map Nat Nat (fn [y :- Nat] Nat.zero) ys)) acc)
+    (= Nat (List.foldl Nat.add acc (List.map (fn [y :- Nat] Nat.zero) ys)) acc)
     (induction ys generalizing acc)
     (all_goals (simp_all [List.map_cons List.map_nil List.foldl_cons List.foldl_nil Nat.add_zero])))
 
@@ -57,7 +57,7 @@
   ;; is linear in the opaque `foldl + 0 tail`).
   (a/deftheorem List.foldl_add_pull
     [L :- (List Nat), acc :- Nat]
-    (= Nat (List.foldl Nat Nat Nat.add acc L) (Nat.add acc (List.foldl Nat Nat Nat.add Nat.zero L)))
+    (= Nat (List.foldl Nat.add acc L) (Nat.add acc (List.foldl Nat.add Nat.zero L)))
     (induction L generalizing acc)
     (all_goals (simp [List.foldl_cons List.foldl_nil Nat.add_zero]))
     (rw [(ih_tail (Nat.add acc head))])
@@ -70,7 +70,7 @@
     [Acc :- (Sort 1), Elem :- (Sort 1), f :- (=> Acc (=> Elem Acc)), g :- (=> Acc (=> Elem Acc)),
      l :- (List Elem), e :- Acc,
      h :- (forall [b Acc] (forall [a Elem] (= Acc (f b a) (g b a))))]
-    (= Acc (List.foldl Acc Elem f e l) (List.foldl Acc Elem g e l))
+    (= Acc (List.foldl f e l) (List.foldl g e l))
     (induction l generalizing e)
     (all_goals (simp [List.foldl_cons List.foldl_nil]))
     (rw [(h e head)])
@@ -87,13 +87,12 @@
     [K :- Type, V :- Type, W :- Type, inst :- (BEq K), f :- (=> V W), k :- K, l :- (List (Prod K V))]
     (= (Option W)
        (List.lookup K W inst k
-         (List.map (Prod K V) (Prod K W)
-           (fn [p :- (Prod K V)] (Prod.mk K W (Prod.fst K V p) (f (Prod.snd K V p)))) l))
+         (List.map (fn [p :- (Prod K V)] (Prod.mk (Prod.fst p) (f (Prod.snd p)))) l))
        (Option.map V W f (List.lookup K V inst k l)))
     (induction l)
     (all_goals (try (rw [<- (Prod.eta K V head)])))
     (all_goals (simp [List.map_nil List.map_cons List.lookup_nil List.lookup_cons]))
-    (all_goals (try (by_cases (BEq.beq K inst k (Prod.fst K V head)))))
+    (all_goals (try (by_cases (BEq.beq K inst k (Prod.fst head)))))
     (all_goals (try (simp_all [Option.map List.lookup_cons]))))
 
   ;; sum_map_add_distrib: ∑ distributes over a pointwise sum (accumulator-generalized over a, b). The
@@ -101,9 +100,9 @@
   ;; then the ∀a∀b IH at those two accumulators closes it.
   (a/deftheorem List.sum_map_add_distrib
     [f :- (=> Nat Nat), g :- (=> Nat Nat), xs :- (List Nat), a :- Nat, b :- Nat]
-    (= Nat (List.foldl Nat Nat Nat.add (Nat.add a b) (List.map Nat Nat (fn [x :- Nat] (Nat.add (f x) (g x))) xs))
-           (Nat.add (List.foldl Nat Nat Nat.add a (List.map Nat Nat f xs))
-                    (List.foldl Nat Nat Nat.add b (List.map Nat Nat g xs))))
+    (= Nat (List.foldl Nat.add (Nat.add a b) (List.map (fn [x :- Nat] (Nat.add (f x) (g x))) xs))
+           (Nat.add (List.foldl Nat.add a (List.map f xs))
+                    (List.foldl Nat.add b (List.map g xs))))
     (induction xs generalizing a b)
     (all_goals (simp [List.map_cons List.map_nil List.foldl_cons List.foldl_nil]))
     (rw [(Nat.add_add_add_comm a b (f head) (g head))])
@@ -117,30 +116,30 @@
   ;; reduces by rfl). This is the thin form of the old `Eq.trans (congrArg … (Eq.symm zero_mul)) gen`.
   (a/deftheorem List.sum_map_mul_const_gen
     [f :- (=> Nat Nat), c :- Nat, xs :- (List Nat), a :- Nat]
-    (= Nat (List.foldl Nat Nat Nat.add (Nat.mul a c) (List.map Nat Nat (fn [x :- Nat] (Nat.mul (f x) c)) xs))
-           (Nat.mul (List.foldl Nat Nat Nat.add a (List.map Nat Nat f xs)) c))
+    (= Nat (List.foldl Nat.add (Nat.mul a c) (List.map (fn [x :- Nat] (Nat.mul (f x) c)) xs))
+           (Nat.mul (List.foldl Nat.add a (List.map f xs)) c))
     (induction xs generalizing a)
     (all_goals (simp [List.map_cons List.map_nil List.foldl_cons List.foldl_nil]))
     (rw [<- (Nat.add_mul a (f head) c)])
     (rw [(ih_tail (Nat.add a (f head)))]))
   (a/deftheorem List.sum_map_mul_const
     [f :- (=> Nat Nat), c :- Nat, xs :- (List Nat)]
-    (= Nat (List.foldl Nat Nat Nat.add Nat.zero (List.map Nat Nat (fn [x :- Nat] (Nat.mul (f x) c)) xs))
-           (Nat.mul (List.foldl Nat Nat Nat.add Nat.zero (List.map Nat Nat f xs)) c))
+    (= Nat (List.foldl Nat.add Nat.zero (List.map (fn [x :- Nat] (Nat.mul (f x) c)) xs))
+           (Nat.mul (List.foldl Nat.add Nat.zero (List.map f xs)) c))
     (rw [<- (List.sum_map_mul_const_gen f c xs Nat.zero)])
     (rw [Nat.zero_mul]))
   (a/deftheorem List.sum_map_const_mul_gen
     [f :- (=> Nat Nat), c :- Nat, xs :- (List Nat), a :- Nat]
-    (= Nat (List.foldl Nat Nat Nat.add (Nat.mul c a) (List.map Nat Nat (fn [x :- Nat] (Nat.mul c (f x))) xs))
-           (Nat.mul c (List.foldl Nat Nat Nat.add a (List.map Nat Nat f xs))))
+    (= Nat (List.foldl Nat.add (Nat.mul c a) (List.map (fn [x :- Nat] (Nat.mul c (f x))) xs))
+           (Nat.mul c (List.foldl Nat.add a (List.map f xs))))
     (induction xs generalizing a)
     (all_goals (simp [List.map_cons List.map_nil List.foldl_cons List.foldl_nil]))
     (rw [<- (Nat.mul_add c a (f head))])
     (rw [(ih_tail (Nat.add a (f head)))]))
   (a/deftheorem List.sum_map_const_mul
     [f :- (=> Nat Nat), c :- Nat, xs :- (List Nat)]
-    (= Nat (List.foldl Nat Nat Nat.add Nat.zero (List.map Nat Nat (fn [x :- Nat] (Nat.mul c (f x))) xs))
-           (Nat.mul c (List.foldl Nat Nat Nat.add Nat.zero (List.map Nat Nat f xs))))
+    (= Nat (List.foldl Nat.add Nat.zero (List.map (fn [x :- Nat] (Nat.mul c (f x))) xs))
+           (Nat.mul c (List.foldl Nat.add Nat.zero (List.map f xs))))
     ;; `c·0` reduces to 0 by rfl, so the single backward rewrite closes it (rw's try-rfl).
     (rw [<- (List.sum_map_const_mul_gen f c xs Nat.zero)])))
 
@@ -159,8 +158,8 @@
      hMA :- (forall [x S] (forall [y S] (forall [w S] (= S (mul x (add y w)) (add (mul x y) (mul x w)))))),
      hMZ :- (forall [x S] (= S (mul x zero) zero)),
      al :- (Sort 1), c :- S, g :- (=> al S), l :- (List al), acc :- S]
-    (= S (List.foldl S al (fn [a :- S] (fn [y :- al] (add a (mul c (g y))))) (mul c acc) l)
-         (mul c (List.foldl S al (fn [a :- S] (fn [y :- al] (add a (g y)))) acc l)))
+    (= S (List.foldl (fn [a :- S] (fn [y :- al] (add a (mul c (g y))))) (mul c acc) l)
+         (mul c (List.foldl (fn [a :- S] (fn [y :- al] (add a (g y)))) acc l)))
     (induction l generalizing acc)
     (all_goals (simp [List.foldl_cons List.foldl_nil]))
     (rw [<- (hMA c acc (g head))])
@@ -176,9 +175,9 @@
   ;; `acc = acc ⊕ 0` identity-absorption). The crux sub-lemma of `foldl_join_sum_factor_generic`.
   (a/deftheorem List.foldl_add_init_generic
     [S :- (Sort 1), inst :- (WAddMonoid S), Y :- (Sort 1), g :- (=> Y S), l :- (List Y), acc :- S]
-    (= S (List.foldl S Y (fn [a :- S] (fn [y :- Y] (WAddMonoid.add S inst a (g y)))) acc l)
+    (= S (List.foldl (fn [a :- S] (fn [y :- Y] (WAddMonoid.add S inst a (g y)))) acc l)
          (WAddMonoid.add S inst acc
-           (List.foldl S Y (fn [a :- S] (fn [y :- Y] (WAddMonoid.add S inst a (g y)))) (WAddMonoid.zero S inst) l)))
+           (List.foldl (fn [a :- S] (fn [y :- Y] (WAddMonoid.add S inst a (g y)))) (WAddMonoid.zero S inst) l)))
     (induction l generalizing acc)
     (all_goals (simp [List.foldl_cons List.foldl_nil]))
     (all_goals (first (ac_rfl)
@@ -192,8 +191,8 @@
   ;; wandler.laws.proofs.frame/prove-foldl-add-init.
   (a/deftheorem List.foldl_add_init
     [Y :- Type, g :- (=> Y Nat), l :- (List Y), acc :- Nat]
-    (= Nat (List.foldl Nat Y (fn [a :- Nat] (fn [y :- Y] (Nat.add a (g y)))) acc l)
-           (Nat.add acc (List.foldl Nat Y (fn [a :- Nat] (fn [y :- Y] (Nat.add a (g y)))) Nat.zero l)))
+    (= Nat (List.foldl (fn [a :- Nat] (fn [y :- Y] (Nat.add a (g y)))) acc l)
+           (Nat.add acc (List.foldl (fn [a :- Nat] (fn [y :- Y] (Nat.add a (g y)))) Nat.zero l)))
     (exact (List.foldl_add_init_generic Nat
              (WAddMonoid.mk Nat Nat.add Nat.zero Nat.add_assoc Nat.zero_add Nat.add_zero)
              Y g l acc)))
@@ -203,8 +202,8 @@
   ;; stays in one spelling). Closed by `ac_rfl` over the registered WSemiring.add provider.
   (a/deftheorem List.foldl_add_init_wsem
     [S :- (Sort 1), inst :- (WSemiring S), Y :- (Sort 1), g :- (=> Y S), l :- (List Y), acc :- S]
-    (= S (List.foldl S Y (fn [a :- S] (fn [y :- Y] (WSemiring.add S inst a (g y)))) acc l)
-         (WSemiring.add S inst acc (List.foldl S Y (fn [a :- S] (fn [y :- Y] (WSemiring.add S inst a (g y)))) (WSemiring.zero S inst) l)))
+    (= S (List.foldl (fn [a :- S] (fn [y :- Y] (WSemiring.add S inst a (g y)))) acc l)
+         (WSemiring.add S inst acc (List.foldl (fn [a :- S] (fn [y :- Y] (WSemiring.add S inst a (g y)))) (WSemiring.zero S inst) l)))
     (induction l generalizing acc)
     (all_goals (simp [List.foldl_cons List.foldl_nil]))
     (all_goals (first (ac_rfl)
@@ -217,8 +216,8 @@
   ;; AC — so ac_rfl does NOT apply; this is the genuine semiring step the frame rule needs.)
   (a/deftheorem List.foldl_const_mul_pull_wsem_gen
     [S :- (Sort 1), inst :- (WSemiring S), al :- (Sort 1), c :- S, g :- (=> al S), l :- (List al), acc :- S]
-    (= S (List.foldl S al (fn [a :- S] (fn [y :- al] (WSemiring.add S inst a (WSemiring.mul S inst c (g y))))) (WSemiring.mul S inst c acc) l)
-         (WSemiring.mul S inst c (List.foldl S al (fn [a :- S] (fn [y :- al] (WSemiring.add S inst a (g y)))) acc l)))
+    (= S (List.foldl (fn [a :- S] (fn [y :- al] (WSemiring.add S inst a (WSemiring.mul S inst c (g y))))) (WSemiring.mul S inst c acc) l)
+         (WSemiring.mul S inst c (List.foldl (fn [a :- S] (fn [y :- al] (WSemiring.add S inst a (g y)))) acc l)))
     (induction l generalizing acc)
     (all_goals (simp [List.foldl_cons List.foldl_nil]))
     (rw [<- (WSemiring.mul_add S inst c acc (g head))])
@@ -228,8 +227,8 @@
   ;; `Eq.trans … (Eq.symm mul_zero)`).
   (a/deftheorem List.foldl_const_mul_pull
     [S :- (Sort 1), inst :- (WSemiring S), al :- (Sort 1), c :- S, g :- (=> al S), l :- (List al)]
-    (= S (List.foldl S al (fn [a :- S] (fn [y :- al] (WSemiring.add S inst a (WSemiring.mul S inst c (g y))))) (WSemiring.zero S inst) l)
-         (WSemiring.mul S inst c (List.foldl S al (fn [a :- S] (fn [y :- al] (WSemiring.add S inst a (g y)))) (WSemiring.zero S inst) l)))
+    (= S (List.foldl (fn [a :- S] (fn [y :- al] (WSemiring.add S inst a (WSemiring.mul S inst c (g y))))) (WSemiring.zero S inst) l)
+         (WSemiring.mul S inst c (List.foldl (fn [a :- S] (fn [y :- al] (WSemiring.add S inst a (g y)))) (WSemiring.zero S inst) l)))
     (rw [<- (List.foldl_const_mul_pull_wsem_gen S inst al c g l (WSemiring.zero S inst))])
     (rw [(WSemiring.mul_zero S inst c)]))
 
@@ -263,10 +262,10 @@
     [K :- (Sort 1), X :- (Sort 1), Y :- (Sort 1), S :- (Sort 1), dec :- (DecidableEq K),
      op :- (=> S (=> (Prod X Y) S)), e :- S, kf :- (=> X K), lf :- (=> Y K),
      xs :- (List X), ys :- (List Y)]
-    (= S (List.foldl S (Prod X Y) op e (Map.join K X Y dec kf lf xs ys))
-         (List.foldl S X (fn [acc :- S] (fn [x :- X]
-           (List.foldl S Y (fn [acc2 :- S] (fn [y :- Y] (op acc2 (Prod.mk X Y x y)))) acc
-             (Option.getD (List Y) (Map.lookup K (List Y) dec (kf x) (Map.group_by K Y dec lf ys)) (List.nil Y))))) e xs))
+    (= S (List.foldl op e (Map.join K X Y dec kf lf xs ys))
+         (List.foldl (fn [acc :- S] (fn [x :- X]
+           (List.foldl (fn [acc2 :- S] (fn [y :- Y] (op acc2 (Prod.mk x y)))) acc
+             (Option.getD (Map.lookup K (List Y) dec (kf x) (Map.group_by K Y dec lf ys)) (List.nil Y))))) e xs))
     (rw [Map.join_eq]) (simp [List.foldl_flatMap List.foldl_map]))
 
   ;; count_join_factor: |Map.join| = Σ per-key bucket lengths — count without the product. Same recipe,
@@ -277,8 +276,7 @@
     (= Nat
        (List.length (Prod X Y) (Map.join K X Y dec kf lf xs ys))
        (List.sum Nat instAddNat (Zero.ofOfNat0 Nat (instOfNatNat 0))
-         (List.map X Nat
-           (fn [x :- X] (List.length Y (Option.getD (List Y) (Map.lookup K (List Y) dec (kf x) (Map.group_by K Y dec lf ys)) (List.nil Y))))
+         (List.map (fn [x :- X] (List.length Y (Option.getD (Map.lookup K (List Y) dec (kf x) (Map.group_by K Y dec lf ys)) (List.nil Y))))
            xs)))
     (rw [Map.join_eq]) (simp_all [List.length_flatMap List.length_map]))
 
@@ -299,18 +297,14 @@
      dec :- (DecidableEq K), g :- (=> Y S), kf :- (=> X K), lf :- (=> Y K),
      e :- S, xs :- (List X), ys :- (List Y)]
     (= S
-       (List.foldl S (Prod X Y)
-         (fn [acc :- S] (fn [p :- (Prod X Y)] (WAddMonoid.add S inst acc (g (Prod.snd X Y p)))))
+       (List.foldl (fn [acc :- S] (fn [p :- (Prod X Y)] (WAddMonoid.add S inst acc (g (Prod.snd p)))))
          e (Map.join K X Y dec kf lf xs ys))
-       (List.foldl S X
-         (fn [acc :- S] (fn [x :- X]
+       (List.foldl (fn [acc :- S] (fn [x :- X]
            (WAddMonoid.add S inst acc
-             (Option.getD S
-               (List.lookup K S (instBEqOfDecidableEq K dec) (kf x)
-                 (List.map (Prod K (List Y)) (Prod K S)
-                   (fn [p :- (Prod K (List Y))]
-                     (Prod.mk K S (Prod.fst K (List Y) p)
-                       (List.foldl S Y (fn [a :- S] (fn [y :- Y] (WAddMonoid.add S inst a (g y)))) (WAddMonoid.zero S inst) (Prod.snd K (List Y) p))))
+             (Option.getD (List.lookup K S (instBEqOfDecidableEq K dec) (kf x)
+                 (List.map (fn [p :- (Prod K (List Y))]
+                     (Prod.mk (Prod.fst p)
+                       (List.foldl (fn [a :- S] (fn [y :- Y] (WAddMonoid.add S inst a (g y)))) (WAddMonoid.zero S inst) (Prod.snd p))))
                    (Map.entries K (List Y) (Map.group_by K Y dec lf ys))))
                (WAddMonoid.zero S inst)))))
          e xs))
@@ -321,7 +315,7 @@
     (rw [List.foldl_add_init_generic])
     (rw [List.lookup_map_kv])
     (rw [(Option.getD_map (List Y) S
-           (fn [blk :- (List Y)] (List.foldl S Y (fn [acc :- S] (fn [y :- Y] (WAddMonoid.add S inst acc (g y)))) (WAddMonoid.zero S inst) blk))
+           (fn [blk :- (List Y)] (List.foldl (fn [acc :- S] (fn [y :- Y] (WAddMonoid.add S inst acc (g y)))) (WAddMonoid.zero S inst) blk))
            (List.nil Y)
            (List.lookup K (List Y) (instBEqOfDecidableEq K dec) (kf a) (Map.entries K (List Y) (Map.group_by K Y dec lf ys))))])
     (try (rfl)))
@@ -335,19 +329,17 @@
     [S :- (Sort 1), inst :- (WSemiring S), K :- (Sort 1), Y :- (Sort 1),
      dec :- (DecidableEq K), g :- (=> Y S), lf :- (=> Y K), k :- K, ys :- (List Y)]
     (= S
-       (List.foldl S Y (fn [a :- S] (fn [y :- Y] (WSemiring.add S inst a (g y)))) (WSemiring.zero S inst)
-         (Option.getD (List Y) (Map.lookup K (List Y) dec k (Map.group_by K Y dec lf ys)) (List.nil Y)))
-       (Option.getD S
-         (List.lookup K S (instBEqOfDecidableEq K dec) k
-           (List.map (Prod K (List Y)) (Prod K S)
-             (fn [p :- (Prod K (List Y))]
-               (Prod.mk K S (Prod.fst K (List Y) p)
-                 (List.foldl S Y (fn [a :- S] (fn [y :- Y] (WSemiring.add S inst a (g y)))) (WSemiring.zero S inst) (Prod.snd K (List Y) p))))
+       (List.foldl (fn [a :- S] (fn [y :- Y] (WSemiring.add S inst a (g y)))) (WSemiring.zero S inst)
+         (Option.getD (Map.lookup K (List Y) dec k (Map.group_by K Y dec lf ys)) (List.nil Y)))
+       (Option.getD (List.lookup K S (instBEqOfDecidableEq K dec) k
+           (List.map (fn [p :- (Prod K (List Y))]
+               (Prod.mk (Prod.fst p)
+                 (List.foldl (fn [a :- S] (fn [y :- Y] (WSemiring.add S inst a (g y)))) (WSemiring.zero S inst) (Prod.snd p))))
              (Map.entries K (List Y) (Map.group_by K Y dec lf ys))))
          (WSemiring.zero S inst)))
     (rw [List.lookup_map_kv])
     (rw [(Option.getD_map (List Y) S
-           (fn [blk :- (List Y)] (List.foldl S Y (fn [acc :- S] (fn [y :- Y] (WSemiring.add S inst acc (g y)))) (WSemiring.zero S inst) blk))
+           (fn [blk :- (List Y)] (List.foldl (fn [acc :- S] (fn [y :- Y] (WSemiring.add S inst acc (g y)))) (WSemiring.zero S inst) blk))
            (List.nil Y)
            (List.lookup K (List Y) (instBEqOfDecidableEq K dec) k (Map.entries K (List Y) (Map.group_by K Y dec lf ys))))])
     (try (rfl)))
@@ -364,19 +356,15 @@
      dec :- (DecidableEq K), f :- (=> X S), g :- (=> Y S), kf :- (=> X K), lf :- (=> Y K),
      e :- S, xs :- (List X), ys :- (List Y)]
     (= S
-       (List.foldl S (Prod X Y)
-         (fn [acc :- S] (fn [p :- (Prod X Y)] (WSemiring.add S inst acc (WSemiring.mul S inst (f (Prod.fst X Y p)) (g (Prod.snd X Y p))))))
+       (List.foldl (fn [acc :- S] (fn [p :- (Prod X Y)] (WSemiring.add S inst acc (WSemiring.mul S inst (f (Prod.fst p)) (g (Prod.snd p))))))
          e (Map.join K X Y dec kf lf xs ys))
-       (List.foldl S X
-         (fn [acc :- S] (fn [x :- X]
+       (List.foldl (fn [acc :- S] (fn [x :- X]
            (WSemiring.add S inst acc
              (WSemiring.mul S inst (f x)
-               (Option.getD S
-                 (List.lookup K S (instBEqOfDecidableEq K dec) (kf x)
-                   (List.map (Prod K (List Y)) (Prod K S)
-                     (fn [p :- (Prod K (List Y))]
-                       (Prod.mk K S (Prod.fst K (List Y) p)
-                         (List.foldl S Y (fn [a :- S] (fn [y :- Y] (WSemiring.add S inst a (g y)))) (WSemiring.zero S inst) (Prod.snd K (List Y) p))))
+               (Option.getD (List.lookup K S (instBEqOfDecidableEq K dec) (kf x)
+                   (List.map (fn [p :- (Prod K (List Y))]
+                       (Prod.mk (Prod.fst p)
+                         (List.foldl (fn [a :- S] (fn [y :- Y] (WSemiring.add S inst a (g y)))) (WSemiring.zero S inst) (Prod.snd p))))
                      (Map.entries K (List Y) (Map.group_by K Y dec lf ys))))
                  (WSemiring.zero S inst))))))
          e xs))
@@ -398,15 +386,14 @@
   (a/deftheorem List.lookup_reweight
     [S :- (Sort 1), inst :- (WSemiring S), K :- Type, dec :- (DecidableEq K), w :- (=> K S), k :- K, idx :- (List (Prod K S))]
     (= S
-       (WSemiring.mul S inst (w k) (Option.getD S (List.lookup K S (instBEqOfDecidableEq K dec) k idx) (WSemiring.zero S inst)))
-       (Option.getD S
-         (List.lookup K S (instBEqOfDecidableEq K dec) k
-           (List.map (Prod K S) (Prod K S) (fn [p :- (Prod K S)] (Prod.mk K S (Prod.fst K S p) (WSemiring.mul S inst (w (Prod.fst K S p)) (Prod.snd K S p)))) idx))
+       (WSemiring.mul S inst (w k) (Option.getD (List.lookup K S (instBEqOfDecidableEq K dec) k idx) (WSemiring.zero S inst)))
+       (Option.getD (List.lookup K S (instBEqOfDecidableEq K dec) k
+           (List.map (fn [p :- (Prod K S)] (Prod.mk (Prod.fst p) (WSemiring.mul S inst (w (Prod.fst p)) (Prod.snd p)))) idx))
          (WSemiring.zero S inst)))
     (induction idx)
     (all_goals (try (rw [<- (Prod.eta K S head)])))
     (all_goals (simp [List.map_nil List.map_cons List.lookup_nil List.lookup_cons]))
-    (all_goals (try (by_cases (BEq.beq K (instBEqOfDecidableEq K dec) k (Prod.fst K S head)))))
+    (all_goals (try (by_cases (BEq.beq K (instBEqOfDecidableEq K dec) k (Prod.fst head)))))
     (all_goals (try (simp_all [Option.getD beq_iff_eq List.lookup_cons])))
     (all_goals (try (rw [(WSemiring.mul_zero S inst (w k))])))
     (all_goals (try (rfl))))
@@ -419,19 +406,15 @@
     [S :- (Sort 1), inst :- (WSemiring S), K :- Type, X :- Type,
      dec :- (DecidableEq K), w :- (=> K S), kf :- (=> X K), e :- S, xs :- (List X), idx :- (List (Prod K S))]
     (= S
-       (List.foldl S X
-         (fn [acc :- S] (fn [x :- X]
+       (List.foldl (fn [acc :- S] (fn [x :- X]
            (WSemiring.add S inst acc
              (WSemiring.mul S inst (w (kf x))
-               (Option.getD S (List.lookup K S (instBEqOfDecidableEq K dec) (kf x) idx) (WSemiring.zero S inst))))))
+               (Option.getD (List.lookup K S (instBEqOfDecidableEq K dec) (kf x) idx) (WSemiring.zero S inst))))))
          e xs)
-       (List.foldl S X
-         (fn [acc :- S] (fn [x :- X]
+       (List.foldl (fn [acc :- S] (fn [x :- X]
            (WSemiring.add S inst acc
-             (Option.getD S
-               (List.lookup K S (instBEqOfDecidableEq K dec) (kf x)
-                 (List.map (Prod K S) (Prod K S)
-                   (fn [p :- (Prod K S)] (Prod.mk K S (Prod.fst K S p) (WSemiring.mul S inst (w (Prod.fst K S p)) (Prod.snd K S p)))) idx))
+             (Option.getD (List.lookup K S (instBEqOfDecidableEq K dec) (kf x)
+                 (List.map (fn [p :- (Prod K S)] (Prod.mk (Prod.fst p) (WSemiring.mul S inst (w (Prod.fst p)) (Prod.snd p)))) idx))
                (WSemiring.zero S inst)))))
          e xs))
     (apply List.foldl_congr)
