@@ -3,8 +3,7 @@
 ;; grace-hash spill, pre-aggregated FAQ index, invariant-index hoisting). Every adoption
 ;; is gated by cert/verified-rewrite?.
 (ns wandler.optimize.faq
-  (:require [clojure.set]
-            [ansatz.kernel.expr :as e]
+  (:require [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.level :as lvl]
             [ansatz.kernel.env :as env]
@@ -13,8 +12,7 @@
             [wandler.optimize.certify :as cert]
             [wandler.optimize.cost :as cost]
             [wandler.optimize.filter-elim :as fe]
-            [wandler.laws.semiring :as sreg]
-            [ansatz.prelude.algebra :as alg])
+            [wandler.laws.semiring :as sreg])
   (:import [ansatz.kernel Env]))
 
 (declare compose-trans)
@@ -221,15 +219,16 @@
 (defn- sr-entry [S] (sreg/entry S))
 (defn- sr-c [entry kw] (sreg/const entry kw))
 
-;; Build the WAddMonoid/WSemiring instance term for a carrier from its registry entry, via the ansatz
-;; prelude's instance builders (ansatz.prelude.algebra) — the owned, kernel-checked algebraic spine that
-;; replaces the byte-redundant wandler.semiring-class. The registry rows are keyed `:hAA/:hMA/…`; the
-;; prelude builders read `:add_assoc/:mul_add/…`, so translate the keys at the boundary.
-(def ^:private ->prelude-row
-  #(clojure.set/rename-keys % {:hAA :add_assoc :hZA :zero_add :hAZ :add_zero
-                               :hMA :mul_add   :hMZ :mul_zero :hZM :zero_mul}))
-(defn- am-inst [S entry] (alg/addmonoid-instance S (->prelude-row entry)))
-(defn- sr-inst [S entry] (alg/semiring-instance S (->prelude-row entry)))
+;; The carrier's bundled WAddMonoid/WSemiring instance, emitted BY NAME — the Lean/Mathlib
+;; "one instance per carrier" shape: `instWAddMonoid_<C>` / `instWSemiring_<C>`. Each is kernel-verified
+;; ONCE by `install-laws!` (from that carrier's axiom row in ansatz.prelude.algebra / wandler.laws.tropical),
+;; so the optimizer just references it. ansatz codegen's `reduce_proj`-faithful monomorphization then
+;; lowers `WAddMonoid.add S inst …` THROUGH the named const down to the native op. (sr-entry/sr-c above
+;; stay the irreducible native-op↔carrier recognition map — the optimizer reflects over un-instanced
+;; `Nat.add`, never `WAddMonoid.add`, so a thin native map is needed regardless of how instances are built.)
+(defn- carrier-name [S] (name/->string (e/const-name S)))
+(defn- am-inst [S _entry] (e/const' (name/from-string (str "instWAddMonoid_" (carrier-name S))) []))
+(defn- sr-inst [S _entry] (e/const' (name/from-string (str "instWSemiring_"  (carrier-name S))) []))
 
 (defn- adopt-if-improved
   "Shared frame-emitter tail: adopt the rewrite `res` (whose :term is the rewritten RHS) iff it strictly

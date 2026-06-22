@@ -442,22 +442,16 @@
   (install-factor-pull-laws!)
   (install-agg-frame-laws!)
 
-  ;; TODO (Level-2 remaining, tracked): the DEEP generic frame family — hand-built term proofs in
-  ;; `wandler.laws.proofs.frame` to be re-derived as tactic scripts:
-  ;;   Map.foldl_join_frame_generic / Map.foldl_join_sum_factor_generic / Map.foldl_keyfactor_float_generic
-  ;;   / Map.bucket_factor_pull_generic / Nat.cond_and_mul_split_generic (+ their Nat instances, derived
-  ;;   by applying the generic to the WSemiring-Nat instance, option 2a) and the lookup/group_by +
-  ;;   filter→join pushdown + semijoin foundation (relational.clj, already tactic-based — straight port).
-  ;; Then: repoint wandler.surface.core → faq/install!, retarget the Perm reorder/grace-hash
-  ;; strategies to the aggregate Map_aggJoin_reorder (option 1a), delete wandler.laws.*, suite-gate.
-
-  ;; Semiring CARRIER ROWS (Nat counting/SUM + Bool provenance) for the physical optimizer's
-  ;; recognizers/emitters — relocated from the retired wandler.laws.relational/install!. Idempotent
-  ;; (last wins); the named consts are all Init lemmas (present in the store regardless of install).
-  (sreg/register! "Nat"  {:add "Nat.add" :mul "Nat.mul" :zero "Nat.zero"
-                          :hAA "Nat.add_assoc" :hZA "Nat.zero_add" :hAZ "Nat.add_zero"
-                          :hMA "Nat.mul_add" :hMZ "Nat.mul_zero" :hZM "Nat.zero_mul"})
-  (sreg/register! "Bool" {:add "Bool.or" :mul "Bool.and" :zero "Bool.false"
-                          :hAA "Bool.or_assoc" :hZA "Bool.false_or" :hAZ "Bool.or_false"
-                          :hMA "Bool.and_or_distrib_left" :hMZ "Bool.and_false" :hZM "Bool.false_and"})
+  ;; Semiring CARRIERS (Nat counting/SUM + Bool provenance). Two thin facts per carrier:
+  ;;  (1) the bundled WAddMonoid/WSemiring INSTANCE, kernel-verified ONCE from its axiom row
+  ;;      (ansatz.prelude.algebra) — the optimizer emits it BY NAME (`instWSemiring_<C>`), Lean/Mathlib
+  ;;      "one instance per carrier"; codegen's reduce_proj-faithful monomorphization lowers it to native ops.
+  ;;  (2) the native-op↔carrier RECOGNITION row {:add :mul :zero} — IRREDUCIBLE, because the optimizer
+  ;;      reflects over un-instanced surface terms (the user writes `Nat.add`, not `WSemiring.add`).
+  ;; Adding a carrier = install-instance! its axiom row + register! its three native ops. (Nat's instance
+  ;; is also installed lazily by reorder/install! above; install-instance! is idempotent.)
+  (when-not (has? "instWSemiring_Nat")  (alg/install-instance! "Nat"  alg/nat-row))
+  (when-not (has? "instWSemiring_Bool") (alg/install-instance! "Bool" alg/bool-row))
+  (sreg/register! "Nat"  {:add "Nat.add" :mul "Nat.mul"  :zero "Nat.zero"})
+  (sreg/register! "Bool" {:add "Bool.or" :mul "Bool.and" :zero "Bool.false"})
   :installed)

@@ -17,6 +17,7 @@
             [ansatz.kernel.name :as name]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.level :as lvl]
+            [ansatz.prelude.algebra :as alg]
             [wandler.laws.semiring :as sreg]))
 
 (defn- nm [s] (name/from-string s))
@@ -134,10 +135,16 @@
     ;; 3. the six semiring laws
     (doseq [[lbl [g p]] (build-enat-lemmas)]
       (admit! lbl g p)))
-  ;; 4. register the ℕ∞ row so the optimizer's frame index instantiates the generic laws at (ENat,min,plus,∞)
-  (sreg/register! "ENat" {:add "ENat.min" :mul "ENat.plus" :zero "ENat.inf"
-                          :hAA "ENat.min_assoc" :hZA "ENat.inf_min" :hAZ "ENat.min_inf"
-                          :hMA "ENat.plus_min_distrib" :hMZ "ENat.plus_inf" :hZM "ENat.inf_plus"})
+  ;; 4. the bundled ℕ∞ WAddMonoid/WSemiring instance, kernel-verified from the six admitted laws — the
+  ;; optimizer emits it BY NAME (`instWSemiring_ENat`). ENat is wandler-defined, so its axiom row lives
+  ;; here (not in ansatz.prelude.algebra, which only knows Init carriers).
+  (when-not (has? "instWSemiring_ENat")
+    (alg/install-instance! "ENat"
+                           {:add "ENat.min" :zero "ENat.inf" :mul "ENat.plus"
+                            :add_assoc "ENat.min_assoc" :zero_add "ENat.inf_min" :add_zero "ENat.min_inf"
+                            :mul_add "ENat.plus_min_distrib" :mul_zero "ENat.plus_inf" :zero_mul "ENat.inf_plus"}))
+  ;; 5. register the ℕ∞ native-op recognition row {:add :mul :zero} so the optimizer routes ℕ∞ folds here.
+  (sreg/register! "ENat" {:add "ENat.min" :mul "ENat.plus" :zero "ENat.inf"})
   (a/env))
 
 (defn carrier-installed? [] (has? "ENat.plus_min_distrib"))
