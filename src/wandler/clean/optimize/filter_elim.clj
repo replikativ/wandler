@@ -248,3 +248,72 @@
                     (assoc res :verified? true)))))
             (catch Throwable _ nil)))
         (all-eraseDupsBy term)))
+
+
+;; ── Path 2b: certified GROUP-BY ELIMINATION (relational FD, key-licensed) ─────────────────────────
+(defn- groupby-self-shape
+  "Recognize a denormalize-each-row-with-its-group map:
+     List.map X (List X) (λr. Option.getD (Map.lookup K (List X) dec (kf r) (Map.group_by K X dec kf xs)) [])
+                xs
+   i.e. for each row look up its OWN group_by bucket. Returns {:K :X :dec :kf :xs} or nil. `xs` and `kf`
+   must be CLOSED and the group_by must key on the same `kf`/`xs` (so `Map.groupby_self_elim` applies)."
+  [t]
+  (let [[h args] (e/get-app-fn-args t)]
+    (when (and (= "List.map" (cname h)) (= 4 (count args)))
+      (let [X (nth args 0) pred (nth args 2) xs (nth args 3)]
+        (when (and (e/lam? pred) (zero? (e/bvar-range xs)))
+          (let [[gh gargs] (e/get-app-fn-args (e/lam-body pred))]
+            (when (and (= "Option.getD" (cname gh)) (= 3 (count gargs)))
+              (let [[lh largs] (e/get-app-fn-args (nth gargs 1))]
+                (when (and (= "Map.lookup" (cname lh)) (= 5 (count largs)))
+                  (let [K (nth largs 0) dec (nth largs 2) keyterm (nth largs 3)
+                        [gbh gbargs] (e/get-app-fn-args (nth largs 4))]
+                    (when (and (e/app? keyterm)
+                               (= (e/bvar 0) (e/app-arg keyterm))
+                               (zero? (e/bvar-range (e/app-fn keyterm)))
+                               (= "Map.group_by" (cname gbh)) (= 5 (count gbargs)))
+                      (let [kf (e/app-fn keyterm)]
+                        (when (and (.equals ^Object kf (nth gbargs 3))
+                                   (.equals ^Object xs (nth gbargs 4)))
+                          {:K K :X X :dec dec :kf kf :xs xs})))))))))))))
+
+(defn- all-groupby-self-maps
+  "Every closed group-by-self-lookup `List.map` subterm (preorder)."
+  [t]
+  (let [acc (volatile! [])]
+    (letfn [(go [t]
+              (when (and (e/app? t) (zero? (e/bvar-range t)) (groupby-self-shape t))
+                (vswap! acc conj t))
+              (cond (e/app? t)    (do (go (e/app-fn t)) (go (e/app-arg t)))
+                    (e/lam? t)    (do (go (e/lam-type t)) (go (e/lam-body t)))
+                    (e/forall? t) (do (go (e/forall-type t)) (go (e/forall-body t)))))]
+      (go t))
+    @acc))
+
+(defn try-groupby-elim
+  "If `term` contains a closed `map (λr. getD (lookup (kf r) (group_by kf xs)) []) xs` over a relation
+   `xs` carrying a `Nodup (map kf ·)` refinement (declared UNIQUE KEY), rewrite the group-by + per-row
+   lookups AWAY to `map (λr. [r]) xs` with a kernel proof `Map.groupby_self_elim … (Subtype.property …)`,
+   lifted whole-term by congrArg and re-checked by verified-rewrite?. GROUP-BY ELIMINATION — sound ONLY
+   given the declared key. Requires `Map.groupby_self_elim` installed (wandler.clean.laws.groupby)."
+  [^Env env term & {:keys [lctx]}]
+  (some (fn [mp]
+          (try
+            (let [{:keys [K X dec kf xs]} (groupby-self-shape mp)
+                  u lvl/zero
+                  prop (nodup-property xs)                       ; : Nodup K (map kf xs)
+                  beq (e/app* (C "instBEqOfDecidableEq" [u]) K dec)
+                  linst (when prop (synth-lawful-beq env K beq))]
+              (when linst
+                (let [eq (e/app* (C "Map.groupby_self_elim" []) K X dec linst kf xs prop)
+                      listX (e/app (C "List" [u]) X)
+                      repl (e/app* (C "List.map" [u u]) X listX
+                                   (e/lam "r" X (e/app* (C "List.cons" [u]) X (e/bvar 0) (e/app (C "List.nil" [u]) X)) :default)
+                                   xs)
+                      result (replace-closed term mp repl)
+                      proof (congr-whole env (or lctx {}) term mp repl eq u)
+                      res {:term result :proof proof :rw :groupby-elim :rewrites [:groupby-elim]}]
+                  (when (cert/verified-rewrite? env term res :lctx lctx)
+                    (assoc res :verified? true)))))
+            (catch Throwable _ nil)))
+        (all-groupby-self-maps term)))

@@ -845,6 +845,10 @@
                       ;; over a `Nodup (map kf ·)`-refined relation (declared UNIQUE KEY). The relational
                       ;; functional-dependency sibling; sound ONLY given the declared key.
                       (fe/try-keyed-distinct-elim env term :lctx lctx)
+                      ;; Path 2b: certified GROUP-BY ELIMINATION — collapse `map (λr. lookup (kf r)
+                      ;; (group_by kf xs)) xs` to `map (λr. [r]) xs` over a `Nodup (map kf ·)`-refined
+                      ;; relation (unique key ⇒ singleton buckets). Sound ONLY given the declared key.
+                      (fe/try-groupby-elim env term :lctx lctx)
                       (try-count-factor env term :lctx lctx :selectivity selectivity :sizes sizes)
                       ;; RECURSIVE FAQ variable elimination: factor EVERY join in a multi-way tree, not
                       ;; just the outermost (iterate the proven single step to a fixpoint, composing proofs).
