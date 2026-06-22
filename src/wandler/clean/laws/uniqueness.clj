@@ -168,8 +168,9 @@
     (induction l)
     (all_goals (intro hn))
     (all_goals (intro hr))
-    (all_goals (try (have hor (Or (= X r head) (Membership.mem X (List X) (List.instMembership X) tail r)))))
-    (all_goals (try (exact (Iff.mp (List.mem_cons X head tail r) hr))))
+    ;; inline-proof `have` (ansatz have-with-proof): introduce + discharge the Or in one step.
+    (all_goals (try (have hor (Or (= X r head) (Membership.mem X (List X) (List.instMembership X) tail r))
+                      (Iff.mp (List.mem_cons X head tail r) hr))))
     (all_goals (try (cases hor)))
     (all_goals (try (subst h)))
     (all_goals (try (rw (List.filter_cons_of_pos X (fn [y :- X] (BEq.beq K inst (kf head) (kf y))) head tail
