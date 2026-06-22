@@ -21,5 +21,17 @@
               "a ∉ l → filter (·≠a) l = l, kernel-checked"))
         (testing "THE capability proof: eraseDups is identity on a Nodup list (sound only with the key)"
           (is (verifies? "nodup_eraseDups")
-              "Nodup l → eraseDups l = l, kernel-checked — DISTINCT removal a stats planner can't do")))
+              "Nodup l → eraseDups l = l, kernel-checked — DISTINCT removal a stats planner can't do"))
+        (testing "Path 2a — the KEYED helper proves (key-image membership contradiction)"
+          (is (verifies? "filter_kf_not_mem")
+              "kf a ∉ map kf l → filter (·≠ₖa) l = l, kernel-checked"))
+        (testing "Path 2a capability: distinct-by-key is identity when the key is unique (relational FD)"
+          (is (verifies? "nodup_map_eraseDupsBy")
+              "Nodup (map kf xs) → eraseDupsBy (·==ₖ·) xs = xs — keyed DISTINCT removal, kernel-checked"))
+        (testing "Path 2b helpers — absent-key bucket empty + distinct-key beq≠true"
+          (is (verifies? "filter_key_eq_nil") "k ∉ map kf l → filter (k==kf·) l = []")
+          (is (verifies? "key_beq_ne_true") "unique key ⇒ tail element's beq is not true"))
+        (testing "Path 2b KEYSTONE: a unique-key group-by bucket is a SINGLETON (group-by elim foundation)"
+          (is (verifies? "bucket_singleton")
+              "Nodup (map kf l) → r ∈ l → filter (kf r == kf·) l = [r] — sound only with the key")))
     (println "SKIP uniqueness-laws-kernel-verify: no Init env")))

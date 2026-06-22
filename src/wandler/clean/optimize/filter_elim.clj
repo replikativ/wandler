@@ -188,3 +188,63 @@
                     (assoc res :verified? true)))))
             (catch Throwable _ nil)))
         (all-eraseDups term)))
+
+
+;; ── Path 2a: certified KEYED DISTINCT-removal (relational FD, key-licensed) ──────────────────────
+(defn- all-eraseDupsBy
+  "Every bvar-free `List.eraseDupsBy X R xs` application subterm (3 args), preorder."
+  [t]
+  (let [acc (volatile! [])]
+    (letfn [(go [t]
+              (when (e/app? t)
+                (let [[h args] (e/get-app-fn-args t)]
+                  (when (and (= "List.eraseDupsBy" (cname h)) (= 3 (count args)) (zero? (e/bvar-range t)))
+                    (vswap! acc conj t))))
+              (cond (e/app? t)    (do (go (e/app-fn t)) (go (e/app-arg t)))
+                    (e/lam? t)    (do (go (e/lam-type t)) (go (e/lam-body t)))
+                    (e/forall? t) (do (go (e/forall-type t)) (go (e/forall-body t)))))]
+      (go t))
+    @acc))
+
+(defn- key-comparator
+  "Recognize a key-equality comparator `λ x y. BEq.beq K inst (kf x) (kf y)` (the shape `distinct-by`
+   lowers to and `nodup_map_eraseDupsBy` is keyed on). Returns {:K :inst :kf} with `kf` the CLOSED
+   key function, or nil. The two `kf`-applications must share one closed `kf` over the two binders."
+  [R]
+  (when (and (e/lam? R) (e/lam? (e/lam-body R)))
+    (let [body (e/lam-body (e/lam-body R))
+          [h args] (e/get-app-fn-args body)]
+      (when (and (= "BEq.beq" (cname h)) (= 4 (count args)))
+        (let [K (nth args 0) inst (nth args 1) ax (nth args 2) ay (nth args 3)]
+          (when (and (e/app? ax) (e/app? ay)
+                     (= (e/bvar 1) (e/app-arg ax)) (= (e/bvar 0) (e/app-arg ay))
+                     (.equals ^Object (e/app-fn ax) (e/app-fn ay))
+                     (zero? (e/bvar-range (e/app-fn ax))))
+            {:K K :inst inst :kf (e/app-fn ax)}))))))
+
+(defn try-keyed-distinct-elim
+  "If `term` contains a closed `List.eraseDupsBy X (λx y. kf x == kf y) xs` whose `xs` is a
+   `Subtype.val` carrying a `Nodup (map kf ·)` refinement (a declared UNIQUE KEY), rewrite the
+   keyed dedup AWAY (→ xs) with a kernel proof `nodup_map_eraseDupsBy K X inst (synth LawfulBEq)
+   kf xs (Subtype.property …)`, lifted whole-term by congrArg and re-checked by verified-rewrite?.
+   The relational FUNCTIONAL-DEPENDENCY sibling of `try-distinct-elim`: sound ONLY given the
+   declared key (a stats planner cannot). Requires `nodup_map_eraseDupsBy` installed."
+  [^Env env term & {:keys [lctx]}]
+  (some (fn [ed]
+          (try
+            (let [[_ args] (e/get-app-fn-args ed)
+                  X (nth args 0) R (nth args 1) xs (nth args 2)
+                  cmp (key-comparator R)
+                  prop (when cmp (nodup-property xs))                ; : Nodup K (map kf xs)
+                  linst (when prop (synth-lawful-beq env (:K cmp) (:inst cmp)))]
+              (when linst
+                (let [{:keys [K inst kf]} cmp
+                      eq (e/app* (C "nodup_map_eraseDupsBy" []) K X inst linst kf xs prop)
+                      result (replace-closed term ed xs)
+                      proof (congr-whole env (or lctx {}) term ed xs eq lvl/zero)
+                      res {:term result :proof proof
+                           :rw :keyed-distinct-elim :rewrites [:keyed-distinct-elim]}]
+                  (when (cert/verified-rewrite? env term res :lctx lctx)
+                    (assoc res :verified? true)))))
+            (catch Throwable _ nil)))
+        (all-eraseDupsBy term)))

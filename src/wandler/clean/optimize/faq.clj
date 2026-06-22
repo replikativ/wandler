@@ -841,6 +841,10 @@
                       ;; Step 4: certified DISTINCT-removal — drop an eraseDups over a Nodup-refined
                       ;; (declared `:set`/key) list. Sound ONLY given the declared uniqueness.
                       (fe/try-distinct-elim env term :lctx lctx)
+                      ;; Path 2a: certified KEYED distinct-removal — drop a `distinct-by kf` (eraseDupsBy)
+                      ;; over a `Nodup (map kf ·)`-refined relation (declared UNIQUE KEY). The relational
+                      ;; functional-dependency sibling; sound ONLY given the declared key.
+                      (fe/try-keyed-distinct-elim env term :lctx lctx)
                       (try-count-factor env term :lctx lctx :selectivity selectivity :sizes sizes)
                       ;; RECURSIVE FAQ variable elimination: factor EVERY join in a multi-way tree, not
                       ;; just the outermost (iterate the proven single step to a fixpoint, composing proofs).

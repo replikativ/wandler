@@ -87,3 +87,47 @@
                                 (e/app* (C "List.eraseDups" [u]) Nat instBEq plain))]
               (is (nil? (fe/try-distinct-elim ke orig2 :lctx lctx2)))))))
     (println "SKIP distinct-eliminated-on-nodup-refinement: no Init env")))
+
+(deftest keyed-distinct-eliminated-on-key-nodup-refinement
+  ;; Path 2a — the RELATIONAL functional-dependency sibling: `distinct-by kf` (eraseDupsBy over a
+  ;; key comparator) is dropped when the KEY is declared unique (`Nodup (map kf ·)`), kernel-certified
+  ;; by nodup_map_eraseDupsBy. UNSOUND without the key fact — only a proof, never stats, licenses it.
+  (if-let [ke0 @test-env/init-full-env]
+    (do (reset! a/ansatz-env ke0)
+        (uniq/install!)
+        (let [ke (a/env)
+              u lvl/zero u1 (lvl/succ lvl/zero)
+              Nat (C "Nat" [])
+              inst (e/app* (C "instBEqOfDecidableEq" [u]) Nat (C "instDecidableEqNat" []))
+              listNat (e/app (C "List" [u]) Nat)
+              kf (C "Nat.succ" [])                                   ; a non-trivial key projection
+              ;; the comparator `distinct-by kf` lowers to: λx y. kf x == kf y
+              R (e/lam "x" Nat (e/lam "y" Nat
+                   (e/app* (C "BEq.beq" [u]) Nat inst (e/app kf (e/bvar 1)) (e/app kf (e/bvar 0))) :default) :default)
+              ;; carrier: {xs : List Nat // Nodup (map kf xs)} — a declared UNIQUE KEY
+              P (e/lam "l" listNat (e/app* (C "List.Nodup" [u]) Nat
+                                           (e/app* (C "List.map" [u u]) Nat Nat kf (e/bvar 0))) :default)
+              subT (e/app* (C "Subtype" [u1]) listNat P)
+              s (e/fvar 1)
+              lctx {1 {:name "s" :type subT}}
+              xs (e/app* (C "Subtype.val" [u1]) listNat P s)
+              orig (e/app* (C "List.length" [u]) Nat
+                           (e/app* (C "List.eraseDupsBy" [u]) Nat R xs))
+              res (fe/try-keyed-distinct-elim ke orig :lctx lctx)]
+          (testing "distinct-by over a key-Nodup-refined relation is dropped, kernel-certified"
+            (is (some? res) "keyed-distinct-elim fired")
+            (is (true? (:verified? res)) "the whole-term rewrite re-checks (LawfulBEq synthesized)")
+            (is (= [:keyed-distinct-elim] (:rewrites res)))
+            (is (= (:term res) (e/app* (C "List.length" [u]) Nat xs)) "dedup-by gone → length (val s)"))
+          (testing "the full cost-driven cascade ADOPTS keyed-distinct-elim"
+            (let [oc (opt/optimize-cost ke orig :lctx lctx)]
+              (is (= [:keyed-distinct-elim] (vec (:rewrites oc))))
+              (is (true? (:verified? oc)))
+              (is (= (:term oc) (e/app* (C "List.length" [u]) Nat xs)))))
+          (testing "distinct-by over a PLAIN (non-key-refined) relation is NOT eliminated (sound)"
+            (let [plain (e/fvar 2)
+                  lctx2 {2 {:name "ys" :type listNat}}
+                  orig2 (e/app* (C "List.length" [u]) Nat
+                                (e/app* (C "List.eraseDupsBy" [u]) Nat R plain))]
+              (is (nil? (fe/try-keyed-distinct-elim ke orig2 :lctx lctx2)))))))
+    (println "SKIP keyed-distinct-eliminated-on-key-nodup-refinement: no Init env")))
