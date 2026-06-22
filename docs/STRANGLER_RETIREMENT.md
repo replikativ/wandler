@@ -66,17 +66,22 @@ all renames."
 
 ---
 
-## Phase C — Purge superseded old namespaces  ·  S–M  ·  ☐
-Delete only the genuinely-obsolete old ns (superseded by the promoted clean tree). One per commit,
-leaf-first, suite-gated; remove each ns's test file in the same commit.
+## Phase C — Purge superseded old namespaces  ·  ☑ INVESTIGATED — nothing genuine to purge
+Reading the actual files (not just the audit's "dead-from-core" label) showed the flagged candidates
+are **distinct dormant FEATURES**, not duplicate old implementations of the clean tree:
+- `wandler.stdlib` — a one-stop convenience installer that registers the (clean) `surface.*` vocabulary.
+- `wandler.verified` — the drop-in transducer/reducer SURFACE (reads like Clojure transducers).
+- `wandler.reducers` (+ `reducers/*`) — the transducer calculus; a **live dependency of `backend.stratum`**.
+- `wandler.plan` — the unified source→sink planner entry ("every plan kernel-certified ≡ naive").
 
-Candidates (confirm "no live consumer" by grep at execution): `wandler.plan` (unified-planner facade,
-superseded by `wandler.optimize`), `wandler.verified` (def-record/defn over reducers, superseded by
-`wandler.surface.records`), `wandler.reducers` (+ `reducers/{plan,affine,record}`, the old transducer
-calculus), `wandler.stdlib`. **Reverses the prior plan's "keep" — per the full-finish decision.**
+The genuine strangler DUPLICATES were already gone (surface/optimizer were never duplicated — clean was
+the sole impl; the one true duplicate, `wandler.optimize.faq`, was removed in B0). "Dead-from-core" meant
+"not reached by `install!`," not "obsolete." So there is no strangler debt to delete here — matching
+`REPO_HARDENING_PLAN.md` Phase 1.3's original "keep all".
 
-**Risk:** a candidate may be required by a kept ns (e.g. `backend.stratum` → `reducers`). Delete
-leaf-first; if a keeper needs it, either inline the used bit or keep that one ns and note why.
+**Decision deferred to feature-scoping (not cleanup):** whether these dormant feature surfaces ship in the
+first release is a product call. They are kept (tested, working); we do NOT silently delete working code.
+If a leaner 1.0 is wanted, scope which features ship as an explicit, separate decision.
 
 ---
 
@@ -96,7 +101,7 @@ the deferred technical roadmap, no rush, and it gates a "zero old code ridden" c
 
 ---
 
-## Phase E — Docs + first release  ·  S  ·  ☐
+## Phase E — Docs + first release  ·  ◐ (docs swept; release tooling pending)
 After the rename, sweep doc references `wandler.clean.* → wandler.*` (README layout table, SURFACE.md,
 architecture docs). Then the first-release checklist: version + CHANGELOG, tag → CI/CD (no manual
 release). The README quickstart already loads clean and describes the clean tree as canonical.

@@ -24,7 +24,7 @@ The sections are numbered so the cross-references scattered through the source
 
 A pipeline is elaborated to a CIC kernel term (ansatz). The optimizer rewrites the term
 by *certified rewriting*: every adopted rewrite carries a kernel proof `optimized ≡
-original`, re-checked per program by `wandler.clean.optimize.certify/verified-rewrite?`
+original`, re-checked per program by `wandler.optimize.certify/verified-rewrite?`
 via independent `env/check-constant`. The search is untrusted; only the certificate is.
 This is *translation validation*, and it is what lets all four structures share one
 optimizer — a structure-specific rewrite is legal exactly when its proof type-checks.
@@ -52,11 +52,11 @@ rule. It is proven once, generically over any `WSemiring`, as
 `Map.foldl_join_frame_generic` / `Map.foldl_join_sum_factor_generic` (the pre-aggregated
 O(distinct-keys) index), and routed by carrier registry rows. See
 [`SPILL_AND_FAQ_PLAN.md`](SPILL_AND_FAQ_PLAN.md) for the spill/index strategy ladder, and
-`wandler.clean.laws.faq` for the proofs.
+`wandler.laws.faq` for the proofs.
 
 ## §4 — The optimizer as certified rewriting
 
-`wandler.clean.optimize` is the search; `…/certify` is the gate; `…/cost` is the resource
+`wandler.optimize` is the search; `…/certify` is the gate; `…/cost` is the resource
 model; `…/physical` picks the realization. A rewrite is adopted iff
 `verified-rewrite?` *and* it lowers `cost`. The e-graph layer (`…/egraph`) and CSE
 (`…/cse`, a zeta/`let` defeq — certificate is `Eq.refl`) widen the search without
@@ -64,13 +64,13 @@ widening the trust base.
 
 ## §5 — Cost model
 
-`wandler.clean.optimize.cost` costs *trees* and *lets* (tree/binder-aware,
+`wandler.optimize.cost` costs *trees* and *lets* (tree/binder-aware,
 descriptor-driven), so the planner rewards sharing and can price a backend push-down.
 The op-cost table is the engine seam. See [`COST_MODEL_REDESIGN.md`](COST_MODEL_REDESIGN.md).
 
 ## §6 — Physical planning
 
-`wandler.clean.optimize.physical` + `wandler.exec.physical` choose the realization over
+`wandler.optimize.physical` + `wandler.exec.physical` choose the realization over
 the **plan lens** (`wandler.optimize.plan`, the single term↔plan IR): in-memory hash
 join, nested-loop, grace-hash spill, or the pre-aggregated index — each certified equal
 to the naive plan. Boundedness can route bounded data to a zero-alloc backend

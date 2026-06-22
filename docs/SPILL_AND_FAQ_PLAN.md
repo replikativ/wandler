@@ -3,7 +3,7 @@
 > Referenced from `wandler.exec.stream`, the pre-agg / planner-demo / grace-hash tests.
 > Companion to [`PROGRAMMING_MODEL.md`](PROGRAMMING_MODEL.md) §3/§6 and
 > [`PHYSICAL_PLANNER.md`](PHYSICAL_PLANNER.md). Every strategy below is certified equal to
-> the naive plan by `wandler.clean.optimize.certify/verified-rewrite?`; the planner only
+> the naive plan by `wandler.optimize.certify/verified-rewrite?`; the planner only
 > *chooses* among them by cost.
 
 ## The ladder
@@ -18,12 +18,12 @@ over the plan lens (`wandler.optimize.plan`). In rough cost order:
 3. **Grace-hash spill** — when the build side does *not* fit: partition both inputs into
    key-aligned chunks (`List.chunk`), join chunk-by-chunk, concatenate. Certified by
    `List.flatten_chunk` + `Map.foldl_join_blockfold` (+ the `List.Perm` cluster for
-   order-insensitivity). Home: `wandler.clean.laws.grace`.
+   order-insensitivity). Home: `wandler.laws.grace`.
 4. **Pre-aggregated (FAQ) index** — when the consumer is a *separable SUM* over the join
    (`Σ_{x⋈y} w(x)·v(y)`), don't materialize pairs at all: pre-sum each bucket once, so the
    held index is O(distinct keys), not O(|ys|). Certified by
    `Map.foldl_join_sum_factor_generic` (the crux `List.lookup_map_kv`) and the frame rule
-   `Map.foldl_join_frame_generic`. Home: `wandler.clean.laws.faq`.
+   `Map.foldl_join_frame_generic`. Home: `wandler.laws.faq`.
 
 ## What gates the choice
 
@@ -50,5 +50,5 @@ is rejected, never miscompiled.
 
 Rungs 1–4 are proven and wired. The deep generic frame family
 (`Map.foldl_keyfactor_float_generic`, the FD-scope keyfactor) is the Level-2 remainder
-tracked in `wandler.clean.laws.faq`. Multi-way FAQ variable elimination (recursive join
+tracked in `wandler.laws.faq`. Multi-way FAQ variable elimination (recursive join
 ordering) is the open research frontier; single aggregating joins factor today.

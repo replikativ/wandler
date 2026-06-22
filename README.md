@@ -117,17 +117,16 @@ fork-join), DBSP increment laws, Z-set group laws. Measured impact:
 
 ## Layout
 
-The verified engine lives under `wandler.clean.*` (the canonical tree after the
-strangler reimplementation); `wandler.core` is the public front door over it, and
-the namespaces below it are the satellite engines.
+The verified engine lives under `wandler.*`; `wandler.core` is the public front
+door over it, and the namespaces below it are the satellite engines.
 
 | prefix | role |
 |---|---|
 | `wandler.core` | the front door: `install!` (the three seams), `install-laws!` (the proven law DAG), `explain`/`plan`, `execute`, the measure→replan loop |
-| `wandler.clean.surface.*` | SEAM 1 — the Clojure verb vocabulary → kernel terms (collections · records · relational · refine · malli · option · strings); `wandler.surface.{vocabulary,streams}` host the verb-registry-as-data + the stream surface |
-| `wandler.clean.optimize` + `.optimize.*` | SEAM 2 — `certify` (the kernel gate) · `cost` (the resource model) · `physical` (plan drivers) · `egraph` · `cse` · `faq`. `wandler.optimize.plan` is the relational IR lens (term↔plan) the exec/bridge layers ride on |
-| `wandler.clean.laws.*` | the proven law library — `faq`/`frame`/`bucket` (the FAQ frame-rule + semiring-generic family) · `relational` (semijoin/anti-join) · `reorder` · `grace`(+`grace_proofs`) · `fusion`/`ac`; one DAG, strict admission. `wandler.laws.semiring` is the carrier registry; `wandler.laws.{tropical,dist}` are opt-in carriers |
-| `wandler.clean.core.*` · `wandler.runtime` · `wandler.algebra` | SEAM 3 — the parallel-fold monoid core + lowering (unboxed scans, hash joins) + the law-gated licences |
+| `wandler.surface.*` | SEAM 1 — the Clojure verb vocabulary → kernel terms (collections · records · relational · refine · malli · option · strings); `wandler.surface.{vocabulary,streams}` host the verb-registry-as-data + the stream surface |
+| `wandler.optimize` + `.optimize.*` | SEAM 2 — `certify` (the kernel gate) · `cost` (the resource model) · `physical` (plan drivers) · `egraph` · `cse` · `faq`. `wandler.optimize.plan` is the relational IR lens (term↔plan) the exec/bridge layers ride on |
+| `wandler.laws.*` | the proven law library — `faq`/`frame`/`bucket` (the FAQ frame-rule + semiring-generic family) · `relational` (semijoin/anti-join) · `reorder` · `grace`(+`grace_proofs`) · `fusion`/`ac`; one DAG, strict admission. `wandler.laws.semiring` is the carrier registry; `wandler.laws.{tropical,dist}` are opt-in carriers |
+| `wandler.core.*` · `wandler.runtime` · `wandler.algebra` | SEAM 3 — the parallel-fold monoid core + lowering (unboxed scans, hash joins) + the law-gated licences |
 | `wandler.exec.*` | the verified paths: batch is implicit; `zset`/`dbsp*` (incremental) · `stream` (windows/comonad) · `live`/`fork` (push) · `mode` + `mode-laws` (the lattice + its kernel proof) |
 | `wandler.jit.*` · `wandler.backend.*` | `jit.{estimate,pgo,stream}` (measure→replan→recompile) · `backend.{raster,stratum,simd}` (opt-in native/columnar engines) |
 | `wandler.inference.*` | semiring readings of the same core (semiring · dist · wmc · giry · lens) |
@@ -138,11 +137,10 @@ See [`docs/CORE.md`](docs/CORE.md) for the architecture spec.
 
 ## Status
 
-The verified engine has been re-implemented clean under `wandler.clean.*` (the
-strangler reimplementation) and is the canonical tree; the pre-migration optimizer,
-surface, and law engines have been removed. `wandler.core` reaches only the clean
-tree. Every adopted rewrite is independently kernel-`check-constant`-certified;
-a law that fails to admit degrades to a missed optimization, never a miscompile.
+The verified optimizer, surface, and law engines are the single canonical
+implementation under `wandler.*` (the pre-migration duplicates have been removed).
+Every adopted rewrite is independently kernel-`check-constant`-certified; a law
+that fails to admit degrades to a missed optimization, never a miscompile.
 
 The **FAQ frame rule is semiring-generic** — the whole separable-weight
 factorization (frame + sum-factor + the FD keyfactor-float layer) is certified
