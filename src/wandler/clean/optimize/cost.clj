@@ -9,7 +9,6 @@
             [wandler.clean.optimize.certify :as cert])
   (:import [ansatz.kernel Env]))
 
-
 (def cost-rewrites
   "RELATIONAL / REORDERING laws — NOT confluent, so they are NOT in the default
    fusion set (they could loop with their inverse, and whether they help depends on
@@ -49,11 +48,7 @@
    ;; cert/install-filtermap-fusion-law! (Init-only proof: filterMap_eq_map + filterMap_filter).
    "List.map_filter_filterMap"])
 
-
 ;; ---- cost-directed search layer (untrusted; each kept rewrite is certified) --
-
-
-
 
 (defn soac-cost
   "A static cost estimate: the number of SOAC applications in a term. Each
@@ -76,7 +71,6 @@
       (walk term))
     @c))
 
-
 (defn soac-stages
   "Ordered SOAC op short-names in `term` (outermost-first, as encountered), e.g.
    `[\"map\" \"filter\"]` — the pipeline stages, for the plan/explain API."
@@ -94,13 +88,6 @@
                 :else nil))]
       (walk term))
     @acc))
-
-
-
-
-
-
-
 
 (defn soac-cost-deep
   "`soac-cost`, but a user-helper call is counted by its INLINED body — so the gate
@@ -125,7 +112,6 @@
                 :else nil))]
       (walk term))
     @c))
-
 
 (defn soac-depth-cost
   "Honest cost for the e-graph's NON-CONFLUENT reorder/hoist search: a SOAC op is charged
@@ -198,15 +184,12 @@
               :else 0.0))]
     (walk term 0)))
 
-
 ;; ── cardinality-propagation cost (datahike's estimate.cljc, made static) ──────
 ;; soac-cost counts ops; it can't tell a filter that runs BEFORE a join (small
 ;; input) from one that runs AFTER it (large input) — both are 2 ops. The cost
 ;; that the cost-search GATE actually needs is the number of elements PROCESSED,
 ;; which propagates cardinality through the pipeline. Heuristic, so it only
 ;; affects search QUALITY — every adopted rewrite is still kernel-certified.
-
-
 
 (def ^:private join-build-weight
   "Hash-join cost asymmetry: the INDEXED side (rhs, `group_by lf ys`) pays this per
@@ -215,12 +198,10 @@
    reorder, certifiable for count queries via the `Map.join_length_comm` Perm→Eq bridge."
   2.0)
 
-
 (def ^:private default-selectivity
   "Static fallback pass-rates by the predicate's head comparator (datahike
    estimate.cljc): equality selective, ranges moderate, ≠ keeps most."
   {:eq 0.1 :range 0.33 :neq 0.9 :other 0.5})
-
 
 (declare range-pred-rate)
 
@@ -243,7 +224,6 @@
           ("Ne" "ne") (:neq default-selectivity)
           (:other default-selectivity)))))
 
-
 (defn- bound-value?
   "The refinement variable itself, or its `Subtype.val` projection — both denote the bounded element
    value a range fact constrains (`x` for a refined Nat, `Subtype.val … x` for a refined element)."
@@ -252,7 +232,6 @@
       (let [[h args] (e/get-app-fn-args x)]
         (and (e/const? h) (= "Subtype.val" (name/->string (e/const-name h)))
              (e/bvar? (last args))))))
-
 
 (defn- cmp-kind [nm]
   (case nm
@@ -274,28 +253,28 @@
   ;; the carrier is Nat, so the lower bound is implicitly 0 when the schema doesn't raise it
   ;; (malli `{:min 0}` is definitionally Nat and leaves no refinement conjunct).
   (when-let [lo (when hi (or lo 0))]
-   (when (<= ^long lo ^long hi)
-    (let [body (loop [b pred] (if (e/lam? b) (recur (e/lam-body b)) b))
-          [h args] (e/get-app-fn-args body)
-          nm (when (e/const? h) (name/->string (e/const-name h)))
-          k (cmp-kind nm)
-          a (when (>= (count args) 2) (nth args (- (count args) 2) nil))
-          b (when (>= (count args) 2) (nth args (- (count args) 1) nil))
-          kv (cond (and b (e/lit-nat? b)) (long (e/lit-nat-val b))
-                   (and a (e/lit-nat? a)) (long (e/lit-nat-val a))
-                   :else nil)
+    (when (<= ^long lo ^long hi)
+      (let [body (loop [b pred] (if (e/lam? b) (recur (e/lam-body b)) b))
+            [h args] (e/get-app-fn-args body)
+            nm (when (e/const? h) (name/->string (e/const-name h)))
+            k (cmp-kind nm)
+            a (when (>= (count args) 2) (nth args (- (count args) 2) nil))
+            b (when (>= (count args) 2) (nth args (- (count args) 1) nil))
+            kv (cond (and b (e/lit-nat? b)) (long (e/lit-nat-val b))
+                     (and a (e/lit-nat? a)) (long (e/lit-nat-val a))
+                     :else nil)
           ;; orient: bound value on the LEFT (v CMP k) keeps the op; on the RIGHT (k CMP v) flips it
-          op (when (and k a) (if (bound-value? a) k (case k :lt :gt :le :ge :gt :lt :ge :le :eq :eq)))]
-      (when (and op kv)
-        (let [mn (long lo) mx (long hi)
-              dom (inc (- mx mn))
-              cnt (case op
-                    :lt (max 0 (inc (- (min mx (dec kv)) mn)))
-                    :le (max 0 (inc (- (min mx kv) mn)))
-                    :gt (max 0 (inc (- mx (max mn (inc kv)))))
-                    :ge (max 0 (inc (- mx (max mn kv))))
-                    :eq (if (<= mn kv mx) 1 0))]
-          (double (/ cnt dom))))))))
+            op (when (and k a) (if (bound-value? a) k (case k :lt :gt :le :ge :gt :lt :ge :le :eq :eq)))]
+        (when (and op kv)
+          (let [mn (long lo) mx (long hi)
+                dom (inc (- mx mn))
+                cnt (case op
+                      :lt (max 0 (inc (- (min mx (dec kv)) mn)))
+                      :le (max 0 (inc (- (min mx kv) mn)))
+                      :gt (max 0 (inc (- mx (max mn (inc kv)))))
+                      :ge (max 0 (inc (- mx (max mn kv))))
+                      :eq (if (<= mn kv mx) 1 0))]
+            (double (/ cnt dom))))))))
 
 (defn refinement-selectivity
   "Build a (pred → pass-rate) selectivity fn for a source whose ELEMENT type carries a
@@ -308,18 +287,15 @@
   (let [rng (refine/nat-range elem-type)]
     (fn [pred] (or (and rng (range-pred-rate pred rng)) (pred-selectivity pred)))))
 
-
 (def ^:private membership-scan-names
   "Predicate ops whose cost is the SIZE of the list they scan (a per-element O(m)
    membership test)."
   #{"List.elem" "List.contains" "List.elemBy" "List.any" "List.all"})
 
-
 (def ^:private index-build-names
   "Predicate ops that BUILD a probe index — a one-time O(m) cost (loop-invariant,
    hoisted out of the filter), after which each probe is O(1)."
   #{"Map.group_by"})
-
 
 (defn- predicate-extra-cost
   "Beyond the default O(1), estimate `[per-element-extra one-time-build]` for a
@@ -331,19 +307,18 @@
   [pred base]
   (let [per-el (atom 0.0) one-time (atom 0.0)]
     (letfn [(go [e]
-              (cond
-                (e/app? e)
-                (do (let [[h _] (e/get-app-fn-args e)]
-                      (when (e/const? h)
-                        (let [n (name/->string (e/const-name h))]
-                          (cond (membership-scan-names n) (swap! per-el + base)
-                                (index-build-names n)      (swap! one-time + base)))))
-                    (go (e/app-fn e)) (go (e/app-arg e)))
-                (e/lam? e) (go (e/lam-body e))
-                (e/forall? e) (go (e/forall-body e))))]
+                (cond
+                  (e/app? e)
+                  (do (let [[h _] (e/get-app-fn-args e)]
+                        (when (e/const? h)
+                          (let [n (name/->string (e/const-name h))]
+                            (cond (membership-scan-names n) (swap! per-el + base)
+                                  (index-build-names n)      (swap! one-time + base)))))
+                      (go (e/app-fn e)) (go (e/app-arg e)))
+                  (e/lam? e) (go (e/lam-body e))
+                  (e/forall? e) (go (e/forall-body e))))]
       (go pred))
     [@per-el @one-time]))
-
 
 ;; ── per-op COST DESCRIPTORS (the framework seam) ─────────────────────────────
 ;; Each head → {:list <driving-input arg idx>, :tf <transform>}. The walk descends the :list input,
@@ -362,23 +337,23 @@
    Seeded with the Init SOAC/relational ops; engines register their own via register-op-cost!."}
   op-cost-registry
   (atom
-  {"List.map"       {:list 3 :tf (fn [_   [in cin mn] _ _ _] [in (+ cin in) mn])}                ; streaming
-   "List.filter"    {:list 2 :tf (fn [ctx [in cin mn] args _ _]
-                                   (let [pred (nth args 1)
-                                         [per-el one-time] (predicate-extra-cost pred (:base ctx))]
-                                     [(* in (double ((:sel ctx) pred))) (+ cin in (* in per-el) one-time) mn]))}
-   "List.foldl"     {:list 4 :tf (fn [_   [in cin mn] _ _ _] [1.0 (+ cin in) mn])}               ; scalar acc
-   "List.foldr"     {:list 4 :tf (fn [_   [in cin mn] _ _ _] [1.0 (+ cin in) mn])}
-   "List.length"    {:list 1 :tf (fn [_   [in cin mn] _ _ _] [1.0 (+ cin in) mn])}               ; count boundary
-   "List.flatMap"   {:list 3 :tf (fn [ctx [in cin mn] _ _ _] [(* in (:fanout ctx)) (+ cin in) mn])}
-   "List.eraseDups" {:list 2 :tf (fn [_   [in cin mn] _ _ _] [(* in 0.7) (+ cin in) mn])}
-   "List.mergeSort" {:list 1 :tf (fn [_   [in cin mn] _ _ _] [in (+ cin (* in (Math/log (max 2.0 in)))) (max mn in)])}
-   "Map.group_by"   {:list 4 :tf (fn [_   [in cin mn] _ _ _] [in (+ cin in) (max mn in)])}
-   "Map.join"       {:list 6 :tf (fn [ctx [in cin mn] args benv walk]
-                                   (let [[r cr mr] (walk (nth args 7) benv)        ; rhs (build) side
-                                         out (if (:ndv ctx) (max 1.0 (/ (* in r) (double (:ndv ctx))))
-                                                            (* (min in r) (:fanout ctx)))]
-                                     [out (+ cin cr in (* join-build-weight r)) (max mn mr r)]))}}))
+   {"List.map"       {:list 3 :tf (fn [_   [in cin mn] _ _ _] [in (+ cin in) mn])}                ; streaming
+    "List.filter"    {:list 2 :tf (fn [ctx [in cin mn] args _ _]
+                                    (let [pred (nth args 1)
+                                          [per-el one-time] (predicate-extra-cost pred (:base ctx))]
+                                      [(* in (double ((:sel ctx) pred))) (+ cin in (* in per-el) one-time) mn]))}
+    "List.foldl"     {:list 4 :tf (fn [_   [in cin mn] _ _ _] [1.0 (+ cin in) mn])}               ; scalar acc
+    "List.foldr"     {:list 4 :tf (fn [_   [in cin mn] _ _ _] [1.0 (+ cin in) mn])}
+    "List.length"    {:list 1 :tf (fn [_   [in cin mn] _ _ _] [1.0 (+ cin in) mn])}               ; count boundary
+    "List.flatMap"   {:list 3 :tf (fn [ctx [in cin mn] _ _ _] [(* in (:fanout ctx)) (+ cin in) mn])}
+    "List.eraseDups" {:list 2 :tf (fn [_   [in cin mn] _ _ _] [(* in 0.7) (+ cin in) mn])}
+    "List.mergeSort" {:list 1 :tf (fn [_   [in cin mn] _ _ _] [in (+ cin (* in (Math/log (max 2.0 in)))) (max mn in)])}
+    "Map.group_by"   {:list 4 :tf (fn [_   [in cin mn] _ _ _] [in (+ cin in) (max mn in)])}
+    "Map.join"       {:list 6 :tf (fn [ctx [in cin mn] args benv walk]
+                                    (let [[r cr mr] (walk (nth args 7) benv)        ; rhs (build) side
+                                          out (if (:ndv ctx) (max 1.0 (/ (* in r) (double (:ndv ctx))))
+                                                  (* (min in r) (:fanout ctx)))]
+                                      [out (+ cin cr in (* join-build-weight r)) (max mn mr r)]))}}))
 
 (defn register-op-cost!
   "Register/override the cost descriptor for op `head` (string). `descriptor` is
@@ -388,7 +363,6 @@
   [head descriptor]
   (swap! op-cost-registry assoc head descriptor)
   head)
-
 
 (defn pipeline-resources
   "RESOURCE PROFILE of a SOAC pipeline `term`: {:size <output cardinality> :time <elements
@@ -439,7 +413,6 @@
                  :else [(size-of e) 0.0 0.0]))]   ; fvar / const / lit
        (let [[s t m] (walk term [])] {:size s :time t :memory m})))))
 
-
 (defn pipeline-cost
   "Estimated total elements PROCESSED by SOAC pipeline `term` (the :time projection of
    `pipeline-resources`): datahike-style cardinality propagation, made static. Lower is cheaper;
@@ -447,7 +420,6 @@
    win. See `pipeline-resources` for the full {time, memory} profile + opts."
   ([term] (pipeline-cost term {}))
   ([term opts] (:time (pipeline-resources term opts))))
-
 
 (defn mentions-const?
   "True if expr `e` mentions the constant named `cname` anywhere (used by the pre-check to keep a

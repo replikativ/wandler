@@ -101,5 +101,5 @@
    transparent transferable value. Already-yielded elements are never disturbed by a swap."
   [node state]
   (lazy-seq
-    (when-let [[out state'] ((current node) state)]
-      (cons out (pull-seq node state')))))
+   (when-let [[out state'] ((current node) state)]
+     (cons out (pull-seq node state')))))

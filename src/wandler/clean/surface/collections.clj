@@ -20,8 +20,6 @@
             [ansatz.kernel.level :as lvl])
   (:import [ansatz.kernel TypeChecker]))
 
-
-
 (defn list-elem?
   "The element type α of a `coll` of inferred type `List α`, or nil (probe form)."
   [est coll]
@@ -71,7 +69,6 @@
    expands to `(fn* …)`)."
   [form]
   (and (seq? form) (#{'fn 'fn* 'lam} (first form)) (vector? (second form))))
-
 
 (defn- bare-op-const
   "A bare operator (`+`/`*`/`-`) as a function ARGUMENT resolves to the typed op for the

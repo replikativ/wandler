@@ -95,12 +95,12 @@
   [profiled]
   (if-let [_ (map-fields (:structure profiled))]
     (into [:map]
-      (for [[k base] (rest (:structure profiled))
-            :let [f (get-in profiled [:fields k])]]
-        [k (cond
-             (:range-prior f) [:int    (assoc (:range-prior f) ::source :sample-prior)]
-             (:len-prior f)   [:string (assoc (:len-prior f)   ::source :sample-prior)]
-             :else base)]))
+          (for [[k base] (rest (:structure profiled))
+                :let [f (get-in profiled [:fields k])]]
+            [k (cond
+                 (:range-prior f) [:int    (assoc (:range-prior f) ::source :sample-prior)]
+                 (:len-prior f)   [:string (assoc (:len-prior f)   ::source :sample-prior)]
+                 :else base)]))
     (:structure profiled)))
 
 ;; ── one-call front door ──────────────────────────────────────────────────────────────────────────

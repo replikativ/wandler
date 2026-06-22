@@ -18,7 +18,6 @@
 
 (declare compose-trans)
 
-
 ;; ---- join reordering (#29): the Perm→Eq bridge, cost-driven --------------------
 
 (defn count-join
@@ -31,7 +30,6 @@
       (let [[jh jargs] (e/get-app-fn-args (nth args 1))]
         (when (and (e/const? jh) (= "Map.join" (name/->string (e/const-name jh))) (>= (count jargs) 8))
           (vec (take 8 jargs)))))))
-
 
 (defn try-join-reorder
   "Cost-driven JOIN REORDER for count queries, certified by the `Map.join_length_comm`
@@ -60,7 +58,6 @@
                      (cert/verified-rewrite? env term res :lctx lctx))
             (assoc res :verified? true)))))))
 
-
 (defn try-count-factor
   "Cost-driven COUNT FACTORIZATION — aggregation-THROUGH-join (the FAQ asymptotic win,
    count instance). If `term` = length (Map.join … kf lf xs ys) and `Map.count_join_factor`
@@ -88,7 +85,6 @@
                      (cert/verified-rewrite? env term res :lctx lctx))
             (assoc res :verified? true)))))))
 
-
 (defn- fold-join
   "Match `List.foldl op e (Map.join K X Y dec kf lf xs ys)` — ANY aggregate (count/sum/max/…) folded
    over a join. Returns {:S :op :e :jargs} (jargs = the join's 8 args), or nil."
@@ -100,7 +96,6 @@
         (when (and (e/const? jh) (= "Map.join" (name/->string (e/const-name jh))) (>= (count jargs) 8))
           {:S S :op op :e ini :jargs (vec (take 8 jargs))})))))
 
-
 (defn try-fold-factor
   "Cost-driven AGGREGATION-THROUGH-JOIN factorization, GENERAL over the aggregate (count/sum/max/any
    foldl — `Map.foldl_join_factor`, no monoid axioms). FUSES first (so `foldl op e (map proj (join))`
@@ -111,25 +106,24 @@
    composed (fuse ∘ factor) proof certifies. Soundness rests on `cert/verified-rewrite?`."
   [^Env env term & {:keys [lctx selectivity sizes]}]
   (when (cost/mentions-const? term "Map.join")          ; cheap guard — skip the internal fuse otherwise
-   (let [fused  (cert/optimize env term :lctx lctx)
-         fterm  (if (:verified? fused) (:term fused) term)
-         fproof (when (:verified? fused) (:proof fused))]
-    (when-let [{:keys [S op e jargs]} (fold-join fterm)]
-      (let [[K X Y dec kf lf xs ys] jargs
-            factor-pf (e/app* (e/const' (name/from-string "Map.foldl_join_factor") [])
-                              K X Y S dec op e kf lf xs ys)
-            st (cert/mk-st env lctx)
-            ptype (try (tc/infer-type st factor-pf) (catch Throwable _ nil))   ; nil if law absent
-            [_ eqargs] (when ptype (e/get-app-fn-args ptype))]                 ; @Eq S LHS RHS
-        (when (and eqargs (>= (count eqargs) 3))
-          (let [rhs (nth eqargs 2)
-                proof (compose-trans env lctx term fterm rhs fproof factor-pf)
-                res {:term rhs :proof proof :changed? true :rw :fold-factor}]
-            (when (and (< (cost/pipeline-cost rhs {:selectivity selectivity :sizes sizes})
-                          (cost/pipeline-cost term {:selectivity selectivity :sizes sizes}))
-                       (cert/verified-rewrite? env term res :lctx lctx))
-              (assoc res :verified? true)))))))))
-
+    (let [fused  (cert/optimize env term :lctx lctx)
+          fterm  (if (:verified? fused) (:term fused) term)
+          fproof (when (:verified? fused) (:proof fused))]
+      (when-let [{:keys [S op e jargs]} (fold-join fterm)]
+        (let [[K X Y dec kf lf xs ys] jargs
+              factor-pf (e/app* (e/const' (name/from-string "Map.foldl_join_factor") [])
+                                K X Y S dec op e kf lf xs ys)
+              st (cert/mk-st env lctx)
+              ptype (try (tc/infer-type st factor-pf) (catch Throwable _ nil))   ; nil if law absent
+              [_ eqargs] (when ptype (e/get-app-fn-args ptype))]                 ; @Eq S LHS RHS
+          (when (and eqargs (>= (count eqargs) 3))
+            (let [rhs (nth eqargs 2)
+                  proof (compose-trans env lctx term fterm rhs fproof factor-pf)
+                  res {:term rhs :proof proof :changed? true :rw :fold-factor}]
+              (when (and (< (cost/pipeline-cost rhs {:selectivity selectivity :sizes sizes})
+                            (cost/pipeline-cost term {:selectivity selectivity :sizes sizes}))
+                         (cert/verified-rewrite? env term res :lctx lctx))
+                (assoc res :verified? true)))))))))
 
 (defn compose-trans
   "Eq.trans of `p1` (a=b) and `p2` (b=c) → a proof of a=c. nil proofs are identities
@@ -144,7 +138,6 @@
                 t-sort (#'tc/cached-whnf st (tc/infer-type st t))
                 u (if (e/sort? t-sort) (e/sort-level t-sort) lvl/zero)]
             (e/app* (e/const' (name/from-string "Eq.trans") [u]) t a b c p1 p2))))
-
 
 (defn try-fold-factor*
   "RECURSIVE FAQ variable elimination: iterate `try-fold-factor` to a fixpoint, eliminating EVERY join in
@@ -162,7 +155,6 @@
         (recur (:term step) (compose-trans env lctx term t (:term step) proof (:proof step)) (inc d))
         (when (pos? d)
           {:term t :proof proof :changed? true :rw :fold-factor :verified? true})))))
-
 
 (defn try-grace-hash
   "PHYSICAL grace-hash spill: when the join's build-side index would EXCEED the memory budget,
@@ -198,8 +190,8 @@
                   motive (e/lam "w" listY (e/app* (e/const' (nm "List.foldl") [z z]) S PXY op e (joinW (e/bvar 0))) :default)
                   congr (e/app* (e/const' (nm "congrArg") [L1 L1]) listY S ys flatChunked motive fcSym)
                   lc   (e/lam "a" S (e/lam "u" PXY (e/lam "v" PXY
-                         (e/app* (e/const' (nm "Eq.refl") [L1]) S
-                                 (e/app* op (e/app* op (e/bvar 2) (e/bvar 1)) (e/bvar 0))) :default) :default) :default)
+                                                          (e/app* (e/const' (nm "Eq.refl") [L1]) S
+                                                                  (e/app* op (e/app* op (e/bvar 2) (e/bvar 1)) (e/bvar 0))) :default) :default) :default)
                   bf   (e/app* (e/const' (nm "Map.foldl_join_blockfold") []) K X Y dec kf lf S op lc e xs chunked)
                   st   (cert/mk-st env lctx)
                   bftype (try (tc/infer-type st bf) (catch Throwable _ nil))   ; @Eq S midR rhs (nil if law absent)
@@ -213,7 +205,6 @@
                            :cost (cost/pipeline-cost rhs {:selectivity selectivity :sizes sizes})}]
                   (when (cert/verified-rewrite? env term res :lctx lctx)
                     (assoc res :verified? true)))))))))))
-
 
 ;; ── semiring instance registry (the last mile: route the carrier-generic laws by carrier) ───────────
 ;; carrier const-name → its ops + the axiom-PROOF const-names the generic frame-family laws require. A
@@ -261,7 +252,6 @@
                            (not (e/has-loose-bvars? G)))
                   G)))))))))
 
-
 (defn- separable-frame-fg
   "Detect a SEPARABLE two-sided product aggregate op (the FAQ frame shape):
      λacc:Nat. λp:(X×Y). Nat.add acc (Nat.mul (f (Prod.fst X Y p)) (g (Prod.snd X Y p)))
@@ -273,27 +263,26 @@
   (when (e/lam? op)
     (when-let [entry (sr-entry (e/lam-type op))]
       (let [b1 (e/lam-body op)]
-       (when (e/lam? b1)
-        (let [body (e/lam-body b1)
-              [h args] (e/get-app-fn-args body)]
-          (when (and (e/const? h) (= (:add entry) (name/->string (e/const-name h))) (= 2 (count args))
-                     (e/bvar? (first args)) (= 1 (e/bvar-idx (first args)))
-                     (e/app? (second args)))
-            (let [mult (second args)
-                  [mh margs] (e/get-app-fn-args mult)]
-              (when (and (e/const? mh) (= (:mul entry) (name/->string (e/const-name mh))) (= 2 (count margs))
-                         (e/app? (nth margs 0)) (e/app? (nth margs 1)))
-                (let [fa (nth margs 0) ga (nth margs 1)
-                      f (e/app-fn fa) g (e/app-fn ga)
-                      [fh fargs] (e/get-app-fn-args (e/app-arg fa))
-                      [gh gargs] (e/get-app-fn-args (e/app-arg ga))]
-                  (when (and (e/const? fh) (= "Prod.fst" (name/->string (e/const-name fh)))
-                             (= 3 (count fargs)) (e/bvar? (nth fargs 2)) (= 0 (e/bvar-idx (nth fargs 2)))
-                             (e/const? gh) (= "Prod.snd" (name/->string (e/const-name gh)))
-                             (= 3 (count gargs)) (e/bvar? (nth gargs 2)) (= 0 (e/bvar-idx (nth gargs 2)))
-                             (not (e/has-loose-bvars? f)) (not (e/has-loose-bvars? g)))
-                    [f g])))))))))))
-
+        (when (e/lam? b1)
+          (let [body (e/lam-body b1)
+                [h args] (e/get-app-fn-args body)]
+            (when (and (e/const? h) (= (:add entry) (name/->string (e/const-name h))) (= 2 (count args))
+                       (e/bvar? (first args)) (= 1 (e/bvar-idx (first args)))
+                       (e/app? (second args)))
+              (let [mult (second args)
+                    [mh margs] (e/get-app-fn-args mult)]
+                (when (and (e/const? mh) (= (:mul entry) (name/->string (e/const-name mh))) (= 2 (count margs))
+                           (e/app? (nth margs 0)) (e/app? (nth margs 1)))
+                  (let [fa (nth margs 0) ga (nth margs 1)
+                        f (e/app-fn fa) g (e/app-fn ga)
+                        [fh fargs] (e/get-app-fn-args (e/app-arg fa))
+                        [gh gargs] (e/get-app-fn-args (e/app-arg ga))]
+                    (when (and (e/const? fh) (= "Prod.fst" (name/->string (e/const-name fh)))
+                               (= 3 (count fargs)) (e/bvar? (nth fargs 2)) (= 0 (e/bvar-idx (nth fargs 2)))
+                               (e/const? gh) (= "Prod.snd" (name/->string (e/const-name gh)))
+                               (= 3 (count gargs)) (e/bvar? (nth gargs 2)) (= 0 (e/bvar-idx (nth gargs 2)))
+                               (not (e/has-loose-bvars? f)) (not (e/has-loose-bvars? g)))
+                      [f g])))))))))))
 
 (defn try-pre-agg-index
   "PHYSICAL pre-aggregated (FAQ) index for a SEPARABLE SUM aggregate over a join — the O(distinct-keys)
@@ -335,7 +324,6 @@
                                :cost (cost/pipeline-cost rhs {:selectivity selectivity :sizes sizes})}]
                       (adopt-if-improved env term res lctx selectivity sizes))))))))))))
 
-
 (defn- reads-fst?
   "Does `t` reference the X side of the pair `p` (= `bvar 0`) through a `Prod.fst … p` projection? A
    recursive scan that is robust to how the key is read — a const application `kf (fst p)`, a structure
@@ -344,14 +332,14 @@
   [t]
   (let [hit (atom false)]
     (letfn [(go [x]
-              (when-not @hit
-                (let [[h a] (e/get-app-fn-args x)]
-                  (when (and (e/const? h) (= "Prod.fst" (name/->string (e/const-name h)))
-                             (= 3 (count a)) (e/bvar? (nth a 2)) (= 0 (e/bvar-idx (nth a 2))))
-                    (reset! hit true))
-                  (when (e/proj? x) (go (e/proj-struct x)))
-                  (doseq [c a] (go c))
-                  (when (e/app? x) (go (e/app-fn x))))))]
+                (when-not @hit
+                  (let [[h a] (e/get-app-fn-args x)]
+                    (when (and (e/const? h) (= "Prod.fst" (name/->string (e/const-name h)))
+                               (= 3 (count a)) (e/bvar? (nth a 2)) (= 0 (e/bvar-idx (nth a 2))))
+                      (reset! hit true))
+                    (when (e/proj? x) (go (e/proj-struct x)))
+                    (doseq [c a] (go c))
+                    (when (e/app? x) (go (e/app-fn x))))))]
       (go t))
     @hit))
 
@@ -389,20 +377,20 @@
   (when (e/lam? op)
     (when-let [entry (sr-entry (e/lam-type op))]
       (let [b1 (e/lam-body op)]
-       (when (e/lam? b1)
-        (let [body (e/lam-body b1)
-              [h args] (e/get-app-fn-args body)]
-          (when (and (e/const? h) (= (:add entry) (name/->string (e/const-name h))) (= 2 (count args))
-                     (e/bvar? (first args)) (= 1 (e/bvar-idx (first args)))
-                     (e/app? (second args)))
-            (let [[mh margs] (e/get-app-fn-args (second args))]
-              (when (and (e/const? mh) (= (:mul entry) (name/->string (e/const-name mh))) (= 2 (count margs))
-                         (e/app? (nth margs 0)))                                  ; left = w applied to a read
-                (let [w (e/app-fn (nth margs 0)) kfx (e/app-arg (nth margs 0))   ; w (read-of (fst p))
-                      g (abstract-read (nth margs 1) "Prod.snd" Y)]              ; g = λy. (snd-read)[snd p↦y]
-                  (when (and (not (e/has-loose-bvars? w)) (some? g)
-                             (reads-fst? kfx))                                    ; left factor reads the probe side
-                    [w g])))))))))))
+        (when (e/lam? b1)
+          (let [body (e/lam-body b1)
+                [h args] (e/get-app-fn-args body)]
+            (when (and (e/const? h) (= (:add entry) (name/->string (e/const-name h))) (= 2 (count args))
+                       (e/bvar? (first args)) (= 1 (e/bvar-idx (first args)))
+                       (e/app? (second args)))
+              (let [[mh margs] (e/get-app-fn-args (second args))]
+                (when (and (e/const? mh) (= (:mul entry) (name/->string (e/const-name mh))) (= 2 (count margs))
+                           (e/app? (nth margs 0)))                                  ; left = w applied to a read
+                  (let [w (e/app-fn (nth margs 0)) kfx (e/app-arg (nth margs 0))   ; w (read-of (fst p))
+                        g (abstract-read (nth margs 1) "Prod.snd" Y)]              ; g = λy. (snd-read)[snd p↦y]
+                    (when (and (not (e/has-loose-bvars? w)) (some? g)
+                               (reads-fst? kfx))                                    ; left factor reads the probe side
+                      [w g])))))))))))
 
 (defn- extract-frame-preidx
   "Navigate a frame output `foldl Nat X step e xs` to the index the per-x lookup probes (the pre-aggregated
@@ -455,7 +443,6 @@
                                :cost (cost/pipeline-cost rhs {:selectivity selectivity :sizes sizes})}]
                       (adopt-if-improved env term res lctx selectivity sizes))))))))))))
 
-
 ;; ---- physical: loop-invariant index hoisting (LICM), memory-gated ----------------
 (defn- collect-closed-group-bys
   "Distinct CLOSED (no loose bvars ⇒ loop-invariant) `Map.group_by` subterms that occur UNDER a
@@ -464,17 +451,16 @@
   [term]
   (let [acc (atom [])]
     (letfn [(go [t under?]
-              (let [[h _] (e/get-app-fn-args t)
-                    hn (when (e/const? h) (name/->string (e/const-name h)))]
-                (when (and under? (= hn "Map.group_by") (not (e/has-loose-bvars? t))
-                           (not (some #(.equals ^Object % t) @acc)))
-                  (swap! acc conj t))
-                (cond (e/app? t)    (do (go (e/app-fn t) under?) (go (e/app-arg t) under?))
-                      (e/lam? t)    (do (go (e/lam-type t) under?) (go (e/lam-body t) true))
-                      (e/forall? t) (do (go (e/forall-type t) under?) (go (e/forall-body t) true)))))]
+                (let [[h _] (e/get-app-fn-args t)
+                      hn (when (e/const? h) (name/->string (e/const-name h)))]
+                  (when (and under? (= hn "Map.group_by") (not (e/has-loose-bvars? t))
+                             (not (some #(.equals ^Object % t) @acc)))
+                    (swap! acc conj t))
+                  (cond (e/app? t)    (do (go (e/app-fn t) under?) (go (e/app-arg t) under?))
+                        (e/lam? t)    (do (go (e/lam-type t) under?) (go (e/lam-body t) true))
+                        (e/forall? t) (do (go (e/forall-type t) under?) (go (e/forall-body t) true)))))]
       (go term false))
     @acc))
-
 
 (defn- replace-closed
   "Replace every occurrence of the CLOSED subterm `s` with `F` (also closed) in `t`."
@@ -486,7 +472,6 @@
         (e/forall? t) (e/forall' (e/forall-name t) (replace-closed (e/forall-type t) s F)
                                  (replace-closed (e/forall-body t) s F) (e/forall-info t))
         :else t))
-
 
 (defn hoist-invariant-indices
   "LICM (the in-memory-hash physical strategy): lift loop-invariant index builds — closed
@@ -507,7 +492,6 @@
       (let [term' (reduce (fn [t [s F _]] (replace-closed t s (e/fvar F))) term tagged)]
         (reduce (fn [body [s F T]] (e/app (e/lam "idx" T (e/abstract1 body F) :default) s))
                 term' tagged)))))
-
 
 ;; ---- loop-invariant distributive hoist (1-variable elimination) ----------------
 ;; foldl(+) 0 (map (λx. f x * c) xs)  →  (foldl(+) 0 (map f xs)) * c   when c is x-free.
@@ -554,25 +538,25 @@
   (when (e/lam? op)
     (when-let [entry (sr-entry (e/lam-type op))]
       (let [b1 (e/lam-body op)]
-       (when (e/lam? b1)
-        (let [body (e/lam-body b1)
-              [h args] (e/get-app-fn-args body)]
-          (when (and (e/const? h) (= (:add entry) (name/->string (e/const-name h))) (= 2 (count args))
-                     (e/bvar? (first args)) (= 1 (e/bvar-idx (first args)))
-                     (e/app? (second args)))
-            (let [[ch cargs] (e/get-app-fn-args (second args))]
-              (when (and (e/const? ch) (= "cond" (name/->string (e/const-name ch))) (= 4 (count cargs))
-                         (e/app? (nth cargs 1)) (e/app? (nth cargs 2))
-                         (or (nat-zero? (nth cargs 3)) (cn? (nth cargs 3) (:zero entry))))
-                (let [[gh gargs] (e/get-app-fn-args (nth cargs 1))    ; guard = Bool.and (P fst) (Q snd)
-                      [mh margs] (e/get-app-fn-args (nth cargs 2))]   ; weight = (carrier mul) (f fst) (g snd)
-                  (when (and (e/const? gh) (= "Bool.and" (name/->string (e/const-name gh))) (= 2 (count gargs))
-                             (e/const? mh) (= (:mul entry) (name/->string (e/const-name mh))) (= 2 (count margs)))
-                    (let [P (guarded-proj (nth gargs 0) "Prod.fst")
-                          Q (guarded-proj (nth gargs 1) "Prod.snd")
-                          f (guarded-proj (nth margs 0) "Prod.fst")
-                          g (guarded-proj (nth margs 1) "Prod.snd")]
-                      (when (and P Q f g) {:P P :Q Q :f f :g g})))))))))))))
+        (when (e/lam? b1)
+          (let [body (e/lam-body b1)
+                [h args] (e/get-app-fn-args body)]
+            (when (and (e/const? h) (= (:add entry) (name/->string (e/const-name h))) (= 2 (count args))
+                       (e/bvar? (first args)) (= 1 (e/bvar-idx (first args)))
+                       (e/app? (second args)))
+              (let [[ch cargs] (e/get-app-fn-args (second args))]
+                (when (and (e/const? ch) (= "cond" (name/->string (e/const-name ch))) (= 4 (count cargs))
+                           (e/app? (nth cargs 1)) (e/app? (nth cargs 2))
+                           (or (nat-zero? (nth cargs 3)) (cn? (nth cargs 3) (:zero entry))))
+                  (let [[gh gargs] (e/get-app-fn-args (nth cargs 1))    ; guard = Bool.and (P fst) (Q snd)
+                        [mh margs] (e/get-app-fn-args (nth cargs 2))]   ; weight = (carrier mul) (f fst) (g snd)
+                    (when (and (e/const? gh) (= "Bool.and" (name/->string (e/const-name gh))) (= 2 (count gargs))
+                               (e/const? mh) (= (:mul entry) (name/->string (e/const-name mh))) (= 2 (count margs)))
+                      (let [P (guarded-proj (nth gargs 0) "Prod.fst")
+                            Q (guarded-proj (nth gargs 1) "Prod.snd")
+                            f (guarded-proj (nth margs 0) "Prod.fst")
+                            g (guarded-proj (nth margs 1) "Prod.snd")]
+                        (when (and P Q f g) {:P P :Q Q :f f :g g})))))))))))))
 
 (defn try-frame-index-cond
   "PHYSICAL conditional FAQ frame: a SEPARABLE GUARD `P(x) ∧ Q(y)` over a weighted join factorizes
@@ -606,16 +590,16 @@
                       f'  (e/lam "x" X (condN (e/app P (e/bvar 0)) (e/app f (e/bvar 0)) zeroN) :default)
                       g'  (e/lam "y" Y (condN (e/app Q (e/bvar 0)) (e/app g (e/bvar 0)) zeroN) :default)
                       op-s (e/lam "acc" natT (e/lam "p" PXY
-                             (addN (e/bvar 1) (mulN (e/app f' (fstp (e/bvar 0))) (e/app g' (sndp (e/bvar 0))))) :default) :default)
+                                                    (addN (e/bvar 1) (mulN (e/app f' (fstp (e/bvar 0))) (e/app g' (sndp (e/bvar 0))))) :default) :default)
                       X1 (fn [p] (condN (andB (e/app P (fstp p)) (e/app Q (sndp p))) (mulN (e/app f (fstp p)) (e/app g (sndp p))) zeroN))
                       X2 (fn [p] (mulN (condN (e/app P (fstp p)) (e/app f (fstp p)) zeroN) (condN (e/app Q (sndp p)) (e/app g (sndp p)) zeroN)))
                       splitPf (fn [p] (e/app* (e/const' (nm "Nat.cond_and_mul_split_generic") [])
                                               natT (sc/mk-semiring-instance natT entry)
                                               (e/app P (fstp p)) (e/app Q (sndp p)) (e/app f (fstp p)) (e/app g (sndp p))))
                       hyp (e/lam "acc" natT (e/lam "p" PXY
-                            (e/app* (e/const' (nm "congrArg") [L1 L1]) natT natT (X1 (e/bvar 0)) (X2 (e/bvar 0))
-                                    (e/lam "w" natT (addN (e/bvar 2) (e/bvar 0)) :default)
-                                    (splitPf (e/bvar 0))) :default) :default)
+                                                   (e/app* (e/const' (nm "congrArg") [L1 L1]) natT natT (X1 (e/bvar 0)) (X2 (e/bvar 0))
+                                                           (e/lam "w" natT (addN (e/bvar 2) (e/bvar 0)) :default)
+                                                           (splitPf (e/bvar 0))) :default) :default)
                       join (e/app* (e/const' (nm "Map.join") []) K X Y dec kf lf xs ys)
                       foldlJ (fn [o] (e/app* (e/const' (nm "List.foldl") [z z]) natT PXY o e join))
                       congrEq (e/app* (e/const' (nm "List.foldl_congr") []) natT PXY op op-s join e hyp)
@@ -764,7 +748,6 @@
         (when (cert/verified-rewrite? env term res :lctx lctx)
           (assoc res :verified? true))))))
 
-
 (def rewrite-descriptions
   {:fold-factor  "aggregation pushed THROUGH the join (the |L|·|R| product is never materialized)"
    :hoist-invariant "loop-INVARIANT factor hoisted OUT of the sum (computed once, not per row)"
@@ -814,17 +797,17 @@
         ;; after the lookup. The f≡1 generalization of pre-agg; disjoint matcher (requires the Nat.mul).
         frame (when (not skip-reorder?)
                 (try-frame-index env term :lctx lctx :selectivity selectivity :sizes sizes
-                                      :memory-budget memory-budget :ndv ndv))
+                                 :memory-budget memory-budget :ndv ndv))
         ;; CONDITIONAL frame: a separable guard P(x)∧Q(y) over a weighted join — split the guard
         ;; (Nat.cond_and_mul_split) to f'=[P]·f, g'=[Q]·g, then the frame index. Disjoint matcher (cond).
         frame-cond (when (not skip-reorder?)
                      (try-frame-index-cond env term :lctx lctx :selectivity selectivity :sizes sizes
-                                                :memory-budget memory-budget :ndv ndv))
+                                           :memory-budget memory-budget :ndv ndv))
         ;; FD SCOPE QUOTIENT: a key-factor w(kf x)·g(y) floats the key-factor into the per-key index
         ;; (frame ∘ Map.foldl_keyfactor_float) — w computed per-key not per-row. Disjoint matcher (w∘kf).
         frame-kf (when (not skip-reorder?)
                    (try-frame-index-keyfactor env term :lctx lctx :selectivity selectivity :sizes sizes
-                                                   :memory-budget memory-budget :ndv ndv))
+                                              :memory-budget memory-budget :ndv ndv))
         ;; PHYSICAL grace-hash: if a memory budget is set and the join index would exceed it, spill
         ;; the build side into budget-sized blocks BEFORE factorization (grace-hash is an ALTERNATIVE
         ;; to the in-memory hash/factor, operating on the raw foldl-over-join). Certified rewrite.
@@ -837,26 +820,26 @@
                   (or ;; Step 3c: certified refinement filter-elimination — drop a filter the element
                       ;; type proves redundant (always-true), composed with downstream fusion. Folds
                       ;; Subsystem B's capability into the one cascade. Sound (verified-rewrite?).
-                      (fe/try-filter-elim env term :lctx lctx)
+                   (fe/try-filter-elim env term :lctx lctx)
                       ;; Step 4: certified DISTINCT-removal — drop an eraseDups over a Nodup-refined
                       ;; (declared `:set`/key) list. Sound ONLY given the declared uniqueness.
-                      (fe/try-distinct-elim env term :lctx lctx)
+                   (fe/try-distinct-elim env term :lctx lctx)
                       ;; Path 2a: certified KEYED distinct-removal — drop a `distinct-by kf` (eraseDupsBy)
                       ;; over a `Nodup (map kf ·)`-refined relation (declared UNIQUE KEY). The relational
                       ;; functional-dependency sibling; sound ONLY given the declared key.
-                      (fe/try-keyed-distinct-elim env term :lctx lctx)
+                   (fe/try-keyed-distinct-elim env term :lctx lctx)
                       ;; Path 2b: certified GROUP-BY ELIMINATION — collapse `map (λr. lookup (kf r)
                       ;; (group_by kf xs)) xs` to `map (λr. [r]) xs` over a `Nodup (map kf ·)`-refined
                       ;; relation (unique key ⇒ singleton buckets). Sound ONLY given the declared key.
-                      (fe/try-groupby-elim env term :lctx lctx)
-                      (try-count-factor env term :lctx lctx :selectivity selectivity :sizes sizes)
+                   (fe/try-groupby-elim env term :lctx lctx)
+                   (try-count-factor env term :lctx lctx :selectivity selectivity :sizes sizes)
                       ;; RECURSIVE FAQ variable elimination: factor EVERY join in a multi-way tree, not
                       ;; just the outermost (iterate the proven single step to a fixpoint, composing proofs).
-                      (try-fold-factor* env term :lctx lctx :selectivity selectivity :sizes sizes)
-                      (try-join-reorder env term :lctx lctx :selectivity selectivity :sizes sizes)
+                   (try-fold-factor* env term :lctx lctx :selectivity selectivity :sizes sizes)
+                   (try-join-reorder env term :lctx lctx :selectivity selectivity :sizes sizes)
                       ;; 1-variable FAQ elimination: hoist a loop-invariant multiplicative factor out of
                       ;; a sum (the measured nested-fold quadratic → linear). Certified by sum_map_mul_const.
-                      (try-hoist-invariant env term :lctx lctx :selectivity selectivity :sizes sizes)))]
+                   (try-hoist-invariant env term :lctx lctx :selectivity selectivity :sizes sizes)))]
     (cond
       ;; pre-agg wins when its held index (O(distinct keys)) fits the budget — strictly better than the
       ;; raw factor (O(|ys|) buckets) for separable sums. Else fall through to grace-hash / factor.
@@ -879,7 +862,7 @@
       (and reorder (:verified? reorder))
       ;; a pre-rewrite fired → fuse its result, then compose proofs (pre ∘ fuse).
       (let [sub (optimize-cost-driver env (:term reorder) :lctx lctx :pool pool :extra-lemmas extra-lemmas
-                               :selectivity selectivity :sizes sizes :use-egraph? use-egraph? :skip-reorder? true)
+                                      :selectivity selectivity :sizes sizes :use-egraph? use-egraph? :skip-reorder? true)
             composed (compose-trans env lctx term (:term reorder) (:term sub)
                                     (:proof reorder) (:proof sub))
             res {:term (:term sub) :proof composed :changed? true
@@ -913,7 +896,7 @@
           res
           ;; composition didn't certify — fall back to the plain (no-reorder) search
           (optimize-cost-driver env term :lctx lctx :pool pool :selectivity selectivity :sizes sizes :extra-lemmas extra-lemmas
-                         :use-egraph? use-egraph? :skip-reorder? true)))
+                                :use-egraph? use-egraph? :skip-reorder? true)))
       :else
       ;; no reorder → the cost-directed search
       (let [base (cert/optimize env term :lctx lctx :extra-lemmas extra-lemmas)
@@ -930,7 +913,7 @@
           (loop [best base, remaining pool, applied []]
             (let [cands (keep (fn [r]
                                 (let [v (cert/optimize env term :lctx lctx
-                                                  :extra-lemmas (concat extra-lemmas (conj applied r)))]
+                                                       :extra-lemmas (concat extra-lemmas (conj applied r)))]
                                   ;; GATE on cost/pipeline-cost (cardinality), not op-count, so a
                                   ;; SOAC-neutral reorder (filter→join) is kept for its
                                   ;; cardinality win. `:cost` still reports cost/soac-cost.

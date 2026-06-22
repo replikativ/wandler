@@ -102,16 +102,16 @@
     (=> (Not (Membership.mem K (List K) (List.instMembership K) (List.map X K kf l) (kf a)))
         (= (List X)
            (List.filter X
-             (fn [b :- X]
-               (Decidable.decide
-                 (= Bool (BEq.beq K inst (kf b) (kf a)) Bool.false)
-                 (instDecidableEqBool (BEq.beq K inst (kf b) (kf a)) Bool.false)))
-             l)
+                        (fn [b :- X]
+                          (Decidable.decide
+                           (= Bool (BEq.beq K inst (kf b) (kf a)) Bool.false)
+                           (instDecidableEqBool (BEq.beq K inst (kf b) (kf a)) Bool.false)))
+                        l)
            l))
     (intro hnm) (simp [List.filter_eq_self]) (intro b) (intro hb)
     (apply (Iff.mpr (decide_eq_true_iff
-                      (= Bool (BEq.beq K inst (kf b) (kf a)) Bool.false)
-                      (instDecidableEqBool (BEq.beq K inst (kf b) (kf a)) Bool.false))))
+                     (= Bool (BEq.beq K inst (kf b) (kf a)) Bool.false)
+                     (instDecidableEqBool (BEq.beq K inst (kf b) (kf a)) Bool.false))))
     (apply (Iff.mpr (beq_eq_false_iff_ne K inst linst (kf b) (kf a))))
     (intro he) (apply hnm) (rw (Eq.symm he))
     (exact (List.mem_map_of_mem X K l b kf hb)))
@@ -130,7 +130,7 @@
     (all_goals (try (rw (List.eraseDupsBy_cons X head tail (fn [x :- X] (fn [y :- X] (BEq.beq K inst (kf x) (kf y))))))))
     (all_goals (try (dsimp)))
     (all_goals (try (rw (filter_kf_not_mem K X inst linst kf head tail
-                          (And.left (Iff.mp (List.nodup_cons K (kf head) (List.map X K kf tail)) hn))))))
+                                           (And.left (Iff.mp (List.nodup_cons K (kf head) (List.map X K kf tail)) hn))))))
     (all_goals (try (rw (ih_tail (And.right (Iff.mp (List.nodup_cons K (kf head) (List.map X K kf tail)) hn))))))
     (all_goals (try (rfl))))
   ;; ── PATH 2b — GROUP-BY removal foundation: the unique-key SINGLETON BUCKET ──────────────
@@ -151,8 +151,8 @@
     [K :- Type, X :- Type, inst :- (BEq K) :inst, linst :- (LawfulBEq K inst) :inst,
      kf :- (=> X K), a :- X, b :- X, tail :- (List X)]
     (=> (Not (Membership.mem K (List K) (List.instMembership K) (List.map X K kf tail) (kf b)))
-     (=> (Membership.mem X (List X) (List.instMembership X) tail a)
-         (Not (= Bool (BEq.beq K inst (kf a) (kf b)) Bool.true))))
+        (=> (Membership.mem X (List X) (List.instMembership X) tail a)
+            (Not (= Bool (BEq.beq K inst (kf a) (kf b)) Bool.true))))
     (intro hnm) (intro hrt) (intro ht)
     (apply hnm)
     (rw (Eq.symm (Iff.mp (beq_iff_eq K inst linst (kf a) (kf b)) ht)))
@@ -162,24 +162,24 @@
     [K :- Type, X :- Type, inst :- (BEq K) :inst, linst :- (LawfulBEq K inst) :inst,
      kf :- (=> X K), r :- X, l :- (List X)]
     (=> (List.Nodup K (List.map X K kf l))
-     (=> (Membership.mem X (List X) (List.instMembership X) l r)
-         (= (List X) (List.filter X (fn [y :- X] (BEq.beq K inst (kf r) (kf y))) l)
-            (List.cons X r (List.nil X)))))
+        (=> (Membership.mem X (List X) (List.instMembership X) l r)
+            (= (List X) (List.filter X (fn [y :- X] (BEq.beq K inst (kf r) (kf y))) l)
+               (List.cons X r (List.nil X)))))
     (induction l)
     (all_goals (intro hn))
     (all_goals (intro hr))
     ;; inline-proof `have` (ansatz have-with-proof): introduce + discharge the Or in one step.
     (all_goals (try (have hor (Or (= X r head) (Membership.mem X (List X) (List.instMembership X) tail r))
-                      (Iff.mp (List.mem_cons X head tail r) hr))))
+                          (Iff.mp (List.mem_cons X head tail r) hr))))
     (all_goals (try (cases hor)))
     (all_goals (try (subst h)))
     (all_goals (try (rw (List.filter_cons_of_pos X (fn [y :- X] (BEq.beq K inst (kf head) (kf y))) head tail
-                         (beq_self_eq_true K inst (LawfulBEq.toReflBEq K inst linst) (kf head))))))
+                                                 (beq_self_eq_true K inst (LawfulBEq.toReflBEq K inst linst) (kf head))))))
     (all_goals (try (rw (filter_key_eq_nil K X inst linst kf (kf head) tail
-                         (And.left (Iff.mp (List.nodup_cons K (kf head) (List.map X K kf tail)) hn))))))
+                                           (And.left (Iff.mp (List.nodup_cons K (kf head) (List.map X K kf tail)) hn))))))
     (all_goals (try (rw (List.filter_cons_of_neg X (fn [y :- X] (BEq.beq K inst (kf r) (kf y))) head tail
-                         (key_beq_ne_true K X inst linst kf r head tail
-                           (And.left (Iff.mp (List.nodup_cons K (kf head) (List.map X K kf tail)) hn)) h)))))
+                                                 (key_beq_ne_true K X inst linst kf r head tail
+                                                                  (And.left (Iff.mp (List.nodup_cons K (kf head) (List.map X K kf tail)) hn)) h)))))
     (all_goals (try (rw (ih_tail (And.right (Iff.mp (List.nodup_cons K (kf head) (List.map X K kf tail)) hn)) h))))
     (all_goals (try (rfl)))
     (all_goals (try (exfalso)))

@@ -3,8 +3,8 @@
  ;; Ansatz CIC-kernel DSL. Provides the collection/relational/record surface, the certified optimizer,
  ;; the execution modes, and the inference layer. Depends on `ansatz` (the Lean4-in-Clojure DSL).
  ;; ansatz from Clojars (the public pin). For side-by-side development use:
- ;;   org.replikativ/ansatz {:mvn/version "0.1.62"}
- :deps {org.replikativ/ansatz {:mvn/version "0.1.62"}
+ ;;   org.replikativ/ansatz {:mvn/version "0.1.63"}
+ :deps {org.replikativ/ansatz {:mvn/version "0.1.63"}
         metosin/malli {:mvn/version "0.16.4"}
         ;; the CPS/async-seq substrate (the async corner of the mode lattice; spindel builds on it).
         ;; Lightweight (pulls only clojure) and already transitive via ansatz; pinned here for the
@@ -23,6 +23,10 @@
          :jvm-opts ["--enable-native-access=ALL-UNNAMED" "-Xmx8g" "-XX:+ExitOnOutOfMemoryError"]
          :main-opts ["-m" "cognitect.test-runner"]
          :exec-fn cognitect.test-runner.api/test}
+
+  ;; Formatting — `clj -M:ffix` applies cljfmt fixes to src/test (matches ansatz's :ffix).
+  :ffix {:extra-deps {cljfmt/cljfmt {:mvn/version "0.9.2"}}
+         :main-opts ["-m" "cljfmt.main" "fix" "src" "test" "test-spindel"]}
 
   ;; Optional LogicNG WMC backend (pure-JVM knowledge compilation) for ansatz.wmc.logicng.
   :logicng {:extra-deps {org.logicng/logicng {:mvn/version "2.6.1"}}}

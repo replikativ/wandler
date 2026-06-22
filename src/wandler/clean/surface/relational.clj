@@ -24,7 +24,6 @@
             [ansatz.kernel.level :as lvl]
             [ansatz.kernel.name :as name]))
 
-
 (defn- type-name
   "Head constant name of a type expr (e.g. \"Nat\" for `Nat`, \"List\" for `List α`)."
   [t]

@@ -54,10 +54,10 @@
      linst :- (LawfulBEq K (instBEqOfDecidableEq K dec)) :inst,
      kf :- (=> X K), r :- X, l :- (List X)]
     (=> (List.Nodup K (List.map X K kf l))
-     (=> (Membership.mem X (List X) (List.instMembership X) l r)
-         (= (List X)
-            (Option.getD (List X) (Map.lookup K (List X) dec (kf r) (Map.group_by K X dec kf l)) (List.nil X))
-            (List.cons X r (List.nil X)))))
+        (=> (Membership.mem X (List X) (List.instMembership X) l r)
+            (= (List X)
+               (Option.getD (List X) (Map.lookup K (List X) dec (kf r) (Map.group_by K X dec kf l)) (List.nil X))
+               (List.cons X r (List.nil X)))))
     (intro hn) (intro hr)
     (rw (Map.bucket_content K X dec kf (kf r) l))
     (rw (bucket_singleton K X (instBEqOfDecidableEq K dec) linst kf r l hn hr)))
@@ -69,14 +69,14 @@
     (=> (List.Nodup K (List.map X K kf xs))
         (= (List (List X))
            (List.map X (List X)
-             (fn [r :- X] (Option.getD (List X) (Map.lookup K (List X) dec (kf r) (Map.group_by K X dec kf xs)) (List.nil X)))
-             xs)
+                     (fn [r :- X] (Option.getD (List X) (Map.lookup K (List X) dec (kf r) (Map.group_by K X dec kf xs)) (List.nil X)))
+                     xs)
            (List.map X (List X) (fn [r :- X] (List.cons X r (List.nil X))) xs)))
     (intro hn)
     (exact (List.map_congr_left_expl X (List X)
-             (fn [r :- X] (Option.getD (List X) (Map.lookup K (List X) dec (kf r) (Map.group_by K X dec kf xs)) (List.nil X)))
-             (fn [r :- X] (List.cons X r (List.nil X)))
-             xs
-             (fn [a :- X] (fn [ha :- (Membership.mem X (List X) (List.instMembership X) xs a)]
-               (Map.bucket_singleton_lookup K X dec linst kf a xs hn ha))))))
+                                     (fn [r :- X] (Option.getD (List X) (Map.lookup K (List X) dec (kf r) (Map.group_by K X dec kf xs)) (List.nil X)))
+                                     (fn [r :- X] (List.cons X r (List.nil X)))
+                                     xs
+                                     (fn [a :- X] (fn [ha :- (Membership.mem X (List X) (List.instMembership X) xs a)]
+                                                    (Map.bucket_singleton_lookup K X dec linst kf a xs hn ha))))))
   :installed)

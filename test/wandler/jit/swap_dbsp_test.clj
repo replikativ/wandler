@@ -106,7 +106,7 @@
   [op deltas]
   (loop [ds deltas st [{} {} {}] out []]
     (if (empty? ds) out
-      (let [[st' v] (op st (first ds))] (recur (rest ds) st' (conj out v))))))
+        (let [[st' v] (op st (first ds))] (recur (rest ds) st' (conj out v))))))
 
 (deftest adaptive-join-end-to-end
   (testing "run-adaptive drives a DBSP join: integrator threaded across guard-driven op swaps + pin"

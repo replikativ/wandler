@@ -52,10 +52,10 @@
               xs (e/app* (C "Subtype.val" [u1]) listNat P s)
               ;; map (λr. getD (lookup (kf r) (group_by kf xs)) []) xs  (Map ops are level-monomorphic)
               pred (e/lam "r" Nat
-                     (e/app* (C "Option.getD" [u]) listNat
-                             (e/app* (C "Map.lookup" []) Nat listNat dec (e/app kf (e/bvar 0))
-                                     (e/app* (C "Map.group_by" []) Nat Nat dec kf xs))
-                             (e/app (C "List.nil" [u]) Nat)) :default)
+                          (e/app* (C "Option.getD" [u]) listNat
+                                  (e/app* (C "Map.lookup" []) Nat listNat dec (e/app kf (e/bvar 0))
+                                          (e/app* (C "Map.group_by" []) Nat Nat dec kf xs))
+                                  (e/app (C "List.nil" [u]) Nat)) :default)
               orig (e/app* (C "List.length" [u]) listNat (e/app* (C "List.map" [u u]) Nat listNat pred xs))
               rhs-map (e/app* (C "List.map" [u u]) Nat listNat
                               (e/lam "r" Nat (e/app* (C "List.cons" [u]) Nat (e/bvar 0) (e/app (C "List.nil" [u]) Nat)) :default)
@@ -75,10 +75,10 @@
           (testing "a group_by self-lookup over a PLAIN (non-key-refined) relation is NOT eliminated"
             (let [plain (e/fvar 2) lctx2 {2 {:name "ys" :type listNat}}
                   pred2 (e/lam "r" Nat
-                          (e/app* (C "Option.getD" [u]) listNat
-                                  (e/app* (C "Map.lookup" []) Nat listNat dec (e/app kf (e/bvar 0))
-                                          (e/app* (C "Map.group_by" []) Nat Nat dec kf plain))
-                                  (e/app (C "List.nil" [u]) Nat)) :default)
+                               (e/app* (C "Option.getD" [u]) listNat
+                                       (e/app* (C "Map.lookup" []) Nat listNat dec (e/app kf (e/bvar 0))
+                                               (e/app* (C "Map.group_by" []) Nat Nat dec kf plain))
+                                       (e/app (C "List.nil" [u]) Nat)) :default)
                   orig2 (e/app* (C "List.length" [u]) listNat (e/app* (C "List.map" [u u]) Nat listNat pred2 plain))]
               (is (nil? (fe/try-groupby-elim ke orig2 :lctx lctx2)))))))
     (println "SKIP groupby-elim-strategy: no Init env")))

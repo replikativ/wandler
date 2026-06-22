@@ -49,9 +49,9 @@
   (let [u1     (lvl/succ u)
         listX  (e/app (C "List" [u]) X)
         P       (e/lam "l" listX
-                  (e/app* (C "List.Nodup" [u]) K
-                          (e/app* (C "List.map" [u u]) X K kf (e/bvar 0)))
-                  :default)
+                       (e/app* (C "List.Nodup" [u]) K
+                               (e/app* (C "List.map" [u u]) X K kf (e/bvar 0)))
+                       :default)
         carrier (e/app* (C "Subtype" [u1]) listX P)
         s       (e/fvar id)]
     {:lctx    {id {:name "s" :type carrier}}

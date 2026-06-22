@@ -34,12 +34,12 @@
               ;; the denormalize-each-row-with-its-own-group plan, over a relation term `xs`
               make-plan (fn [xs]
                           (e/app* (C "List.map" [u u]) Nat listNat
-                            (e/lam "r" Nat
-                              (e/app* (C "Option.getD" [u]) listNat
-                                (e/app* (C "Map.lookup" []) Nat listNat dec (e/app kf (e/bvar 0))
-                                  (e/app* (C "Map.group_by" []) Nat Nat dec kf xs))
-                                (e/app (C "List.nil" [u]) Nat)) :default)
-                            xs))
+                                  (e/lam "r" Nat
+                                         (e/app* (C "Option.getD" [u]) listNat
+                                                 (e/app* (C "Map.lookup" []) Nat listNat dec (e/app kf (e/bvar 0))
+                                                         (e/app* (C "Map.group_by" []) Nat Nat dec kf xs))
+                                                 (e/app (C "List.nil" [u]) Nat)) :default)
+                                  xs))
               sample (range 64)            ; abduce: succ is unique over the sample
               big    (range 6000)]         ; the relation the plan will run over
           (testing "ABDUCE + DEDUCE: unique key found, group-by-elim kernel-certified"

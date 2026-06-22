@@ -34,8 +34,8 @@
    holding that step. `init-state` seeds the generator."
   [node init-state]
   (pseq/make-generator-seq
-    (fn [state] (pa/async ((swap/current node) state)))   ; read the CURRENT op per anext = the swap boundary
-    init-state))
+   (fn [state] (pa/async ((swap/current node) state)))   ; read the CURRENT op per anext = the swap boundary
+   init-state))
 
 (defn realize
   "Pull `aseq` to a finite Clojure vector, synchronously, invoking `(between idx)` after each element

@@ -103,7 +103,7 @@
               kf (C "Nat.succ" [])                                   ; a non-trivial key projection
               ;; the comparator `distinct-by kf` lowers to: λx y. kf x == kf y
               R (e/lam "x" Nat (e/lam "y" Nat
-                   (e/app* (C "BEq.beq" [u]) Nat inst (e/app kf (e/bvar 1)) (e/app kf (e/bvar 0))) :default) :default)
+                                      (e/app* (C "BEq.beq" [u]) Nat inst (e/app kf (e/bvar 1)) (e/app kf (e/bvar 0))) :default) :default)
               ;; carrier: {xs : List Nat // Nodup (map kf xs)} — a declared UNIQUE KEY
               P (e/lam "l" listNat (e/app* (C "List.Nodup" [u]) Nat
                                            (e/app* (C "List.map" [u u]) Nat Nat kf (e/bvar 0))) :default)

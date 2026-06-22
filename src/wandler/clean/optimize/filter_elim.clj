@@ -41,13 +41,13 @@
   [t]
   (let [acc (volatile! [])]
     (letfn [(go [t]
-              (when (e/app? t)
-                (let [[h args] (e/get-app-fn-args t)]
-                  (when (and (= "List.filter" (cname h)) (= 3 (count args)) (zero? (e/bvar-range t)))
-                    (vswap! acc conj t))))
-              (cond (e/app? t)    (do (go (e/app-fn t)) (go (e/app-arg t)))
-                    (e/lam? t)    (do (go (e/lam-type t)) (go (e/lam-body t)))
-                    (e/forall? t) (do (go (e/forall-type t)) (go (e/forall-body t)))))]
+                (when (e/app? t)
+                  (let [[h args] (e/get-app-fn-args t)]
+                    (when (and (= "List.filter" (cname h)) (= 3 (count args)) (zero? (e/bvar-range t)))
+                      (vswap! acc conj t))))
+                (cond (e/app? t)    (do (go (e/app-fn t)) (go (e/app-arg t)))
+                      (e/lam? t)    (do (go (e/lam-type t)) (go (e/lam-body t)))
+                      (e/forall? t) (do (go (e/forall-type t)) (go (e/forall-body t)))))]
       (go t))
     @acc))
 
@@ -129,20 +129,19 @@
             (catch Throwable _ nil)))
         (all-filters term)))
 
-
 ;; ── Step 4: certified DISTINCT-removal (uniqueness-licensed) ─────────────────────────────────────
 (defn- all-eraseDups
   "Every bvar-free `List.eraseDups α inst xs` application subterm, preorder."
   [t]
   (let [acc (volatile! [])]
     (letfn [(go [t]
-              (when (e/app? t)
-                (let [[h args] (e/get-app-fn-args t)]
-                  (when (and (= "List.eraseDups" (cname h)) (= 3 (count args)) (zero? (e/bvar-range t)))
-                    (vswap! acc conj t))))
-              (cond (e/app? t)    (do (go (e/app-fn t)) (go (e/app-arg t)))
-                    (e/lam? t)    (do (go (e/lam-type t)) (go (e/lam-body t)))
-                    (e/forall? t) (do (go (e/forall-type t)) (go (e/forall-body t)))))]
+                (when (e/app? t)
+                  (let [[h args] (e/get-app-fn-args t)]
+                    (when (and (= "List.eraseDups" (cname h)) (= 3 (count args)) (zero? (e/bvar-range t)))
+                      (vswap! acc conj t))))
+                (cond (e/app? t)    (do (go (e/app-fn t)) (go (e/app-arg t)))
+                      (e/lam? t)    (do (go (e/lam-type t)) (go (e/lam-body t)))
+                      (e/forall? t) (do (go (e/forall-type t)) (go (e/forall-body t)))))]
       (go t))
     @acc))
 
@@ -189,20 +188,19 @@
             (catch Throwable _ nil)))
         (all-eraseDups term)))
 
-
 ;; ── Path 2a: certified KEYED DISTINCT-removal (relational FD, key-licensed) ──────────────────────
 (defn- all-eraseDupsBy
   "Every bvar-free `List.eraseDupsBy X R xs` application subterm (3 args), preorder."
   [t]
   (let [acc (volatile! [])]
     (letfn [(go [t]
-              (when (e/app? t)
-                (let [[h args] (e/get-app-fn-args t)]
-                  (when (and (= "List.eraseDupsBy" (cname h)) (= 3 (count args)) (zero? (e/bvar-range t)))
-                    (vswap! acc conj t))))
-              (cond (e/app? t)    (do (go (e/app-fn t)) (go (e/app-arg t)))
-                    (e/lam? t)    (do (go (e/lam-type t)) (go (e/lam-body t)))
-                    (e/forall? t) (do (go (e/forall-type t)) (go (e/forall-body t)))))]
+                (when (e/app? t)
+                  (let [[h args] (e/get-app-fn-args t)]
+                    (when (and (= "List.eraseDupsBy" (cname h)) (= 3 (count args)) (zero? (e/bvar-range t)))
+                      (vswap! acc conj t))))
+                (cond (e/app? t)    (do (go (e/app-fn t)) (go (e/app-arg t)))
+                      (e/lam? t)    (do (go (e/lam-type t)) (go (e/lam-body t)))
+                      (e/forall? t) (do (go (e/forall-type t)) (go (e/forall-body t)))))]
       (go t))
     @acc))
 
@@ -249,7 +247,6 @@
             (catch Throwable _ nil)))
         (all-eraseDupsBy term)))
 
-
 ;; ── Path 2b: certified GROUP-BY ELIMINATION (relational FD, key-licensed) ─────────────────────────
 (defn- groupby-self-shape
   "Recognize a denormalize-each-row-with-its-group map:
@@ -282,11 +279,11 @@
   [t]
   (let [acc (volatile! [])]
     (letfn [(go [t]
-              (when (and (e/app? t) (zero? (e/bvar-range t)) (groupby-self-shape t))
-                (vswap! acc conj t))
-              (cond (e/app? t)    (do (go (e/app-fn t)) (go (e/app-arg t)))
-                    (e/lam? t)    (do (go (e/lam-type t)) (go (e/lam-body t)))
-                    (e/forall? t) (do (go (e/forall-type t)) (go (e/forall-body t)))))]
+                (when (and (e/app? t) (zero? (e/bvar-range t)) (groupby-self-shape t))
+                  (vswap! acc conj t))
+                (cond (e/app? t)    (do (go (e/app-fn t)) (go (e/app-arg t)))
+                      (e/lam? t)    (do (go (e/lam-type t)) (go (e/lam-body t)))
+                      (e/forall? t) (do (go (e/forall-type t)) (go (e/forall-body t)))))]
       (go t))
     @acc))
 
