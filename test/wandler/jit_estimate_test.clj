@@ -5,7 +5,7 @@
   (:require [ansatz.core :as a]
             [wandler.core :as w]
             [wandler.jit.estimate :as est]
-            [wandler.clean.optimize.cost :as cost]
+            [wandler.optimize.cost :as cost]
             [wandler.test-env :as test-env]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as nm]

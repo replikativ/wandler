@@ -14,8 +14,8 @@
    Optional: needs :datahike + :stratum + full Init env (see cross_engine_source_test for the invocation)."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [ansatz.core :as a]
-            [wandler.core :as wc] [wandler.kmap :as km] [wandler.clean.laws.faq :as rl]
-            [wandler.clean.optimize :as opt] [wandler.clean.optimize.cost :as cost]
+            [wandler.core :as wc] [wandler.kmap :as km] [wandler.laws.faq :as rl]
+            [wandler.optimize :as opt] [wandler.optimize.cost :as cost]
             [wandler.test-env :as test-env]
             [ansatz.kernel.expr :as e] [ansatz.kernel.name :as name] [ansatz.kernel.level :as lvl]))
 

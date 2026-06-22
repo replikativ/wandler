@@ -3,9 +3,9 @@
    A `List.filter` whose predicate the element TYPE proves redundant (always-true) is dropped with a
    kernel-checked whole-term proof (congrArg over List.filter_eq_self.mpr ∘ prove-const). Gated on
    an Init env."
-  (:require [wandler.clean.optimize.filter-elim :as fe]
-            [wandler.clean.optimize :as opt]
-            [wandler.clean.laws.uniqueness :as uniq]
+  (:require [wandler.optimize.filter-elim :as fe]
+            [wandler.optimize :as opt]
+            [wandler.laws.uniqueness :as uniq]
             [wandler.test-env :as test-env]
             [ansatz.core :as a]
             [ansatz.kernel.expr :as e]

@@ -11,13 +11,13 @@
   (:require [clojure.test :refer [deftest is testing]]
             [ansatz.core :as a]
             [wandler.kmap :as km]
-            [wandler.clean.laws.faq :as rl]
+            [wandler.laws.faq :as rl]
             [wandler.test-env :as test-env]
             [ansatz.kernel.env :as kenv]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.level :as lvl]
-            [wandler.clean.optimize :as opt]))
+            [wandler.optimize :as opt]))
 
 (defn- nm [s] (name/from-string s))
 (def ^:private z lvl/zero)
@@ -54,7 +54,7 @@
   (when (ready?)
     (testing "the pre-aggregated-index foundation laws are admitted (each kernel check-constant'd)"
       ;; The clean optimizer applies the WSemiring-GENERIC factorization (the Nat specialization is
-      ;; retired — see wandler.clean.laws.faq); check the generic the planner actually rides on.
+      ;; retired — see wandler.laws.faq); check the generic the planner actually rides on.
       (doseq [n ["List.foldl_add_init" "List.lookup_map_kv" "List.foldl_congr"
                  "Map.foldl_join_sum_factor_generic"]]
         (is (some? (kenv/lookup (a/env) (nm n))) (str n " present"))))))

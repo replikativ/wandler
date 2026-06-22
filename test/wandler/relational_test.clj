@@ -2,8 +2,8 @@
   "Relational / ordering vocabulary (distinct/sort/sort-by) over List compile,
    verify, and run. Gated on an Init env."
   (:require [ansatz.core :as a]
-            [wandler.clean.surface.collections :as coll]
-            [wandler.clean.surface.relational :as rel]
+            [wandler.surface.collections :as coll]
+            [wandler.surface.relational :as rel]
             [wandler.kmap :as kmap]
             [wandler.test-env :as test-env]
             [ansatz.kernel.env :as env]

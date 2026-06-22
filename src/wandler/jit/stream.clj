@@ -60,8 +60,8 @@
    Returns {:results [per-window] :swaps n :plan final-term :cost-before :cost-after}. Opts: :key-of (the
    join-key λ for :ndv evidence), :priors (refinement priors), :warmup (windows before the trigger, dflt 1)."
   [env term lctx source-id windows & {:keys [key-of priors warmup] :or {warmup 1}}]
-  (let [pcost   (requiring-resolve 'wandler.clean.optimize.cost/pipeline-cost)
-        optc    (requiring-resolve 'wandler.clean.optimize/optimize-cost)
+  (let [pcost   (requiring-resolve 'wandler.optimize.cost/pipeline-cost)
+        optc    (requiring-resolve 'wandler.optimize/optimize-cost)
         a->clj  (requiring-resolve 'ansatz.core/ansatz->clj)
         cparams (requiring-resolve 'wandler.jit.estimate/cost-params)
         compile (fn [t] (eval (a->clj env (close-lctx t lctx source-id) [])))

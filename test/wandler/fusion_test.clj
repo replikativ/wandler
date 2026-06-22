@@ -11,7 +11,7 @@
    case (pushing filter into a literal-list flatMap body unfolds List.filter's match auxiliary)."
   (:require [ansatz.core :as a]
             [wandler.core :as w]
-            [wandler.clean.surface.records :as wrec]
+            [wandler.surface.records :as wrec]
             [wandler.test-env :as test-env]
             [clojure.test :refer [deftest is]]))
 

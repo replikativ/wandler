@@ -2,12 +2,12 @@
   "Regression guard for the ansatz `apply` lazy-isDefEq fix: the thin C proof of
    Map.filter_join_pushdown (apply A + apply B over a Map.join whose bucket carries a stuck
    group_by over a symbolic list) must TERMINATE (it diverged before the fix on eager
-   normalize-for-match). This is the proof shape `wandler.clean.laws.relational/install!` now
+   normalize-for-match). This is the proof shape `wandler.laws.relational/install!` now
    ships for `Map.filter_join_pushdown`."
   (:require [clojure.test :refer [deftest is]]
             [ansatz.core :as a]
-            [wandler.clean.surface.core :as w]
-            [wandler.clean.laws.relational :as rel]
+            [wandler.surface.core :as w]
+            [wandler.laws.relational :as rel]
             [wandler.test-env :as test-env]))
 
 (deftest thin-c-terminates

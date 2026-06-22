@@ -4,8 +4,8 @@
    Term-as-IR; the independent `verified?` gate must hold. Gated on an Init env."
   (:require [wandler.core]
             [ansatz.core :as a]
-            [wandler.clean.optimize :as opt]
-            [wandler.clean.surface.collections :as coll]
+            [wandler.optimize :as opt]
+            [wandler.surface.collections :as coll]
             [wandler.test-env :as test-env]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.expr :as e]

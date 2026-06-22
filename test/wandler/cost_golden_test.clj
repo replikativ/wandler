@@ -7,7 +7,7 @@
    reproduce them byte-for-byte on these linear/SOAC shapes; A3 only ADDS cost to trees/lets (none of
    the shapes here is a tree or let, so they must not move)."
   (:require [ansatz.core :as a]
-            [wandler.clean.optimize.cost :as cost]
+            [wandler.optimize.cost :as cost]
             [wandler.test-env :as test-env]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as nm]

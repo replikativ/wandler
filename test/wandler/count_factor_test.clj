@@ -7,7 +7,7 @@
    dedicated cost path `opt/try-count-factor` (same shape as try-join-reorder): adopted iff
    pipeline-cost strictly drops AND the proof certifies. See [[semiring-sum-product-planner]]."
   (:require [ansatz.core :as a]
-            [wandler.clean.optimize :as opt]
+            [wandler.optimize :as opt]
             [wandler.kmap :as kmap]
             [wandler.test-env :as test-env]
             [ansatz.kernel.env :as kenv]

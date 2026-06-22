@@ -2,9 +2,9 @@
   "Path 2b — GROUP-BY ELIMINATION capability proofs: under a declared unique key, a group-by bucket is
    a singleton, so denormalize-each-row-with-its-group collapses to a map over rows. Installs +
    kernel-verifies the laws. Gated on the full Init env (needs Map/group_by/bucket machinery)."
-  (:require [wandler.clean.laws.groupby :as groupby]
-            [wandler.clean.optimize.filter-elim :as fe]
-            [wandler.clean.optimize :as opt]
+  (:require [wandler.laws.groupby :as groupby]
+            [wandler.optimize.filter-elim :as fe]
+            [wandler.optimize :as opt]
             [wandler.test-env :as test-env]
             [ansatz.core :as a]
             [ansatz.kernel.env :as env]

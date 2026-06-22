@@ -8,7 +8,7 @@
             [ansatz.kernel.name :as name]
             [ansatz.kernel.level :as lvl]
             [ansatz.malli :as malli]
-            [wandler.clean.optimize.cost :as cost]))
+            [wandler.optimize.cost :as cost]))
 
 (defn- nat-c [] (e/const' (name/from-string "Nat") []))
 (defn- pred

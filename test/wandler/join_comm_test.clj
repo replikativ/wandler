@@ -25,7 +25,7 @@
             [ansatz.tactic.basic :as basic]
             [ansatz.tactic.simp :as simp]
             [ansatz.tactic.extract :as extract]
-            [wandler.clean.optimize :as opt]
+            [wandler.optimize :as opt]
             [clojure.test :refer [deftest is]]))
 
 (defn- nm [s] (name/from-string s))

@@ -15,15 +15,15 @@
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]
             [wandler.surface.vocabulary]
-            [wandler.clean.surface.collections :as coll]
-            [wandler.clean.surface.strings]
-            [wandler.clean.surface.option]
-            [wandler.clean.surface.records :as rec]
-            [wandler.clean.surface.relational :as rel]
+            [wandler.surface.collections :as coll]
+            [wandler.surface.strings]
+            [wandler.surface.option]
+            [wandler.surface.records :as rec]
+            [wandler.surface.relational :as rel]
             [wandler.kmap :as kmap]
             [wandler.algebra :as algebra]
             [wandler.runtime :as rt]
-            [wandler.clean.optimize :as copt]))
+            [wandler.optimize :as copt]))
 
 (defonce ^{:doc "fn-name → the optimizer report for its last definition (the explain source)."}
   reports (atom {}))
@@ -106,7 +106,7 @@
    than `install!` (it admits the law DAG by proving each theorem once) and
    idempotent. Call after `install!` and a loaded kernel env. Returns :installed."
   []
-  ((requiring-resolve 'wandler.clean.laws.faq/install!))
+  ((requiring-resolve 'wandler.laws.faq/install!))
   :installed)
 
 (install-registries!)

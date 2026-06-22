@@ -1,7 +1,7 @@
 (ns wandler.uniqueness-test
   "Step 4 capability proof: DISTINCT-removal (`eraseDups l = l`) is sound ONLY given a declared
    uniqueness (`Nodup l`). Installs + kernel-verifies the law + its helper. Gated on an Init env."
-  (:require [wandler.clean.laws.uniqueness :as uniq]
+  (:require [wandler.laws.uniqueness :as uniq]
             [wandler.test-env :as test-env]
             [ansatz.core :as a]
             [ansatz.kernel.env :as env]

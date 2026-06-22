@@ -4,9 +4,9 @@
    'a large class of Clojure functions, written many ways'. Plus some/every? as general ∃/∀."
   (:require [wandler.core]
             [ansatz.core :as a]
-            [wandler.clean.surface.collections :as coll]
-            [wandler.clean.surface.relational :as rel]
-            [wandler.clean.laws.faq :as rl]
+            [wandler.surface.collections :as coll]
+            [wandler.surface.relational :as rel]
+            [wandler.laws.faq :as rl]
             [wandler.kmap :as kmap]
             [wandler.test-env :as test-env]
             [clojure.test :refer [deftest is]]))

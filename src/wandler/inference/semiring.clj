@@ -124,7 +124,7 @@
                     (so `join-order = elimination-order` affects cost, not result). Proven for `existence` (Bool).
    - `:execution` — the kernel OPTIMIZER's aggregating-join factorization plan is certified (proven over Nat):
                     `Map.foldl_join_sum_factor` (pre-aggregated FAQ index) + `Map.foldl_join_factor`. This is
-                    what `wandler.clean.optimize.faq` rides on to lower a counting query to a verified physical plan.
+                    what `wandler.optimize.faq` rides on to lower a counting query to a verified physical plan.
    Other semirings: the analogous laws (ported/pending)."
   [sr]
   (case (:name sr)

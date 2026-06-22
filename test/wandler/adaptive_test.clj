@@ -5,7 +5,7 @@
    loop is SOUND (always correct, guard-protected) and HONEST (selection follows the empirical cost,
    amortizing the one-time guard over the query stream)."
   (:require [wandler.adaptive :as ad]
-            [wandler.clean.laws.groupby :as groupby]
+            [wandler.laws.groupby :as groupby]
             [wandler.test-env :as test-env]
             [wandler.runtime]
             [ansatz.core :as a]

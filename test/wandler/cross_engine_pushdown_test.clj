@@ -11,14 +11,14 @@
        trust boundary as datahike-as-oracle in the architecture.
    (2) The pushdown is a WIN at two layers: fewer rows cross the engine boundary (measured), AND the
        certified relational law `filter (p∘snd) (join …) = join … (filter p)` lets the optimizer move a
-       join-level filter to the source in the first place (wandler.clean.optimize.cost / filter-join-test), so
+       join-level filter to the source in the first place (wandler.optimize.cost / filter-join-test), so
        the cost model sees the reduced source size (selectivity) and prefers the pushed plan.
 
    Optional: needs :stratum + full Init env (datahike side reused from cross_engine_source_test)."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [ansatz.core :as a]
-            [wandler.core :as wc] [wandler.kmap :as km] [wandler.clean.laws.faq :as rl]
-            [wandler.clean.optimize :as opt] [wandler.clean.optimize.cost :as cost]
+            [wandler.core :as wc] [wandler.kmap :as km] [wandler.laws.faq :as rl]
+            [wandler.optimize :as opt] [wandler.optimize.cost :as cost]
             [wandler.reducers.record :as rec]
             [wandler.test-env :as test-env]
             [ansatz.kernel.expr :as e] [ansatz.kernel.name :as name] [ansatz.kernel.level :as lvl]))

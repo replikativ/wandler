@@ -4,7 +4,7 @@
    unlock more optimization at each tier. Every plan is kernel-certified equivalent to the original —
    richer annotations change only the PLAN, never the result.
 
-   Three entry points over `wandler.clean.optimize`:
+   Three entry points over `wandler.optimize`:
      (plan env term & opts)        — one call: optimize + `explain` the chosen plan.
      (gradient env term lctx tiers)— run the planner at increasing annotation tiers; report what each
                                      tier UNLOCKS (the legible 'more typing ⇒ more optimization' story).
@@ -18,7 +18,7 @@
      • `:memory-budget`            → resource bound              ⇒ hash / nested-loop / grace-hash
      • `:selectivity` (or a sample, via optimize-measured)       ⇒ measured replanning (JIT)"
   (:require [ansatz.core :as a]
-            [wandler.clean.optimize :as opt]
+            [wandler.optimize :as opt]
             [wandler.optimize.plan :as plan]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]

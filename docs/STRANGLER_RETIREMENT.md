@@ -32,7 +32,7 @@ loudly instead of quietly disabling an optimization.
 
 ---
 
-## Phase B — Promote `wandler.clean.* → wandler.*`  ·  M  ·  ☐
+## Phase B — Promote `wandler.clean.* → wandler.*`  ·  M  ·  ☑ DONE
 Pure mechanical rename, **one reviewable commit** (no logic change), suite-gated.
 
 **B0 — collision pre-resolution.** The only file-name clash is `clean/optimize/faq.clj` vs the dead old

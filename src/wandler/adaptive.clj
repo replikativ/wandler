@@ -25,8 +25,8 @@
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as nm]
             [ansatz.kernel.level :as lvl]
-            [wandler.clean.optimize.filter-elim :as fe]
-            [wandler.clean.laws.groupby :as groupby]))
+            [wandler.optimize.filter-elim :as fe]
+            [wandler.laws.groupby :as groupby]))
 
 (defn- C [s ls] (e/const' (nm/from-string s) ls))
 

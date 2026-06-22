@@ -13,14 +13,14 @@
             [ansatz.core :as a]
             [wandler.core :as wc]
             [wandler.kmap :as km]
-            [wandler.clean.laws.faq :as rl]
+            [wandler.laws.faq :as rl]
             [wandler.laws.tropical :as trop]
             [wandler.test-env :as test-env]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.env :as env]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.level :as lvl]
-            [wandler.clean.optimize :as opt]))
+            [wandler.optimize :as opt]))
 
 (defn- nm [s] (name/from-string s))
 (def ^:private z lvl/zero)

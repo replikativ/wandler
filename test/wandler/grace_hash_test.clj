@@ -11,14 +11,14 @@
   (:require [clojure.test :refer [deftest is testing]]
             [ansatz.core :as a]
             [wandler.kmap :as km]
-            [wandler.clean.laws.faq :as rl]
+            [wandler.laws.faq :as rl]
             [wandler.test-env :as test-env]
             [ansatz.kernel.env :as kenv]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.level :as lvl]
             [ansatz.kernel.tc :as tc]
-            [wandler.clean.optimize :as opt]))
+            [wandler.optimize :as opt]))
 
 (defn- nm [s] (name/from-string s))
 (def ^:private z lvl/zero) (def ^:private L1 (lvl/succ z)) (def ^:private type0 (e/sort' L1))
