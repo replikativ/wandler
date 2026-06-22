@@ -78,3 +78,53 @@
   [old new]
   (reset! (:out new) @(:out old))                  ; carry the integrated output (the only shared state)
   new)
+
+;; ── Case B: REMATERIALIZE a new derived integrator from the carried sources ────────────────────────
+(defn rematerialize-join
+  "Case B: build a join node whose derived view `V'` is REMATERIALIZED by a from-scratch batch z-join
+   over the carried SOURCE integrators `L`,`R` (rather than carried), via the new `[kf lf]` in `opnode`.
+   Sound for ANY query-≡ swap that changes the materialized intermediate (join reorder, re-key) — where
+   carrying V (Case A) would corrupt, because the past contributions were keyed by the OLD op. Cost =
+   O(|L|·|R|), charged ONCE at the swap (gate with `rematerialize-cost`). Returns a swappable-join-node
+   primed at `[L R V']`, ready to continue incrementally. `L`,`R` are the source integrators of the node
+   being replaced (`(let [[L R _] @(:state old)] …)`)."
+  [opnode L R]
+  (let [[kf lf] (swap/current opnode)
+        node    (swappable-join-node opnode)
+        V'      (zs/z-join kf lf L R)]
+    (reset! (:state node) [L R V'])                ; rematerialize the derived view from the sources
+    (reset! (:out node) V')
+    node))
+
+(defn rematerialize-cost
+  "Work-unit estimate for rematerializing a join intermediate: the from-scratch z-join is O(|L|·|R|)."
+  [L R] (* (max 1 (count L)) (max 1 (count R))))
+
+(defn rematerialize-worth-it?
+  "Case-B cost gate: adopt the rematerializing swap iff the ONE-TIME rematerialize cost is repaid by the
+   per-delta saving over the expected remaining deltas (the amortization run-adaptive uses, with a
+   non-zero swap cost). `saving-per-delta`, `remaining-deltas` are profile estimates."
+  [L R saving-per-delta remaining-deltas]
+  (< (rematerialize-cost L R) (* (max 0.0 (double saving-per-delta)) (max 0 (long remaining-deltas)))))
+
+;; ── end-to-end: express a DBSP step as a run-adaptive MEALY step (the integrator IS the threaded state) ─
+;; `wandler.jit.swap/run-adaptive` threads its `state` across every operator swap and, on a guard
+;; violation, runs the OTHER operator on the SAME state. For a DBSP step the threaded state is the
+;; integrator, so run-adaptive's state-threading IS the integrator carry — the guarded adaptive loop
+;; (guard / lossless fallback / anti-thrash pin) drives a differential circuit with NO new policy code.
+;; These helpers are the functional dual of the atom-backed swappable-*-node above.
+(defn join-mealy
+  "An incremental join as a run-adaptive Mealy step over the integrator `[L R V]`:
+   `(state, [δL δR]) → [state', V']`. Drive a certified-≡ pair (e.g. a robust kf vs a refinement-fast
+   kf) with `run-adaptive` + a per-delta guard to get the guarded adaptive loop over a DBSP join."
+  [kf lf]
+  (fn [state delta] (let [s' (zs/join-step kf lf state delta)] [s' (nth s' 2)])))
+
+(defn linear-mealy
+  "A linear filter/map/sum chain as a run-adaptive Mealy step over the running accumulator:
+   `(state, δ) → [state', δ-out]`. `state0` is `0` for a `:sum` chain, `{}` otherwise."
+  [ops]
+  (fn [state delta]
+    (let [od (apply-ops delta ops)
+          nv (if (number? od) (+ state od) (zs/z-add state od))]
+      [nv od])))
