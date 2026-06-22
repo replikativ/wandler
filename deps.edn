@@ -27,8 +27,12 @@
   ;; Optional LogicNG WMC backend (pure-JVM knowledge compilation) for ansatz.wmc.logicng.
   :logicng {:extra-deps {org.logicng/logicng {:mvn/version "2.6.1"}}}
 
-  ;; Optional live spindel FRP substrate for the async/JIT path (ansatz.bridge.spindel).
-  :spindel {:extra-deps {org.replikativ/spindel {:local/root "../spindel"}}}
+  ;; Optional live spindel FRP substrate for the async/JIT path (ansatz.bridge.spindel,
+  ;; wandler.jit.swap-spindel). `test-spindel` holds the spindel-only adapter test (off the default
+  ;; test path so the base suite never requires spindel). Run:
+  ;;   clj -M:local-ansatz:spindel:test -d test-spindel
+  :spindel {:extra-deps  {org.replikativ/spindel {:local/root "../spindel"}}
+            :extra-paths ["test-spindel"]}
 
   ;; Optional stratum in-memory SIMD columnar engine for the reducer-offload backend
   ;; (wandler.backend.stratum). We require stratum.query (NOT stratum.api), whose load graph is
