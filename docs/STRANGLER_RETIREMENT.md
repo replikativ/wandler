@@ -1,0 +1,108 @@
+# Strangler Retirement — completing the clean cutover
+
+The `wandler.clean.*` strangler reimplementation is **functionally done**: `wandler.core/install!`
+reaches only the clean optimizer + clean surface, and the differential parity gate
+(`wandler.clean.diff` + `test/wandler/clean/diff_test.clj` — plan ≡ result ≡ proof, clean vs old vs
+clojure.core) is built and green. What remains is the cosmetic finish (drop the `.clean.` staging
+prefix) + the deferred laws port. This doc sequences that into suite-gated phases.
+
+**Companion:** `docs/REPO_HARDENING_PLAN.md` (the broader hardening tracks; this doc is the
+cutover-specific subset, with the user's decision to do the **full finish + promote to `wandler.*`**).
+
+**Invariant for every phase:** `clj -M:test` stays green (store mounted — set `WANDLER_REQUIRE_STORE=1`;
+storeless runs skip ~104 files and prove nothing). The differential test must stay green across the
+rename — it is the soundness witness that clean ≡ the reference.
+
+**Keepers (do NOT purge — new/integration, just not wired into `install!`):** `wandler.adaptive`,
+`wandler.infer`, `wandler.jit.*` (this session's refinement-planner + verified-JIT work),
+`wandler.gradual`, `wandler.bridge.*`.
+
+---
+
+## Phase A — Safety net: strict install self-check  ·  S  ·  ☑ DONE
+*(REPO_HARDENING_PLAN Phase 3.3. Do first — protects every later move.)*
+
+A new dev test that admits the law DAG and asserts **zero swallowed proof failures** — no
+`catch Throwable _ nil` silently dropping a law. After this, a rename/port that breaks a proof fails
+loudly instead of quietly disabling an optimization.
+
+- Add `install-laws!`-with-strict-mode (or a test that re-proves each law via `env/verifies?` and
+  asserts all present + checked).
+- Gate: the strict check is green; suite green.
+
+---
+
+## Phase B — Promote `wandler.clean.* → wandler.*`  ·  M  ·  ☐
+Pure mechanical rename, **one reviewable commit** (no logic change), suite-gated.
+
+**B0 — collision pre-resolution.** The only file-name clash is `clean/optimize/faq.clj` vs the dead old
+`optimize/faq.clj`. Delete old `optimize/faq.clj` + `faq_plan_test` first (dead-from-core), verify green.
+(No other clashes: `surface/` old = streams,vocabulary; `laws/` old = semiring,dist,tropical; both
+disjoint from the clean names.)
+
+**B1 — file moves (`git mv`):**
+
+| from | to | new ns |
+|---|---|---|
+| `clean/optimize.clj` | `optimize.clj` | `wandler.optimize` |
+| `clean/optimize/{certify,cost,cse,egraph,faq,physical,filter_elim}.clj` | `optimize/…` | `wandler.optimize.…` (beside surviving `optimize/plan.clj`) |
+| `clean/surface/{collections,relational,records,malli,refine,strings,option,core,common}.clj` | `surface/…` | `wandler.surface.…` (beside `surface/{streams,vocabulary}`) |
+| `clean/laws/{frame,relational,fusion,grace,grace_proofs,groupby,faq,reorder,uniqueness,bucket,ac}.clj` | `laws/…` | `wandler.laws.…` (beside `laws/{semiring,dist,tropical}`) |
+| `clean/core/{par,monoid}.clj` | `core/…` | `wandler.core.par` / `wandler.core.monoid` (coexist with `core.clj`) |
+| `clean/diff.clj` | `diff.clj` | `wandler.diff` |
+| `test/wandler/clean/*` | `test/wandler/*` | — |
+
+**B2 — reference rewrite.** `wandler.clean.X → wandler.X` in every `ns`/`require` across `src` + `test`
+(scripted), **plus** the `requiring-resolve`/`resolve` string literals an IDE rename misses:
+`core.clj:109`, `exec/mode.clj:358/371/387/398`, `jit/stream.clj:63-64`,
+`surface/streams.clj:314/371/394`, `laws/grace.clj`, `optimize/faq.clj`, and test-side
+(`physical_test`, `mode_test`, `seq_accessors_test`, `egraph_test`).
+
+**B3 — gate.** `clj -M:test` green (incl. the differential test). Commit:
+`refactor: promote wandler.clean.* → wandler.* (mechanical rename, no logic change)`.
+
+**Risk:** broad edit; mitigated by full-suite + differential gate. Do as ONE commit so review is "diff is
+all renames."
+
+---
+
+## Phase C — Purge superseded old namespaces  ·  S–M  ·  ☐
+Delete only the genuinely-obsolete old ns (superseded by the promoted clean tree). One per commit,
+leaf-first, suite-gated; remove each ns's test file in the same commit.
+
+Candidates (confirm "no live consumer" by grep at execution): `wandler.plan` (unified-planner facade,
+superseded by `wandler.optimize`), `wandler.verified` (def-record/defn over reducers, superseded by
+`wandler.surface.records`), `wandler.reducers` (+ `reducers/{plan,affine,record}`, the old transducer
+calculus), `wandler.stdlib`. **Reverses the prior plan's "keep" — per the full-finish decision.**
+
+**Risk:** a candidate may be required by a kept ns (e.g. `backend.stratum` → `reducers`). Delete
+leaf-first; if a keeper needs it, either inline the used bit or keep that one ns and note why.
+
+---
+
+## Phase D — Level-2 laws port (the real depth work)  ·  L (multi-session)  ·  ☐
+*(REPO_HARDENING_PLAN Phase 6.2.)* Retire old `wandler.laws.{semiring,dist,tropical}` that the promoted
+`laws.faq`/`laws.frame` still ride.
+
+- **D1** re-derive the generic frame family on the promoted tree: `Map.foldl_join_frame_generic`,
+  `_sum_factor_generic`, `keyfactor_float_generic`, `bucket_factor_pull_generic`,
+  `Nat.cond_and_mul_split_generic` (hand kernel proofs — the multi-day part).
+- **D2** repoint `laws.faq` / `optimize.faq` / `semiring_class` off `wandler.laws.semiring`.
+- **D3** delete `wandler.laws.{semiring,dist,tropical}`; migrate carrier tests.
+- Gate each sub-step on the differential harness + suite.
+
+**Recommendation:** ship A–C first (the visible cutover finish); do D as a focused follow-up — it is
+the deferred technical roadmap, no rush, and it gates a "zero old code ridden" claim, not function.
+
+---
+
+## Phase E — Docs + first release  ·  S  ·  ☐
+After the rename, sweep doc references `wandler.clean.* → wandler.*` (README layout table, SURFACE.md,
+architecture docs). Then the first-release checklist: version + CHANGELOG, tag → CI/CD (no manual
+release). The README quickstart already loads clean and describes the clean tree as canonical.
+
+---
+
+## Sequencing
+**A** (safety net) → **B** (rename) → **C** (purge) → **E-docs** → ship a first release → **D**
+(laws port) as a follow-up. A–C + E are the user-visible "completion"; D is depth.
