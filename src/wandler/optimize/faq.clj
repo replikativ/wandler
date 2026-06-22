@@ -3,7 +3,8 @@
 ;; grace-hash spill, pre-aggregated FAQ index, invariant-index hoisting). Every adoption
 ;; is gated by cert/verified-rewrite?.
 (ns wandler.optimize.faq
-  (:require [ansatz.kernel.expr :as e]
+  (:require [clojure.set]
+            [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]
             [ansatz.kernel.level :as lvl]
             [ansatz.kernel.env :as env]
@@ -13,7 +14,7 @@
             [wandler.optimize.cost :as cost]
             [wandler.optimize.filter-elim :as fe]
             [wandler.laws.semiring :as sreg]
-            [wandler.semiring-class :as sc])
+            [ansatz.prelude.algebra :as alg])
   (:import [ansatz.kernel Env]))
 
 (declare compose-trans)
@@ -220,6 +221,16 @@
 (defn- sr-entry [S] (sreg/entry S))
 (defn- sr-c [entry kw] (sreg/const entry kw))
 
+;; Build the WAddMonoid/WSemiring instance term for a carrier from its registry entry, via the ansatz
+;; prelude's instance builders (ansatz.prelude.algebra) — the owned, kernel-checked algebraic spine that
+;; replaces the byte-redundant wandler.semiring-class. The registry rows are keyed `:hAA/:hMA/…`; the
+;; prelude builders read `:add_assoc/:mul_add/…`, so translate the keys at the boundary.
+(def ^:private ->prelude-row
+  #(clojure.set/rename-keys % {:hAA :add_assoc :hZA :zero_add :hAZ :add_zero
+                               :hMA :mul_add   :hMZ :mul_zero :hZM :zero_mul}))
+(defn- am-inst [S entry] (alg/addmonoid-instance S (->prelude-row entry)))
+(defn- sr-inst [S entry] (alg/semiring-instance S (->prelude-row entry)))
+
 (defn- adopt-if-improved
   "Shared frame-emitter tail: adopt the rewrite `res` (whose :term is the rewritten RHS) iff it strictly
    lowers pipeline-cost AND passes the kernel gate cert/verified-rewrite?. The single place the cost
@@ -311,7 +322,7 @@
                   ndv-est (when (and ndv (e/fvar? ys)) (get ndv (e/fvar-id ys)))]
               (when (and ndv-est (< (double ndv-est) (double build-mem)))
                 (let [law (e/app* (e/const' (name/from-string "Map.foldl_join_sum_factor_generic") [])
-                                  S (sc/mk-addmonoid-instance S entry)
+                                  S (am-inst S entry)
                                   K X Y dec g kf lf e xs ys)
                       st (cert/mk-st env lctx)
                       ptype (try (tc/infer-type st law) (catch Throwable _ nil))   ; nil if law absent
@@ -430,7 +441,7 @@
                   ndv-est (when (and ndv (e/fvar? ys)) (get ndv (e/fvar-id ys)))]
               (when (and ndv-est (< (double ndv-est) (double build-mem)))
                 (let [law (e/app* (e/const' (name/from-string "Map.foldl_join_frame_generic") [])
-                                  S (sc/mk-semiring-instance S entry)
+                                  S (sr-inst S entry)
                                   K X Y dec f g kf lf e xs ys)
                       st (cert/mk-st env lctx)
                       ptype (try (tc/infer-type st law) (catch Throwable _ nil))   ; nil if law absent
@@ -594,7 +605,7 @@
                       X1 (fn [p] (condN (andB (e/app P (fstp p)) (e/app Q (sndp p))) (mulN (e/app f (fstp p)) (e/app g (sndp p))) zeroN))
                       X2 (fn [p] (mulN (condN (e/app P (fstp p)) (e/app f (fstp p)) zeroN) (condN (e/app Q (sndp p)) (e/app g (sndp p)) zeroN)))
                       splitPf (fn [p] (e/app* (e/const' (nm "Nat.cond_and_mul_split_generic") [])
-                                              natT (sc/mk-semiring-instance natT entry)
+                                              natT (sr-inst natT entry)
                                               (e/app P (fstp p)) (e/app Q (sndp p)) (e/app f (fstp p)) (e/app g (sndp p))))
                       hyp (e/lam "acc" natT (e/lam "p" PXY
                                                    (e/app* (e/const' (nm "congrArg") [L1 L1]) natT natT (X1 (e/bvar 0)) (X2 (e/bvar 0))
@@ -604,7 +615,7 @@
                       foldlJ (fn [o] (e/app* (e/const' (nm "List.foldl") [z z]) natT PXY o e join))
                       congrEq (e/app* (e/const' (nm "List.foldl_congr") []) natT PXY op op-s join e hyp)
                       frameEq (e/app* (e/const' (nm "Map.foldl_join_frame_generic") [])
-                                      natT (sc/mk-semiring-instance natT entry)
+                                      natT (sr-inst natT entry)
                                       K X Y dec f' g' kf lf e xs ys)
                       st (cert/mk-st env lctx)
                       ftype (try (tc/infer-type st frameEq) (catch Throwable _ nil))   ; nil if law absent
@@ -641,7 +652,7 @@
                         z    lvl/zero  L1 (lvl/succ z)  natT S
                         f'   (e/lam "x" X (e/app w (e/app kf (e/bvar 0))) :default)
                         frameEq (e/app* (e/const' (nm "Map.foldl_join_frame_generic") [])
-                                        natT (sc/mk-semiring-instance natT entry)
+                                        natT (sr-inst natT entry)
                                         K X Y dec f' g kf lf e xs ys)
                         st (cert/mk-st env lctx)
                         feT (try (tc/infer-type st frameEq) (catch Throwable _ nil))
@@ -652,7 +663,7 @@
                         preidx (when R1 (extract-frame-preidx (cg/collapse-instance-projections env R1)))]
                     (when preidx
                       (let [floatEq (e/app* (e/const' (nm "Map.foldl_keyfactor_float_generic") [])
-                                            natT (sc/mk-semiring-instance natT entry)
+                                            natT (sr-inst natT entry)
                                             K X dec w kf e xs preidx)
                             flT (try (tc/infer-type st floatEq) (catch Throwable _ nil))
                             [_ flA] (when flT (e/get-app-fn-args flT))
