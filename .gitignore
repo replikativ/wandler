@@ -4,3 +4,6 @@ classes
 target
 
 .nrepl-port
+
+# clj-kondo lint cache (machine-local, regenerated on lint)
+.clj-kondo/.cache/
