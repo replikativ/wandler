@@ -5,7 +5,11 @@
  ;; ansatz from Clojars (the public pin). For side-by-side development use:
  ;;   org.replikativ/ansatz {:mvn/version "0.1.62"}
  :deps {org.replikativ/ansatz {:mvn/version "0.1.62"}
-        metosin/malli {:mvn/version "0.16.4"}}
+        metosin/malli {:mvn/version "0.16.4"}
+        ;; the CPS/async-seq substrate (the async corner of the mode lattice; spindel builds on it).
+        ;; Lightweight (pulls only clojure) and already transitive via ansatz; pinned here for the
+        ;; verified-JIT async-seq swap adapter (wandler.jit.async-seq).
+        is.simm/partial-cps {:mvn/version "0.1.57"}}
  :aliases
  {;; Side-by-side development against a LOCAL ansatz checkout (overrides the published Clojars pin),
   ;; e.g. to use the rethink-cleanups dev-experience facilities (goal-state REPL, term quotation,
