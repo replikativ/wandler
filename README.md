@@ -122,9 +122,6 @@ factorization: 4× → 22× and widening, same certified answer).
 3. **The engine** — [`Architecture`](docs/ARCHITECTURE.md) (the three seams · trust boundary · module map) · [`Optimizer`](docs/OPTIMIZER.md) (fusion · the FAQ factorization family · cost model) · [`Streaming`](docs/STREAMING.md) (Z-sets · the ∂ pass · DBSP · the linearity edge) · [`JIT`](docs/JIT.md) (measured replanning + runtime hot-swap) · [`Engines`](docs/ENGINES.md) (datahike/stratum integration · end-to-end cross-engine planning).
 4. **The model** — [`Inference`](docs/INFERENCE.md) (sum-product over a semiring · variable elimination · WMC · the FinDist monad) · [`Programming model`](docs/PROGRAMMING_MODEL.md) (malli→type functor · dependent types · the semiring view · the gradual ladder) · [`Benchmarks`](docs/BENCHMARKS.md).
 
-Prior drafts and maintainer/design notes are kept under [`docs/archive/`](docs/archive/),
-out of the published path.
-
 ## Layout
 
 The verified engine lives under `wandler.*`; `wandler.core` is the public front door. A

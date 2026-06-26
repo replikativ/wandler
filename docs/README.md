@@ -44,7 +44,3 @@ example validated end-to-end.
 
 An L2 input can make wandler *slower* or feed it *wrong data*; it can never make a verified
 pipeline compute a different function than the code you wrote.
-
----
-
-Prior drafts of these docs are kept under [`archive/`](archive/) as source material.
