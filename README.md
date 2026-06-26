@@ -1,18 +1,23 @@
 # Wandler — a verified data-transformation runtime
 
-> *Wandler* (German: **transducer / converter**). You write ordinary Clojure data
-> pipelines; they are elaborated to CIC kernel terms, **optimized by certified
-> rewriting**, and lowered to fast Clojure. Every adopted rewrite carries a kernel
-> proof `optimized ≡ original` — *translation validation*, checked per program by
-> the same kernel that admits Mathlib. The optimizer's search is untrusted; only
-> the certificate is. A bad rewrite is rejected, never miscompiled.
+> *Wandler* (German: **transducer / converter**) — an **experimental** verified runtime for
+> ordinary Clojure data pipelines. You write `map` / `filter` / `reduce` / `group-by` / `join`;
+> wandler optimizes them, and a proof kernel checks every rewrite before it runs.
 
-Wandler is built on [`ansatz`](https://github.com/replikativ/ansatz) — the
-Lean4-in-Clojure proof kernel + DSL. **Ansatz formulates and proves; Wandler
-transforms and optimizes.** The payoff: because the kernel proved your fused
-pipeline equals the obvious one, wandler is free to *run* the fast one — a single
-pass, an eliminated join, an incremental view, a parallel fold — and you still get
-the answer the naive code would give. **Verification licenses the fast representation.**
+> ⚠️ **Experimental research software.** Early-stage — APIs and proofs are still evolving and it is
+> not production-hardened. Expect rough edges.
+
+Wandler is built on [`ansatz`](https://github.com/replikativ/ansatz) — the Lean4-in-Clojure proof
+kernel + DSL. **Ansatz formulates and proves; Wandler transforms and optimizes.**
+
+Under the hood, your pipeline is elaborated to a term in ansatz's CIC kernel (the same kind of kernel
+that checks Lean 4 / Mathlib), **optimized by certified rewriting**, and lowered back to fast Clojure.
+Every adopted rewrite carries a machine-checked proof that `optimized ≡ original` — *translation
+validation*, checked per program by that kernel. The optimizer's search is untrusted; only the
+certificate is, so a bad rewrite is rejected, never miscompiled. The payoff: because the kernel proved
+your fused pipeline equals the obvious one, wandler is free to *run* the fast one — a single pass, an
+eliminated join, an incremental view, a parallel fold — and you still get the answer the naive code
+would give. **Verification licenses the fast representation.**
 
 **New here? Start with the [Tutorial](docs/TUTORIAL.md)** — it walks one pipeline up
 a gradual ladder (no types → inferred types → explicit types) and then through every
