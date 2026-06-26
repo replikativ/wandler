@@ -1,0 +1,150 @@
+(ns wandler.plan
+  "Integration 1 — the unified, CONSUMER-AWARE planner. One entry that plans a list-producing pipeline
+   end-to-end, source→sink, every plan kernel-certified ≡ the naive query.
+
+   Two ideas, both reusing the existing certified core (optimize-cost / verified-rewrite?):
+
+   1. CONSUMER-AWARENESS by sink-folding. We fold the SINK (what the caller does with the result: count,
+      sum, materialize-ordered, …) INTO the pipeline term before optimizing. This makes the certified
+      optimizer legalize exactly the consumer-appropriate rewrites with NO extra gate: an order-destroying
+      rewrite (join reorder via Map.join_comm, a Perm) only certifies as `Eq` when wrapped in an
+      order-invariant consumer (count/sum). So `:count`/`:sum` sinks unlock reorder + pre-aggregation,
+      while `:vector` (materialize-ordered) does not — enforced by verified-rewrite? itself, not by a flag.
+
+   2. SOURCE-NATURE oracle dispatch. Each source's cardinality oracle is chosen by its nature:
+      materialized (a DB table) → the engine's exact `:estimate` (sizes/selectivity); stream → a forked
+      sample (stationary-distribution profile, via wandler.exec.stream — the next slice). Both feed the
+      SAME optimize-cost; only the provenance of `:selectivity`/`:sizes` differs.
+
+   This is the seam that ties the inductive (datahike/stratum, finite/exact) and coinductive (live
+   streams, sampled/stationary) views together under one certified search."
+  (:require [wandler.optimize :as opt]
+            [wandler.optimize.plan :as oplan]
+            [ansatz.kernel.expr :as e]
+            [ansatz.kernel.name :as name]
+            [ansatz.kernel.level :as lvl]))
+
+;; ── on the IR (coherence) ─────────────────────────────────────────────────────────────────────────
+;; There is ONE relational IR: the plan LENS (wandler.optimize.plan, term↔plan), under which the kernel
+;; term is the single source of truth. We do NOT add a `:sink` field to it — the consumer lives IN the
+;; term (we `fold-sink` it in), which is exactly the lens's discipline and is what lets verified-rewrite?
+;; gate consumer-appropriate rewrites for free. The SOURCE descriptors live beside the term (in lctx /
+;; the :sources arg), keyed by fvar id. (The older `wandler.reducers.plan` Plan record — a producer→
+;; transforms→consumer SOAC vertical — remains the separate `verified`/`refine` path; it is not this IR.)
+
+(def ^:private z lvl/zero)
+(defn- nm [s] (name/from-string s))
+
+;; ── sink folding: wrap a list-producing pipeline in its consumer term ─────────────────────────────
+;; The folded term is what the certified optimizer sees, so the sink's order-(in)variance is what gates
+;; the rewrites. Order-invariant sinks (count/sum) admit join-reorder/pre-agg; :vector keeps order.
+
+(defn- count-sink [term elem-type]
+  (let [nat (e/const' (nm "Nat") [])
+        op  (e/lam "acc" nat (e/lam "x" elem-type (e/app (e/const' (nm "Nat.succ") []) (e/bvar 1)) :default) :default)]
+    (e/app* (e/const' (nm "List.foldl") [z z]) nat elem-type op (e/const' (nm "Nat.zero") []) term)))
+
+(defn- sum-sink [term elem-type value-fn value-type]
+  (let [nat  (e/const' (nm "Nat") [])
+        vt   (or value-type elem-type)
+        vals (if value-fn (e/app* (e/const' (nm "List.map") [z z]) elem-type vt value-fn term) term)]
+    ;; the accumulator type is Nat (op = Nat.add, init = Nat.zero), the list-element type is vt — so the
+    ;; fold is well-typed only when vt = Nat (value-fn produces a Nat). Was `vt vt` (wrong acc type for a
+    ;; non-Nat vt); now `nat vt`, matching count-sink's `nat elem-type`. :sum is Nat-only by construction.
+    (e/app* (e/const' (nm "List.foldl") [z z]) nat vt
+            (e/const' (nm "Nat.add") []) (e/const' (nm "Nat.zero") []) vals)))
+
+(defn- limit-sink [term elem-type n]
+  ;; List.take n — keeps the FIRST n (order-sensitive); enables early termination (only n produced when
+  ;; the take fuses through a map via List.take_map / when the source is lazy).
+  (e/app* (e/const' (nm "List.take") [z]) elem-type (e/lit-nat n) term))
+
+(defn fold-sink
+  "Fold a sink descriptor `{:kind … :value-fn? :value-type? :n?}` into a list-producing `term`
+   (element type `elem-type`). Returns the consumer-wrapped term the optimizer should plan."
+  [term elem-type sink]
+  (case (:kind sink)
+    :count               (count-sink term elem-type)
+    :sum                 (sum-sink term elem-type (:value-fn sink) (:value-type sink))
+    :limit               (limit-sink term elem-type (:n sink))
+    (:vector :materialize nil) term))      ; identity — order preserved; order-destroying rewrites won't certify
+
+(defn commutative-monoid?
+  "Is the aggregation monoid `m` proven COMMUTATIVE? Commutativity (a `:comm` kernel theorem in the
+   spec's `:laws`, e.g. Nat.add_comm) is exactly what makes the fold order-INVARIANT. This is the
+   principled, kernel-grounded version of an ad-hoc 'is this op order-free' set: wandler PROVES the
+   property where datahike/stratum/raster only assert it. nil monoid = the default count/sum monoid
+   (Nat.add), which is commutative."
+  [m]
+  (or (nil? m) (boolean (get-in m [:laws :comm]))))
+
+(defn order-invariant?
+  "Does this sink ignore output order — so join-reorder / pre-aggregation are sound to OFFER? True iff the
+   sink aggregates by a COMMUTATIVE monoid. Crucially this EXCLUDES associative-but-non-commutative folds
+   (string concat, list append — `:concat`), where order matters, which a hardcoded {count sum group set}
+   would wrongly admit. The kernel certificate (`verified-rewrite?`) remains the soundness backstop; this
+   predicate is the fast-path that decides whether to even ATTEMPT an order-destroying rewrite."
+  [sink]
+  (case (:kind sink)
+    :count               true                                   ; Nat.add (count) is commutative
+    :set                 true                                   ; set union is commutative
+    (:sum :group :reduce) (if (contains? sink :commutative?)
+                            (boolean (:commutative? sink))
+                            (commutative-monoid? (:monoid sink)))
+    ;; :vector :materialize :concat :limit … — order-preserving / order-sensitive
+    false))
+
+;; ── source-nature oracle dispatch — the inductive⇄coinductive seam ────────────────────────────────
+(defn- resolve-oracle
+  "Pick the cardinality oracle per source NATURE — this is where the inductive and coinductive views meet:
+     :materialized → exact `:size` (the engine's estimate) feeds `:sizes` — the finite, plan-it-directly
+                     inductive view (a datahike/stratum table: we know what's in memory).
+     :stream       → a forked WINDOW `:sample` is MEASURED for the pipeline's predicate pass-rates
+                     (`wandler.core/profile-selectivity`) → `:selectivity` — the coinductive view: we can't
+                     enumerate an infinite stream, so we plan from a representative window assuming a
+                     (locally) stationary distribution; a fresh sample after drift re-measures and replans.
+   Both feed the SAME certified `optimize-cost`; only the PROVENANCE of the statistics differs. Explicit
+   `:sizes`/`:selectivity` override either."
+  [env term sources sizes selectivity]
+  (let [stream-sample (some (fn [[_ d]] (when (= :stream (:nature d)) (:sample d))) sources)]
+    {:sizes (or sizes (not-empty (into {} (keep (fn [[id d]] (when-let [n (:size d)] [id n])) sources))))
+     :selectivity (or selectivity
+                      (when stream-sample
+                        ((requiring-resolve 'wandler.core/profile-selectivity) env term stream-sample)))}))
+
+(defn unified-plan
+  "Plan a list-producing pipeline `term` (element type `:elem-type`) end-to-end for a `:sink`, with sources
+   described in `:sources` (fvar-id → {:nature :size}). Folds the sink in, picks the oracle by source
+   nature, runs the shared certified optimize-cost. Returns the optimize-cost result augmented with
+   `:sink`, `:wrapped` (the consumer-folded term actually optimized), and `:route` (the chosen physical
+   strategy, or nil if none — e.g. an order-preserving sink that admits no reorder)."
+  [env term & {:keys [lctx elem-type sink sources sizes selectivity memory-budget ndv]
+               :or {sink {:kind :vector}}}]
+  (let [wrapped (fold-sink term elem-type sink)
+        {osz :sizes osel :selectivity} (resolve-oracle env wrapped (or sources {}) sizes selectivity)
+        oi? (order-invariant? sink)
+        ;; fast path: don't even attempt order-destroying rewrites for an order-preserving sink — they
+        ;; could never certify as Eq anyway (the certificate is the real backstop; this just saves work).
+        r (opt/optimize-cost env wrapped :lctx lctx :skip-reorder? (not oi?)
+                             :sizes osz :selectivity osel :memory-budget memory-budget :ndv ndv)]
+    (assoc r
+           :sink (:kind sink)
+           :wrapped wrapped
+           :order-invariant? oi?
+           :selectivity osel              ; the oracle's profile (measured for a :stream source)
+           :route (get-in r [:physical :strategy]))))
+
+(defn describe
+  "A structured, inspectable account of an end-to-end plan: the SOURCE natures, the SINK (with its
+   order-invariance), the relational plan TREE (the lens read of the optimized term), the rewrites
+   adopted, the chosen physical route, and whether it is certified ≡ naive. Ties the source→sink view
+   into one queryable shape without bolting fields onto the lens."
+  [{:keys [term sink order-invariant? rewrites route cost verified?] :as r} sources]
+  {:sources    (into {} (map (fn [[id d]] [id (:nature d)])) (or sources {}))
+   :sink       sink
+   :order-invariant? order-invariant?
+   :plan       (oplan/term->plan term)        ; the lens read of the optimized term
+   :rewrites   (vec rewrites)
+   :route      route
+   :cost       cost
+   :verified?  verified?})

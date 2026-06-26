@@ -1,0 +1,26 @@
+#!/bin/bash
+
+set -eo pipefail
+
+# Wandler's CI unit suite (replikativ/clj-tools orb → tools/unittest → this script).
+#
+# Runs the FULL test suite. The Lean `Init` kernel store the suite needs is NOT committed
+# (~173M, gitignored); `wandler.test-env` resolves it on-demand. We set the two knobs HERE
+# (not via a CircleCI context, which is easy to misconfigure — and was: the store silently
+# resolved to nil and the suite skipped) so the fetch always runs in CI, self-contained:
+#   WANDLER_FETCH_INIT=1   — download the gzipped Init export from the ansatz GitHub release
+#                            and build a local PSS cache store once (skipped if a store is
+#                            already resolvable, e.g. a dev's test-data/init-store).
+#   WANDLER_REQUIRE_STORE=1 — a missing store is a HARD failure, so CI never green-washes the
+#                            storeless skipping subset.
+#
+# The optional engine deps (datahike, stratum) are local-root and absent in CI; their tests
+# skip gracefully (guarded on requiring-resolve). LogicNG's WMC path is exercised separately
+# via `clojure -M:test:logicng`.
+
+export WANDLER_FETCH_INIT=1
+export WANDLER_REQUIRE_STORE=1
+
+echo "Running wandler unit tests (full suite; fetching the Init store on demand, then verifying)"
+
+clojure -M:test

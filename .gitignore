@@ -1,0 +1,15 @@
+test-data
+classes
+.cpcache
+target
+
+.nrepl-port
+
+# clj-kondo lint cache (machine-local, regenerated on lint)
+.clj-kondo/.cache/
+
+# clojure-lsp cache (machine-local)
+.lsp/.cache/
+
+# internal dev/design docs (local-only, not published)
+.internal/

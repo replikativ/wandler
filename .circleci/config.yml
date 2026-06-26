@@ -1,0 +1,52 @@
+version: 2.1
+
+# Mirrors ansatz's pipeline (replikativ/clj-tools orb): setup → build → format → unittest,
+# then deploy (Clojars) + release (GitHub asset) on `main` only.
+#
+# WANDLER-SPECIFIC: the test suite needs the Lean `Init` kernel store, which is NOT committed
+# (~173M, gitignored). `wandler.test-env` resolves it on-demand: with WANDLER_FETCH_INIT=1 it
+# downloads the Init export from an ansatz GitHub release and builds a local PSS cache store once;
+# WANDLER_REQUIRE_STORE=1 makes a missing store a hard failure (so CI never silently runs the
+# storeless ~104-file-skipping subset). Provide both to the unittest job via the `wandler-ci`
+# context (define them there), so the orb's test step runs the full suite.
+
+orbs:
+  tools: replikativ/clj-tools@0
+
+workflows:
+  build-test-and-deploy:
+    jobs:
+      - tools/setup:
+          context: docker-deploy
+      - tools/build:
+          context: docker-deploy
+          requires:
+            - tools/setup
+      - tools/format:
+          context: docker-deploy
+          requires:
+            - tools/setup
+      - tools/unittest:
+          context:
+            - docker-deploy
+            - wandler-ci   # provides WANDLER_FETCH_INIT=1 + WANDLER_REQUIRE_STORE=1
+          requires:
+            - tools/build
+      - tools/deploy:
+          context:
+            - clojars-deploy
+            - docker-deploy
+          filters:
+            branches:
+              only: main
+          requires:
+            - tools/unittest
+      - tools/release:
+          context:
+            - github-token
+            - docker-deploy
+          filters:
+            branches:
+              only: main
+          requires:
+            - tools/deploy
