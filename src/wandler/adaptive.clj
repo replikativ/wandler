@@ -91,12 +91,10 @@
                   contain the denormalize-each-row-with-its-group shape that `try-groupby-elim` matches.
      sample     — sample rows (Clojure data) used to abduce the key and to benchmark.
    Options: :u (level, default lvl/zero), :id (fresh fvar id, default 9001), :data (the real data to
-   run the chosen plan over + guard against; defaults to `sample`), :amortize (number of queries the
-   refined relation is expected to serve, default 1). The unique-key guard is a ONE-TIME boundary check
-   performed when the refined relation is constructed — it is NOT paid per query — so adoption compares
-   `rewritten + guard/amortize` against `original`. A one-shot query (amortize 1) keeps the guard cost
-   in full (often declines the rewrite); a relation queried many times amortizes the guard toward zero
-   (adopts the cheaper plan). This is the plan-once-run-many / PGO model (see wandler.jit.pgo).
+   run the chosen plan over + guard against; defaults to `sample`), :amortize (retained for API
+   compatibility, recorded in telemetry). Every returned `:run` receives potentially new rows and
+   checks the unique-key guard on every invocation. Adoption therefore charges the full guard cost
+   per query; it cannot amortize that cost without a separately validated immutable relation.
 
    Returns a decision artifact:
      {:abduced-unique? :verified? :rewrites :strategy :certificate
@@ -131,9 +129,8 @@
                 orig-ns     (time-ns #(orig-fn data))
                 guard-ns    (time-ns #(unique-key? kf-runtime data))
                 rw-ns       (time-ns #(rw-fn data))
-                ;; the guard is a ONE-TIME boundary check, amortized over the query stream; the
-                ;; rewrite is worth it once per-query rewritten + amortized guard beats the original.
-                adopt?      (< (+ (/ guard-ns (double (max 1 amortize))) rw-ns) orig-ns)
+                ;; :run checks every supplied relation; charge the guard on every invocation.
+                adopt?      (< (+ guard-ns rw-ns) orig-ns)
                 ;; the SOUND runtime fn: guard the abduced key on the actual rows; fall back if violated.
                 guarded-run (fn [rows]
                               (if (unique-key? kf-runtime rows) (rw-fn rows) (orig-fn rows)))]

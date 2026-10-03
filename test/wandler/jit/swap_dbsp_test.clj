@@ -111,12 +111,14 @@
 (deftest adaptive-join-end-to-end
   (testing "run-adaptive drives a DBSP join: integrator threaded across guard-driven op swaps + pin"
     ;; optimized uses the refinement-fast key (:k directly, sound iff every row HAS :k); original is the
-    ;; robust key (unique fallback for a missing :k). The guard discharges 'every row has :k' per delta.
+    ;; robust key (fallback for a missing :k). Input and state guards require every incoming and
+    ;; retained row to have :k; a fallback can retain malformed input until it is fully retracted.
     (let [optk (fn [r] (:k r))
-          robk (fn [r] (or (:k r) (- (hash r))))
+          robk (fn [r] (if (contains? r :k) (:k r) (- (hash r))))
           opt  (d/join-mealy optk optk)
           org  (d/join-mealy robk robk)
           guard (fn [[dL dR]] (every? #(contains? % :k) (concat (keys dL) (keys dR))))
+          state-guard (fn [[L R _] _] (every? #(contains? % :k) (concat (keys L) (keys R))))
           deltas [[{{:k 1 :v "a"} 1} {{:k 1 :w "x"} 1}]      ; well-formed → optimized
                   [{{:k 2 :v "b"} 1} {{:k 2 :w "y"} 1}]      ; well-formed → optimized
                   [{{:v "c"} 1}      {{:k 1 :w "z"} 1}]      ; MALFORMED (no :k) → fallback to original
@@ -124,7 +126,7 @@
                   [{{:k 3 :v "e"} 1} {{:k 3 :w "q"} 1}]]     ; well-formed but PINNED → original
           node (swap/atom-node org)
           r    (swap/run-adaptive node {:original org :optimized opt :guard guard
-                                        :state0 [{} {} {}] :cutoff 2} deltas)]
+                                        :state-guard state-guard :state0 [{} {} {}] :cutoff 2} deltas)]
       (testing "the running views match the all-original ground truth at every step (integrator carried)"
         (is (= (drive-mealy org deltas) (:outputs r))))
       (testing "fast path on the well-formed deltas, fallback on the malformed, pin after cutoff"
@@ -141,3 +143,26 @@
       (is (= 6 (d/rematerialize-cost L R)))
       (is (true?  (d/rematerialize-worth-it? L R 0.5 100)) "0.5×100=50 > 6 → adopt")
       (is (false? (d/rematerialize-worth-it? L R 0.5 5))   "0.5×5=2.5 < 6 → decline (too few deltas left)"))))
+
+(deftest state-guard-protects-retained-inputs-and-allows-reentry
+  (let [missing {:v "a"}
+        robust (fn [r] (if (contains? r :k) (:k r) ::missing))
+        original (d/join-mealy robust robust)
+        optimized (d/join-mealy :k :k)
+        deltas [[{missing 1} {}]                          ; malformed source retained by fallback
+                [{} {{:k ::missing :w "b"} 1}]           ; input valid, carried source invalid
+                [{missing -1} {}]                       ; fallback retraction restores valid source state
+                [{{:k 2 :v "c"} 1} {{:k 2 :w "d"} 1}]]
+        state-guard (fn [[L R _] [dL dR]]
+                      (every? #(contains? % :k)
+                              (concat (keys L) (keys R) (keys dL) (keys dR))))
+        r (swap/run-adaptive (swap/atom-node original)
+                             {:original original :optimized optimized :state0 [{} {} {}]
+                              :state-guard state-guard :cutoff 4}
+                             deltas)]
+    (is (= (drive-mealy original deltas) (:outputs r))
+        "a valid new delta cannot bypass the hypothesis on retained sources")
+    (is (= 3 (:orig-runs r)))
+    (is (= 1 (:opt-runs r)) "after complete retraction, the next delta permits safe optimized re-entry")
+    (is (false? (:pinned? r)))
+    (is (= (last (drive-mealy original deltas)) (nth (:final-state r) 2)))))

@@ -89,17 +89,17 @@ upgrade/inference completeness. They identified these concrete remaining boundar
 
 | Priority | Area | Evidence and next action |
 |---|---|---|
-| High | Stateful adaptive guards | A malformed join delta retained in source state can invalidate a later optimized step even when the new delta is valid. Add a guard over pre-step state and delta support, and test retraction and safe re-entry. |
-| High | PGO replay | `:reverify? true` skipped missing certificates and executed an arbitrary supplied closure. Strict replay must check both expressions and their equality, then compile locally. |
+| High | Stateful adaptive guards | A malformed join delta retained in source state can invalidate a later optimized step even when the new delta is valid. Fixed in the JIT follow-up: `:state-guard` covers pre-step state and delta support; regression checks retraction and safe re-entry. |
+| High | PGO replay | `:reverify? true` skipped missing certificates and executed an arbitrary supplied closure. Fixed in the JIT follow-up: strict replay checks both expressions and their equality, then compiles locally, ignoring the supplied closure. |
 | High | Inferred input contracts | Ansatz currently maps Malli `:int` to Nat and optional record fields to mandatory kernel fields. Samples containing negative integers or missing fields do not establish a faithful carrier; restrict or normalize the induction boundary and guard future inputs. |
 | High | SIMD fallback | Every double-array monoid computes addition, even a max/custom spec. Honor its combine and identity or decline unsupported specs. Machine-long addition also differs from unbounded Int addition. |
 | High | Stratum offload | Integral values and keys can narrow to long; Float sums can reassociate without permission. Require representation and numerical contracts before offloading. |
-| Medium | Graph replacement | `carry-output!` copies only the running output. It does not transfer downstream subscriptions or input routing; narrow its documented contract until graph replacement is implemented. |
-| Medium | Adaptive benchmark pricing | `adaptive-groupby` guards every invocation but divides the measured guard cost by `:amortize` when choosing. Charge the actual per-call guard cost until a validated immutable relation supports caching. |
+| Medium | Graph replacement | `carry-output!` copies only the running output. It does not transfer downstream subscriptions or input routing; The follow-up narrows its documented contract; graph replacement remains unimplemented. |
+| Medium | Adaptive benchmark pricing | `adaptive-groupby` guards every invocation but divides the measured guard cost by `:amortize` when choosing. Fixed in the JIT follow-up: charge the actual per-call guard cost. Caching still requires a validated immutable relation. |
 | Medium | Compiler artifacts | Generic Raster compilation interns fresh vars without a cache or cleanup. Repeated replanning needs session-owned bounded artifacts. |
 | Medium | Fork ownership | The Spindel adapter captures an ordinary operator atom outside context state. A context fork does not establish independent operator storage; test isolation before speculative trials. |
 
-The JIT state/replay/pricing items are a focused follow-up to the upgrade. The
+The JIT state/replay/pricing items are addressed in a focused follow-up to the upgrade. The
 optional SIMD/Stratum contracts and inference admission need their own changes;
 they are existing defects, and the base suite's skipped adapters do not validate them.
 
@@ -217,8 +217,8 @@ integrate every project or claim verification of the surrounding agent system.
 
 | Check | Result |
 |---|---|
-| Published Ansatz 0.2.115, full Init required, final full suite | 429 tests, 1945 assertions; zero failures/errors. |
-| Local Ansatz HEAD, full Init required | 429 tests, 1945 assertions; zero failures/errors. |
+| Published Ansatz 0.2.115, full Init required, including JIT follow-up | 435 tests, 1964 assertions; zero failures/errors. |
+| Local Ansatz HEAD, full Init required, upgrade branch | 429 tests, 1945 assertions; zero failures/errors. |
 | Current sibling Raster | 3 tests, 13 assertions; zero failures/errors. |
 | Current sibling Spindel adapter | 1 test, 9 assertions; zero failures/errors. |
 | LogicNG WMC backend | 3 tests, 12 assertions; zero failures/errors. |
