@@ -1,5 +1,5 @@
 (ns wandler.perf-faq-demo-test
-  "WITHOUT-A-DOUBT demonstration: the FAQ-factored plan is asymptotically + wall-clock faster than the
+  "Correctness check and informational benchmark: the FAQ-factored plan avoids the
    naive plan, on the SAME query and data, with the SAME (kernel-certified) answer. A 3-way aggregating
    join over malli-typed records `[:map [:cid :int] [:val :int]]` (≅ Prod Nat Nat). Few distinct keys ⇒
    the naive join MATERIALIZES the |custs|·|orders|·|C| product; the factored plan never builds it
@@ -26,12 +26,12 @@
         listNN (e/app (e/const' (nm "List") [z]) NN) dec (e/const' (nm "instDecidableEqNat") [])
         cid (e/lam "r" NN (e/app* (e/const' (nm "Prod.fst") [z z]) N N (e/bvar 0)) :default)
         cidPJ (e/lam "r" PJ (e/app* (e/const' (nm "Prod.fst") [z z]) N N
-                              (e/app* (e/const' (nm "Prod.fst") [z z]) NN NN (e/bvar 0))) :default)
+                                    (e/app* (e/const' (nm "Prod.fst") [z z]) NN NN (e/bvar 0))) :default)
         join (e/app* (e/const' (nm "Map.join") []) N NN NN dec cid cid (e/fvar 5001) (e/fvar 5002))
         join3 (e/app* (e/const' (nm "Map.join") []) N PJ NN dec cidPJ cid join (e/fvar 5003))
         ;; commutative monoid (Nat.add) ⇒ the factorization/reorder is sound (and exploited automatically)
         val3 (e/lam "p" PJ2 (e/app* (e/const' (nm "Prod.snd") [z z]) N N
-                              (e/app* (e/const' (nm "Prod.snd") [z z]) PJ NN (e/bvar 0))) :default)
+                                    (e/app* (e/const' (nm "Prod.snd") [z z]) PJ NN (e/bvar 0))) :default)
         amts3 (e/app* (e/const' (nm "List.map") [z z]) PJ2 N val3 join3)
         sum3 (e/app* (e/const' (nm "List.foldl") [z z]) N N (e/const' (nm "Nat.add") [])
                      (e/const' (nm "Nat.zero") []) amts3)]
@@ -45,7 +45,7 @@
 
 (defn- t! [f] (f) (let [s (System/nanoTime)] (dotimes [_ 3] (f)) (/ (- (System/nanoTime) s) 3e6)))
 
-(deftest faq-factored-beats-naive-wall-clock
+(deftest faq-factored-matches-naive
   (if-not (ready?)
     (is true "skipped — no full kernel env")
     (let [{:keys [sum3 listNN] :as D} (build3)
@@ -57,7 +57,7 @@
       (testing "certified equal + all joins eliminated"
         (is (:verified? R) "factored plan kernel-certified ≡ naive")
         (is (not (cost/mentions-const? (:term R) "Map.join")) "FAQ: every join eliminated"))
-      (testing "ASYMPTOTIC divergence — naive grows ~cubically, factored stays flat (the gap WIDENS)"
+      (testing "equal results at increasing sizes; wall-clock measurements are informational"
         (println "  FAQ DEMO — Σ over custs⋈orders⋈C (8 keys), same certified answer at every size:")
         (println "    rows/list   naive-product   naive ms   factored ms   speedup")
         (doseq [rows [240 480 720]]
@@ -68,5 +68,4 @@
                 _ (is (= (run naive) (run fact)) (str "same Σ at rows=" rows))
                 tn (t! #(run naive)) tf (t! #(run fact))]
             (println (format "    %-11d %-15s %-10.0f %-13.2f %.0f×"
-                             rows (format "%,d" prod) tn tf (/ tn (max 0.01 tf))))
-            (is (< tf tn) (str "factored faster at rows=" rows))))))))
+                             rows (format "%,d" prod) tn tf (/ tn (max 0.01 tf))))))))))

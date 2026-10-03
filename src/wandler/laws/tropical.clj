@@ -18,6 +18,7 @@
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.level :as lvl]
             [ansatz.prelude.algebra :as alg]
+            [wandler.algebra :as algebra]
             [wandler.runtime :as rt]
             [wandler.laws.semiring :as sreg]))
 
@@ -106,7 +107,7 @@
            motB (motlam 14 (eqE (plusE (finE xf) (minE bv cc)) (minE (plusE (finE xf) bv) (plusE (finE xf) cc))))
            motC (motlam 15 (eqE (plusE (finE xf) (minE (finE yf) cv)) (minE (plusE (finE xf) (finE yf)) (plusE (finE xf) cv))))
            finC (finlam 13 (liftFin (natAdd xf (natMin yf zf)) (natMin (natAdd xf yf) (natAdd xf zf))
-                                     (e/app* (c "Nat.add_min_distrib") xf yf zf)))
+                                    (e/app* (c "Nat.add_min_distrib") xf yf zf)))
            finB (finlam 12 (caE motC cc (reflE (plusE (finE xf) (finE yf))) finC))
            finA (finlam 11 (caE motB b (reflE (plusE (finE xf) cc)) finB))
            body (caE motA a (reflE infE) finA)]
@@ -139,11 +140,10 @@
   ;; 4. the bundled ℕ∞ WAddMonoid/WSemiring instance, kernel-verified from the six admitted laws — the
   ;; optimizer emits it BY NAME (`instWSemiring_ENat`). ENat is wandler-defined, so its axiom row lives
   ;; here (not in ansatz.prelude.algebra, which only knows Init carriers).
-  (when-not (has? "instWSemiring_ENat")
-    (alg/install-instance! "ENat"
-                           {:add "ENat.min" :zero "ENat.inf" :mul "ENat.plus"
-                            :add_assoc "ENat.min_assoc" :zero_add "ENat.inf_min" :add_zero "ENat.min_inf"
-                            :mul_add "ENat.plus_min_distrib" :mul_zero "ENat.plus_inf" :zero_mul "ENat.inf_plus"}))
+  (algebra/install-semiring-instance! "ENat"
+                                      {:add "ENat.min" :zero "ENat.inf" :mul "ENat.plus"
+                                       :add_assoc "ENat.min_assoc" :zero_add "ENat.inf_min" :add_zero "ENat.min_inf"
+                                       :mul_add "ENat.plus_min_distrib" :mul_zero "ENat.plus_inf" :zero_mul "ENat.inf_plus"})
   ;; 5. register the ℕ∞ native-op recognition row {:add :mul :zero} so the optimizer routes ℕ∞ folds here.
   (sreg/register! "ENat" {:add "ENat.min" :mul "ENat.plus" :zero "ENat.inf"})
   ;; 6. runtime lowerings (Lean's @[implemented_by]) for the match-defined ops, so a factored ℕ∞ plan can

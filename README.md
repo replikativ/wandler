@@ -26,9 +26,22 @@ version.
 
 ## Quickstart
 
+Wandler's complete law set needs full Lean Init. Import an Init NDJSON export
+once into a fresh directory using the current Ansatz store format:
+
+```sh
+clj -J-Xmx8g -M -m ansatz.import .wandler/stores/init path/to/init.ndjson init
+```
+
+The export used by the test suite is available as `init.ndjson.gz` on the
+[Ansatz 0.2.68 release](https://github.com/replikativ/ansatz/releases/tag/0.2.68).
+Decompress it before importing. The published store index currently offers Mathlib;
+it does not offer a standalone `init` download. Zero-argument `(a/init!)` loads
+bundled medium Init, which does not contain Wandler's complete law prerequisites.
+
 ```clojure
 (require '[ansatz.core :as a] '[wandler.core :as w] '[malli.core :as m])
-(a/init! "test-data/init-store" "init")  ; the Lean Init env (lazy PSS store, ~40ms)
+(a/init! ".wandler/stores/init" "init") ; full Init, imported in current format
 (w/install!)            ; batch + relational surface
 (w/install-streaming!)  ; the incremental / async / Strm modes
 (w/install-laws!)       ; the proven FAQ optimization-law DAG
@@ -99,7 +112,7 @@ rewrite that doesn't preserve meaning is dropped, never shipped.
 | level | meaning | enforced by |
 |---|---|---|
 | **L0** | kernel-certified — an algebraic law proven as a CIC term | the kernel's `check-constant` (the path that admits Mathlib) |
-| **L1** | sound by construction — codegen of a proven-equal term | the `define-verified` invariant |
+| **L1** | trusted lowering of a proven-equal term | runtime/codegen implementation and differential tests |
 | **L2** | trusted oracle — numeric/external, *not* a CIC proof | measured selectivity, WMC counts, floating-point weights, external engine planners, the async clock |
 
 L0 highlights: pipeline fusion (`map∘filter → filterMap`, fold fusion); relational
@@ -108,9 +121,10 @@ factorization (the **FAQ frame rule**, **semiring-generic** — one proof certif
 counting (`Nat`), boolean provenance (`Bool`, ∨/∧), and tropical shortest-path
 (`ℕ∞`, min/+)); the DBSP increment laws (bilinear join, linear filter, sum
 homomorphism) and Z-set group laws; the parallel-fold licence (the associativity proof
-*is* the fork-join soundness certificate). An L2 input can make wandler *slower* or feed
-it *wrong data*; it can never make a verified pipeline compute a different function than
-the code you wrote. Measured impact: [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) (FAQ
+*is* the fork-join soundness certificate). An inaccurate cost estimate can select a
+slower certified plan. Correct execution also
+depends on the lowering, foreign-engine contracts, and runtime guards; the rewrite proof
+does not independently verify those implementations. Measured impact: [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) (FAQ
 factorization: 4× → 22× and widening, same certified answer).
 
 ## Documentation
@@ -148,14 +162,21 @@ optimization, never a miscompile. The **FAQ frame rule is semiring-generic** (co
 boolean / tropical carriers ship), `mode/execute` picks the lowering from the source type
 (batch fuse · pull-incremental · async push), and the surface vocabulary is data.
 
-Suite: **418 tests / 1897 assertions**, green — *with the full Init store mounted* (see
-Tests). The proven law DAG is cached per process, so the suite runs in ~3.5 min.
+Wandler pins Ansatz **0.2.115**. `:local-ansatz` exercises the sibling checkout.
+Ansatz now uses a versioned CBOR store: older stores need re-importing; there is no
+in-place migration. The full integration suite needs the full Init export (see Tests).
+Validation: **429 tests / 1945 assertions**, zero failures/errors against the
+published dependency; the sibling Ansatz checkout also passes the full suite.
 
 ## Tests
 
 ```
-clj -M:test                 # needs the full Init store at test-data/init-store
+clj -M:test                 # full Init store or NDJSON fixture under test-data
 clj -M:test:logicng         # + the LogicNG WMC path
+WANDLER_REQUIRE_STORE=1 clj -M:test  # fail if full Init is unavailable
+clj -M:local-ansatz:test    # compatibility with ../ansatz HEAD
+clj -M:local-raster:test -n wandler.raster-test  # current optional numerical adapter
+clj -J-Xmx8g -M bin/smoke-init.clj .wandler/stores/init init  # public bootstrap
 ```
 
 ## License

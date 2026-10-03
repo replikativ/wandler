@@ -4,25 +4,55 @@
    raster's unboxed SIMD kernel, correct AND faster than boxed Clojure reduce. The base wandler suite
    (clj -M:test) never requires this — raster stays fully optional."
   (:require [clojure.test :refer [deftest is]]
+            [clojure.java.io :as io]
             [ansatz.kernel.env :as env]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.name :as name]))
 
 (defn- nm [s] (name/from-string s))
-(defn- raster? [] (try (require 'wandler.backend.raster) true (catch Throwable _ false)))
+(defn- float-init [n]
+  (e/app (e/const' (nm "Float.ofNat") []) (e/lit-nat n)))
+
+(defn- approximate-raster-form [& args]
+  (with-bindings {(requiring-resolve 'wandler.backend.raster/*allow-float-reassociation*) true}
+    (apply (requiring-resolve 'wandler.backend.raster/raster-array-form) args)))
+
+(defn- raster? []
+  (when (io/resource "raster/core.clj")
+    ;; An installed but broken adapter must fail, rather than look like an absent dep.
+    (require 'wandler.backend.raster)
+    true))
+
+(deftest raster-respects-numerical-contract-and-fold-shape
+  (when (raster?)
+    (let [raf (requiring-resolve 'wandler.backend.raster/raster-array-form)
+          ft (e/const' (nm "Float") [])
+          add (e/const' (nm "Float.add") [])
+          src {:op :source :term (e/bvar 0)}
+          sum {:op :foldl :fn add :init (float-init 0) :input src}
+          misleading (e/lam "acc" ft
+                            (e/lam "x" ft
+                                   (e/app* add (e/bvar 0) (e/bvar 0)) :default)
+                            :default)]
+      (is (nil? (raf (env/empty-env) sum ["xs"])) "exact execution declines reassociation")
+      (is (some? (approximate-raster-form (env/empty-env) sum ["xs"])))
+      (is (nil? (approximate-raster-form (env/empty-env) (assoc sum :init (float-init 10)) ["xs"]))
+          "a nonzero seed must not be discarded")
+      (is (nil? (approximate-raster-form (env/empty-env) (assoc sum :fn misleading) ["xs"]))
+          "mentioning addition does not make a fold a sum"))))
 
 (deftest raster-array-backend-numeric
   (if-not (raster?)
     (do (println "SKIP raster-test: raster not on classpath (run with -M:raster:test)") (is true))
-    (let [raf (requiring-resolve 'wandler.backend.raster/raster-array-form)
+    (let [raf approximate-raster-form
           floatT (e/const' (nm "Float") [])
           fadd   (e/const' (nm "Float.add") [])
           fmul   (e/const' (nm "Float.mul") [])
           sq     (e/lam "x" floatT (e/app* fmul (e/bvar 0) (e/bvar 0)) :default)  ; λx. x*x
           src    {:op :source :term (e/bvar 0)}                                    ; the input list
-          sum    {:op :foldl :fn fadd :init nil :input src}                        ; Σ xs
-          sumsq  {:op :foldl :fn fadd :init nil :input {:op :map :fn sq :input src}} ; Σ x²
-          mk     (fn [plan] (when-let [form (raf nil plan ["xs"])] (eval (list 'clojure.core/fn '[xs] form))))
+          sum    {:op :foldl :fn fadd :init (float-init 0) :input src}                        ; Σ xs
+          sumsq  {:op :foldl :fn fadd :init (float-init 0) :input {:op :map :fn sq :input src}} ; Σ x²
+          mk     (fn [plan] (when-let [form (raf (env/empty-env) plan ["xs"])] (eval (list 'clojure.core/fn '[xs] form))))
           fsum   (mk sum)
           fsq    (mk sumsq)
           data   (mapv double (range 1 11))]   ; 1.0 .. 10.0
@@ -32,7 +62,7 @@
       (is (== 55.0  (fsum data)) "Σ 1..10 = 55 (raster.par/sum)")
       (is (== 385.0 (fsq data))  "Σ k² 1..10 = 385 (raster.par/dot-product)")
       ;; an UNrecognized shape declines (→ eager fallback): a foldl with a non-add step
-      (is (nil? (raf nil {:op :foldl :fn fmul :init nil :input src} ["xs"])) "non-add fold declines")
+      (is (nil? (raf (env/empty-env) {:op :foldl :fn fmul :init (float-init 0) :input src} ["xs"])) "non-add fold declines")
       ;; value demo. The chunked-array model keeps data in unboxed arrays — so the FAIR comparison is
       ;; raster's SIMD kernel vs a Clojure scalar loop over the SAME double[] (the genuine win). The
       ;; List→double[] conversion my backend emits is the one-time boundary cost (amortized for
@@ -61,7 +91,7 @@
    verified per-element kernel lowered to a fused SIMD/parallel loop, correct AND ~4× over single-thread."
   (if-not (raster?)
     (do (println "SKIP raster-general-deftm: raster not on classpath (run with -M:raster:test)") (is true))
-    (let [raf   (requiring-resolve 'wandler.backend.raster/raster-array-form)
+    (let [raf   approximate-raster-form
           floatT (e/const' (nm "Float") [])
           fmul   (e/const' (nm "Float.mul") [])
           fadd   (e/const' (nm "Float.add") [])
@@ -69,7 +99,7 @@
           pow    (fn [n] (reduce (fn [acc _] (e/app* fmul (e/bvar 0) acc)) (e/bvar 0) (range (dec n))))
           k16    (e/lam "x" floatT (pow 16) :default)                       ; λx. x^16  (15 muls)
           src    {:op :source :term (e/bvar 0)}
-          sum16  {:op :foldl :fn fadd :init nil :input {:op :map :fn k16 :input src}}  ; Σ x^16
+          sum16  {:op :foldl :fn fadd :init (float-init 0) :input {:op :map :fn k16 :input src}}  ; Σ x^16
           env    (env/empty-env)
           form   (raf env sum16 ["xs"])]
       (is (some? form) "raster recognizes Σ x^16 → general deftm kernel")

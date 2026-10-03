@@ -16,7 +16,16 @@
 
    See docs/REPO_HARDENING_PLAN.md Phase 2."
   (:require [clojure.test :refer [deftest is]]
+            [ansatz.kernel.env :as env]
             [wandler.test-env :as test-env]))
+
+(deftest fixtures-carry-environment-local-instance-registries
+  (doseq [ke [@test-env/init-full-env @test-env/init-medium-env]
+          :when ke]
+    (let [registry (env/get-extension ke :instances nil)]
+      (is (seq registry) "elaboration must reuse this fixture's own instance registry")
+      (is (every? #(env/lookup ke (:name %)) (mapcat val registry))
+          "bundled instances must be intersected with the actual fixture"))))
 
 (deftest store-present-when-required
   (let [require? (= "1" (System/getenv "WANDLER_REQUIRE_STORE"))

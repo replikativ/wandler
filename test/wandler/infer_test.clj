@@ -76,3 +76,28 @@
       (is (nil? (:fields p)))
       (is (= 5 (:n p)))
       (is (= [] (infer/key-candidates p))))))
+
+(deftest refined-schema-preserves-the-sample-carrier
+  (doseq [rows [[{:x 1.25} {:x 2.5}] [{:x 1} {:x 2.5}]
+                [{:x "text"} {:x nil}] [{:x "text"} {:x 42}]]]
+    (let [schema (:refined-schema (infer/infer rows))]
+      (is (every? #(m/validate schema %) rows)
+          (str "inferred numeric bounds must preserve the sample's type: " schema)))))
+
+(deftest refined-schema-preserves-optional-fields
+  (doseq [rows [[{:x 1} {}] [{:x 1} {:y 2}]
+                [{:x "text"} {}]]]
+    (let [schema (:refined-schema (infer/infer rows))]
+      (is (every? #(m/validate schema %) rows)
+          "missing fields retain the provider's optional entry properties")
+      (is (= {:optional true} (second (second schema)))))))
+
+(deftest nonfinite-values-remain-structural
+  (doseq [value [Double/NaN Double/POSITIVE_INFINITY Double/NEGATIVE_INFINITY
+                 Float/NaN Float/POSITIVE_INFINITY Float/NEGATIVE_INFINITY]]
+    (let [rows [{:x value} {:x 1.0}]
+          inferred (infer/infer rows)]
+      (is (nil? (get-in inferred [:fields :x :range-prior]))
+          "nonfinite values cannot establish ordered numeric bounds")
+      (is (every? #(m/validate (:refined-schema inferred) %) rows)
+          "structural inference must retain all nonfinite sample values"))))

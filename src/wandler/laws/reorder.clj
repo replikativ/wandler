@@ -18,9 +18,9 @@
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.level :as lvl]
             [ansatz.prelude.algebra :as alg]
+            [wandler.algebra :as algebra]
             [wandler.laws.bucket :as bucket]))
 
-(defn- has? [s] (some? (env/lookup (a/env) (nm/from-string s))))
 (def ^:private L1 (lvl/succ lvl/zero))
 (defn- kc [s] (e/const' (nm/from-string s) []))
 
@@ -31,26 +31,26 @@
   (bucket/install!)
 
   ;; Nat WAddMonoid / WSemiring instances — kernel-verified from Init lemmas (ansatz.prelude.algebra).
-  (when-not (has? "instWAddMonoid_Nat")
-    (alg/install-instance! "Nat" alg/nat-row))
+  (algebra/install-semiring-instance! "Nat" alg/nat-row)
 
   ;; Std.Commutative Nat (+): the commutativity instance the aggregate Fubini reorder needs. The op is
   ;; `WAddMonoid.add Nat instWAddMonoid_Nat` (≡ Nat.add); `Nat.add_comm` discharges it by def-eq.
   (a/install-guarded! "instCommNatAdd"
-    (swap! a/ansatz-env env/check-constant
-           (env/mk-def (nm/from-string "instCommNatAdd") []
-                       (e/app* (e/const' (nm/from-string "Std.Commutative") [L1]) (kc "Nat")
-                               (e/app* (kc "WAddMonoid.add") (kc "Nat") (kc "instWAddMonoid_Nat")))
-                       (e/app* (e/const' (nm/from-string "Std.Commutative.mk") [L1]) (kc "Nat")
-                               (e/app* (kc "WAddMonoid.add") (kc "Nat") (kc "instWAddMonoid_Nat"))
-                               (kc "Nat.add_comm")))))
+                      (swap! a/ansatz-env env/check-constant
+                             (env/mk-def (nm/from-string "instCommNatAdd") []
+                                         (e/app* (e/const' (nm/from-string "Std.Commutative") [L1]) (kc "Nat")
+                                                 (e/app* (kc "WAddMonoid.add") (kc "Nat") (kc "instWAddMonoid_Nat")))
+                                         (e/app* (e/const' (nm/from-string "Std.Commutative.mk") [L1]) (kc "Nat")
+                                                 (e/app* (kc "WAddMonoid.add") (kc "Nat") (kc "instWAddMonoid_Nat"))
+                                                 (kc "Nat.add_comm")))))
+  (algebra/register-instance! "instCommNatAdd")
 
   ;; length l = wsum ℕ⁺ (map (λ_.1) l) — count expressed as the additive aggregate of ones. The bridge
   ;; that lets the materialized `List.length` ride the aggregate reorder. (Unfold instWAddMonoid_Nat so
   ;; the `WAddMonoid.add` projection reduces to `Nat.add` for `omega`.)
   (a/deftheorem List.length_eq_wsum_one [T :- Type, l :- (List T)]
     (= Nat (List.length T l)
-           (wsum (List.map (fn [_ :- T] (Nat.succ Nat.zero)) l)))
+       (wsum (List.map (fn [_ :- T] (Nat.succ Nat.zero)) l)))
     (induction l)
     (all_goals (simp_all [List.length_nil List.length_cons List.map_nil List.map_cons
                           wsum.eq_1 wsum.eq_2 instWAddMonoid_Nat WAddMonoid.add WAddMonoid.zero]))
@@ -62,9 +62,9 @@
     [K :- Type, X :- Type, Y :- Type, dec :- (DecidableEq K),
      kf :- (=> X K), lf :- (=> Y K), xs :- (List X), ys :- (List Y)]
     (= Nat (List.length (Prod X Y) (Map.join K X Y dec kf lf xs ys))
-           (List.length (Prod Y X) (Map.join K Y X dec lf kf ys xs)))
+       (List.length (Prod Y X) (Map.join K Y X dec lf kf ys xs)))
     (rw [(List.length_eq_wsum_one (Prod X Y) (Map.join K X Y dec kf lf xs ys))])
     (rw [(List.length_eq_wsum_one (Prod Y X) (Map.join K Y X dec lf kf ys xs))])
     (exact (Map_aggJoin_reorder K X Y Nat dec instWAddMonoid_Nat instCommNatAdd kf lf
-             (fn [x :- X] (fn [y :- Y] (Nat.succ Nat.zero))) xs ys)))
+                                (fn [x :- X] (fn [y :- Y] (Nat.succ Nat.zero))) xs ys)))
   :installed)

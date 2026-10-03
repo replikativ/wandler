@@ -100,8 +100,13 @@
   "Register a COST-BASED execution backend: {:name kw, :lower (fn [env plan names] → clj-form | nil
    if the shape isn't handled), :cost (fn [plan eager-cost] → number, the engine's estimated cost for
    this plan; `eager-cost` is the Clojure realization's cost, so a backend can advertise relative, e.g.
-   a SIMD ≈ eager/4)}. The cost-aware successor to register-array-backend!. Returns the backend count."
-  [backend] (count (swap! cost-backends conj backend)))
+   a SIMD ≈ eager/4)}. Costs must be defined even for unsupported shapes; :lower declines those.
+   Replaces an existing entry with the same :name, preserving other backends. Returns the count."
+  [backend]
+  (count (swap! cost-backends
+                (fn [backends]
+                  (conj (into [] (remove #(= (:name %) (:name backend))) backends)
+                        backend)))))
 
 (defn clear-cost-backends! [] (reset! cost-backends []) nil)
 (defn cost-backends* [] @cost-backends)
@@ -110,16 +115,21 @@
   "Cost-based physical push-down. Among registered cost-backends whose `:lower` RECOGNIZES `plan`
    (returns non-nil), pick the cheapest by `:cost`; return it iff strictly cheaper than `eager-cost`
    (the Clojure realization's pipeline-cost, computed by the caller from the plan's kernel term).
-   Returns {:backend :form :cost} or nil → eager fallback. The plan is the CERTIFIED kernel term;
-   whichever backend wins, the result is result-equal — this is a pure performance decision, so an
-   engine's clever lowering can be added freely (worst case: not chosen, never wrong)."
+   Estimates costs before lowering; lowers affordable candidates in cost order until one recognizes
+   the shape. Returns {:backend :form :cost} or nil → eager fallback. A certified term rewrite does
+   not verify backend code: each lowering must honor its execution and numerical contract."
   [env plan names eager-cost]
-  (let [cands (keep (fn [b] (when-let [form ((:lower b) env plan names)]
-                              {:backend (:name b) :form form :cost (double ((:cost b) plan eager-cost))}))
-                    @cost-backends)]
-    (when (seq cands)
-      (let [best (apply min-key :cost cands)]
-        (when (< (:cost best) (double eager-cost)) best)))))
+  (let [cands (->> @cost-backends
+                   (map (fn [b] (assoc b :estimated-cost
+                                       (double ((:cost b) plan eager-cost)))))
+                   (filter #(< (:estimated-cost %) (double eager-cost)))
+                   (sort-by :estimated-cost))]
+    ;; Lowering may compile a native kernel. Do it only for affordable candidates,
+    ;; in cost order, and stop as soon as a backend recognizes the plan.
+    (some (fn [b]
+            (when-let [form ((:lower b) env plan names)]
+              {:backend (:name b) :form form :cost (:estimated-cost b)}))
+          cands)))
 
 (defn physical-route
   "Choose a physical backend tag for a batch `plan`. Default :eager (unchanged current behavior).

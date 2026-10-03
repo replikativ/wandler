@@ -30,7 +30,23 @@
   (:require [clojure.java.io :as io]
             [ansatz.export.parser :as parser]
             [ansatz.export.replay :as replay]
-            [ansatz.export.storage :as storage]))
+            [ansatz.export.storage :as storage]
+            [ansatz.kernel.env :as env]
+            [ansatz.kernel.name :as name]
+            [ansatz.tactic.instance :as instance]))
+
+(defn- with-instance-registry
+  "Mirror Ansatz's bootstrap without changing global proof state or loading simp attrs.
+   An unprepared replay env otherwise rebuilds the full discovery index at every
+   instance synthesis. The bundled Lean registry is intersected with this fixture."
+  [ke]
+  (when ke
+    (if (seq (env/get-extension ke :instances nil))
+      ke
+      (let [bundled (instance/load-bundled-instances
+                     {:present? #(some? (env/lookup ke (name/from-string %)))})]
+        (env/with-extension ke :instances
+          (if (seq bundled) bundled (instance/build-instance-index ke)))))))
 
 (defn- store-env [store-dir branch]
   (when (and store-dir (.exists (java.io.File. ^String store-dir)))
@@ -86,17 +102,19 @@
 (def init-full-env
   "Full Lean `Init` library. Resolution: test-data store -> test-data ndjson -> cache
    store -> (opt-in) on-demand fetch. nil if none resolve."
-  (delay (or (store-env "test-data/init-store" "init")
-             (ndjson-env "test-data/init.ndjson")
-             (cached-store-env)
-             (when (= "1" (System/getenv "WANDLER_FETCH_INIT"))
-               (fetch-and-build-store!)))))
+  (delay (with-instance-registry
+           (or (store-env "test-data/init-store" "init")
+               (ndjson-env "test-data/init.ndjson")
+               (cached-store-env)
+               (when (= "1" (System/getenv "WANDLER_FETCH_INIT"))
+                 (fetch-and-build-store!))))))
 
 (def init-medium-env
   "Medium Init slice (2997 declarations) for fast Nat/monoid tests. Resolves from a local
    test-data medium store/ndjson; in CI (no local test-data) falls back to the FULL Init —
    a superset carrying the same Nat/monoid laws, which `init-full-env` fetches on demand —
    so medium-tier tests are exercised in CI instead of erroring on a missing fixture."
-  (delay (or (store-env "test-data/init-medium-store" "init")
-             (ndjson-env "test-data/init-medium.ndjson")
-             @init-full-env)))
+  (delay (with-instance-registry
+           (or (store-env "test-data/init-medium-store" "init")
+               (ndjson-env "test-data/init-medium.ndjson")
+               @init-full-env))))

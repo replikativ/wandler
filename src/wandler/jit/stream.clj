@@ -77,7 +77,7 @@
         plan    (atom term)]
     (doseq [[idx w] (map-indexed vector windows)]
       (swap! results conj ((:call cell) w))
-      (swap! sample into w)
+      (when (< idx warmup) (swap! sample into w))
       (when (= idx (dec (long warmup)))                 ; TRIGGER: re-plan once warmup evidence is in
         (let [params (cparams env term (cond-> {:sample @sample :source-id source-id}
                                          key-of (assoc :key-of key-of)
