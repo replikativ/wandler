@@ -15,7 +15,7 @@
    2. `test-data/init.ndjson` replayed in TRUST mode (`:verify? false`) — tests use
       Init, they don't validate the export, so admit without re-typechecking.
 
-   3. A previously-fetched cache store under `$XDG_CACHE_HOME/wandler/init-store`
+   3. A previously-fetched cache store under `$XDG_CACHE_HOME/wandler/init-store-f<format>`
       (see #4) — reused with no re-download.
 
    4. ON-DEMAND FETCH (opt-in, `WANDLER_FETCH_INIT=1`): download `init.ndjson` from a
@@ -26,14 +26,15 @@
 
    The full store is gitignored (large). `WANDLER_REQUIRE_STORE=1` turns a missing
    store into a hard failure (see `wandler.store-gate-test`). nil if nothing resolves,
-   so integration tests skip. See docs/REPO_HARDENING_PLAN.md Phase 2."
+   so integration tests skip."
   (:require [clojure.java.io :as io]
             [ansatz.export.parser :as parser]
             [ansatz.export.replay :as replay]
             [ansatz.export.storage :as storage]
             [ansatz.kernel.env :as env]
             [ansatz.kernel.name :as name]
-            [ansatz.tactic.instance :as instance]))
+            [ansatz.tactic.instance :as instance]
+            [ansatz.store :as store]))
 
 (defn- with-instance-registry
   "Mirror Ansatz's bootstrap without changing global proof state or loading simp attrs.
@@ -59,9 +60,10 @@
 
 ;; ── on-demand fetch + local PSS cache (#3/#4 above) ──────────────────────────────
 (def ^:private cache-store-dir
+  ;; Never reopen/re-import a pre-CBOR cache under the current decoder.
   (str (or (System/getenv "XDG_CACHE_HOME")
            (str (System/getProperty "user.home") "/.cache"))
-       "/wandler/init-store"))
+       "/wandler/init-store-f" store/store-format))
 
 (def ^:private init-ndjson-url
   ;; The Init export attached to an ansatz GitHub release. Override for a mirror/test.

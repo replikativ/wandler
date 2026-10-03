@@ -35,7 +35,8 @@ Import full Init with `ansatz.import` into a fresh current-format store and use
 currently contains only Mathlib: `(a/init! "init")` cannot fetch standalone Init
 on a fresh machine. Old store paths require re-importing; Ansatz has no migration. Wandler's test
 resolver still accepts an NDJSON fixture and builds a low-level test cache from
-the older pinned Init export. That fixture path does not exercise the complete
+the older pinned Init export. Its fetched cache path includes the store format, so a pre-CBOR cache is not
+reopened or overwritten by the new decoder. That fixture path does not exercise the complete
 current store importer, manifest, attributes, or instance-index lifecycle.
 `bin/smoke-init.clj` checks public explicit-store initialization separately from
 fixture-based integration tests. A fresh format-1 Init import and this smoke
@@ -223,6 +224,7 @@ integrate every project or claim verification of the surrounding agent system.
 | LogicNG WMC backend | 3 tests, 12 assertions; zero failures/errors. |
 | Carrier-registry and cache restoration regression | 1 test, 5 assertions; zero failures/errors. |
 | Public store lifecycle | Fresh format-1 Init import via `ansatz.import`, then public `a/init!`, complete law installation, and quickstart pipeline passed. |
+| Fixture cache | Current-format cache import and reuse passed using a local full Init export; cache directory includes the format version. |
 | Package | `clojure -T:build jar` succeeds. |
 | Formatting and links | Touched Clojure files checked with cljfmt; changed Markdown links resolve locally. |
 
