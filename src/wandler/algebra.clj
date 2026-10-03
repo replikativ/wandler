@@ -21,8 +21,27 @@
   (:require [ansatz.core :as a]
             [ansatz.kernel.env :as kenv]
             [ansatz.kernel.expr :as e]
-            [ansatz.kernel.name :as name])
+            [ansatz.kernel.name :as name]
+            [ansatz.prelude.algebra :as prelude]
+            [ansatz.tactic.instance :as instance])
   (:import [ansatz.kernel TypeChecker]))
+
+(defn register-instance!
+  "Register an already-admitted constant in this environment's instance table.
+   Ansatz now follows Lean's registry; naming a definition inst* is not registration."
+  [iname]
+  (swap! a/ansatz-env instance/add-instance (name/from-string iname))
+  iname)
+
+(defn install-semiring-instance!
+  "Kernel-admit a prelude carrier and register its additive/semiring instances.
+   Also registers existing instances restored from a checked law cache."
+  [carrier row]
+  (let [result (prelude/install-instance! carrier row)]
+    (when (= :verified (:status result))
+      (register-instance! (:addmonoid result))
+      (register-instance! (:semiring result)))
+    result))
 
 ;; ── statement builders (the Prop each typeclass field proves) ─────────────────────────────
 
@@ -94,7 +113,7 @@
       (let [inst (e/app* (e/const' (name/from-string mk) [u]) M op proof)
             ity  (e/app* (e/const' (name/from-string cls) [u]) M op)]
         (swap! a/ansatz-env kenv/check-constant (kenv/mk-def nm [] ity inst))))
-    iname))
+    (register-instance! iname)))
 
 ;; ── the registry ──────────────────────────────────────────────────────────────────────────
 
@@ -111,10 +130,10 @@
                  canonical `Std.*` instances (interop / future certified-rewrite seam)."}
   monoids
   (atom
-   {"Nat.add" {:clj '+ :id 0 :M "Nat" :assoc-pf "Nat.add_assoc" :comm-pf "Nat.add_comm" :left-id "Nat.zero_add" :right-id "Nat.add_zero"}
-    "Nat.mul" {:clj '* :id 1 :M "Nat" :assoc-pf "Nat.mul_assoc" :comm-pf "Nat.mul_comm" :left-id "Nat.one_mul"  :right-id "Nat.mul_one"}
-    "Int.add" {:clj '+ :id 0 :M "Int" :assoc-pf "Int.add_assoc" :comm-pf "Int.add_comm" :left-id "Int.zero_add" :right-id "Int.add_zero"}
-    "Int.mul" {:clj '* :id 1 :M "Int" :assoc-pf "Int.mul_assoc" :comm-pf "Int.mul_comm" :left-id "Int.one_mul"  :right-id "Int.mul_one"}}))
+   {"Nat.add" {:clj '+' :id 0 :M "Nat" :assoc-pf "Nat.add_assoc" :comm-pf "Nat.add_comm" :left-id "Nat.zero_add" :right-id "Nat.add_zero"}
+    "Nat.mul" {:clj '*' :id 1 :M "Nat" :assoc-pf "Nat.mul_assoc" :comm-pf "Nat.mul_comm" :left-id "Nat.one_mul"  :right-id "Nat.mul_one"}
+    "Int.add" {:clj '+' :id 0 :M "Int" :assoc-pf "Int.add_assoc" :comm-pf "Int.add_comm" :left-id "Int.zero_add" :right-id "Int.add_zero"}
+    "Int.mul" {:clj '*' :id 1 :M "Int" :assoc-pf "Int.mul_assoc" :comm-pf "Int.mul_comm" :left-id "Int.one_mul"  :right-id "Int.mul_one"}}))
 
 (defn register-monoid!
   "Merge an entry into the registry for `op-const-name` (idempotent). Needs at least :clj
@@ -311,6 +330,6 @@
   (when-let [spec (get @monoids op-name)]
     (when (and (= init-clj (:id spec))
                (associative? env op-name)
-               (every? #(some? (kenv/lookup env (name/from-string %)))
-                       (keep spec [:left-id :right-id])))
+               (every? #(and % (some? (kenv/lookup env (name/from-string %))))
+                       (map spec [:left-id :right-id])))
       (:clj spec))))

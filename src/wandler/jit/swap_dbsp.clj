@@ -70,11 +70,10 @@
 
 ;; ── A2: state-reducing node replacement — carry the output, drop the old derived integrator ────────
 (defn carry-output!
-  "State-REDUCING swap (Case A2): hand the OLD node's running view to a NEW node so the view is
-   continuous (downstream sees no glitch — δQ'=δQ by Q≡Q'), then the old derived integrator is dropped.
-   Re-subscribes the old node's downstream edges to the new node. SOUND ONLY when the new node needs ⊆
-   the old node's state (the target materializes no new intermediate — the elimination/fusion
-   direction). Returns `new`."
+  "Seed NEW's running output from OLD at a quiescent boundary. This helper only copies `:out`;
+   it does not transfer subscriptions, redirect inputs, or migrate other integrators. The caller
+   must perform graph rewiring and establish output equivalence and state compatibility. Intended
+   for state-reducing replacements whose target needs no additional derived state. Returns `new`."
   [old new]
   (reset! (:out new) @(:out old))                  ; carry the integrated output (the only shared state)
   new)

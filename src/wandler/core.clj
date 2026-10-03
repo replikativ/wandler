@@ -39,10 +39,10 @@
   (if-not *optimize*
     term
     (let [n (loop [t term, k 0] (if (e/lam? t) (recur (e/lam-body t) (inc k)) k))
-        res (try (copt/optimize-body env term n)
-                 (catch Throwable t
-                   {:term term :verified? false :changed? false
-                    :error (.getMessage t)}))]
+          res (try (copt/optimize-body env term n)
+                   (catch Throwable t
+                     {:term term :verified? false :changed? false
+                      :error (.getMessage t)}))]
       ;; keep the NAIVE term too, so the JIT (`optimize-measured`) can re-plan it from the fn NAME
       ;; with measured cardinalities (a cost-gated choice can differ from the static plan).
       (swap! reports assoc fn-name (assoc res :naive term))
@@ -58,13 +58,14 @@
    (before the Clojure var exists), so the fn VALUE has nothing to look up by."
   [fn-name]
   (when-let [r (get @reports (str fn-name))]
-    {:verified? (:verified? r)
-     :changed? (:changed? r)
-     :rewrites (vec (:rewrites r))
-     :stages-before (:stages-before r)
-     :stages-after (:stages-after r)
-     :passes-before (:passes-before r)
-     :passes-after (:passes-after r)}))
+    (cond-> {:verified? (:verified? r)
+             :changed? (:changed? r)
+             :rewrites (vec (:rewrites r))
+             :stages-before (:stages-before r)
+             :stages-after (:stages-after r)
+             :passes-before (:passes-before r)
+             :passes-after (:passes-after r)}
+      (:error r) (assoc :error (:error r)))))
 
 (defn term
   "The kernel term of a verified fn `fn-name` (so the whole API composes by NAME): the optimized

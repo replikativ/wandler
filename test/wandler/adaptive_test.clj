@@ -3,7 +3,7 @@
    sample, let the kernel PROVE the group-by-elimination rewrite sound under it, GUARD the key at the
    runtime boundary (fall back if violated), and BENCHMARK both plans to decide adoption. Asserts the
    loop is SOUND (always correct, guard-protected) and HONEST (selection follows the empirical cost,
-   amortizing the one-time guard over the query stream)."
+   charging the runtime guard on every query)."
   (:require [wandler.adaptive :as ad]
             [wandler.laws.groupby :as groupby]
             [wandler.test-env :as test-env]
@@ -53,19 +53,14 @@
               (testing "GUARD: a duplicate-key relation falls back to the original (still correct)"
                 ;; original group_by puts both 1s in one bucket → each row sees [1 1]
                 (is (= [[1 1] [1 1] [2]] ((:run r) (list 1 1 2)))))))
-          (testing "HONEST selection: one-shot keeps the full guard cost; high amortization adopts"
-            (let [one-shot (ad/adaptive-groupby ke Nat Nat kf inc make-plan sample :data big :amortize 1)
-                  repeated (ad/adaptive-groupby ke Nat Nat kf inc make-plan sample :data big :amortize 100000)]
-              ;; both are sound + certified regardless of the cost decision
-              (is (true? (:verified? one-shot)))
-              (is (true? (:verified? repeated)))
-              ;; the rewritten plan is genuinely cheaper per-query than the original
-              (is (< (:rewritten-ns (:bench repeated)) (:original-ns (:bench repeated)))
-                  "group-by elimination is faster per query")
-              ;; amortizing the one-time guard over many queries flips the decision to adopt
-              (is (= :rewritten (:strategy repeated))
-                  "a relation queried many times adopts the cheaper certified plan")
-              (is (= [[1] [2] [3]] ((:run repeated) (list 1 2 3))))))
+          (testing "HONEST selection charges the full per-invocation guard regardless of amortize"
+            (doseq [amortize [1 100000]]
+              (let [r (ad/adaptive-groupby ke Nat Nat kf inc make-plan sample :data big :amortize amortize)
+                    {:keys [original-ns rewritten-ns guard-ns]} (:bench r)]
+                (is (true? (:verified? r)))
+                (is (= (if (< (+ rewritten-ns guard-ns) original-ns) :rewritten :original)
+                       (:strategy r)))
+                (is (= [[1] [2] [3]] ((:run r) (list 1 2 3)))))))
           (testing "abduction FAILS on a non-unique sample → no speculation, run the original"
             (let [r (ad/adaptive-groupby ke Nat Nat kf even? make-plan [1 2 3] :data [1 2 3])]
               (is (false? (:abduced-unique? r)))

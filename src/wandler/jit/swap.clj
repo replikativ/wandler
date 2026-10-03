@@ -1,36 +1,16 @@
 (ns wandler.jit.swap
-  "The MODE-INDEXED hot-swap mechanism + the SUBSTRATE-AGNOSTIC adaptive policy — the spine of the
-   verified JIT (see docs/JIT.md, verified-stream-jit, modal-mode-lattice).
+  "Operator swap mechanisms and a guarded adaptive driver.
 
-   The recontextualization: a swap is the SAME operation in every substrate (batch / async-seq /
-   spindel / DBSP), because each reifies its per-step operator as a REPLACEABLE VALUE behind one
-   indirection, has a QUIESCENT BOUNDARY where no element is in flight, and holds state whose TYPE the
-   kernel proof preserves (so migration across a swap is IDENTITY, never reconstruction). We split that
-   into two layers:
-
-     • `PSwapNode` — the MECHANISM: a swappable operator cell, one impl per substrate (mode-indexed).
-       `AtomNode` (this ns) is the batch impl; `generator-node` is the async-seq (partial-cps
-       GeneratorSeq) impl; spindel (Spin.spin-fn cell + continuation invalidation) and DBSP (stage fn +
-       carried ∫) are follow-on impls behind the same protocol.
-
-     • `run-adaptive` — the POLICY: the mode-AGNOSTIC guarded-adaptive driver. It only speaks
-       `PSwapNode` + Mealy-step operators, so it works in every substrate unchanged. It mirrors
-       HotSpot's speculation-with-deopt, but our 'speculation' is a kernel-PROVED equivalence whose
-       HYPOTHESIS is checked by a runtime guard, and our 'deopt' is calling the other certified operator
-       (no frame/state reconstruction — same type). The one thing the proof does NOT give us is
-       anti-thrash, so we add HotSpot's trap-history: after `cutoff` guard violations, PIN to the
-       original permanently and stop guarding.
-
-   Operators are MEALY STEPS `(state, input) -> [state', output]` so state threads across inputs AND
-   across a swap (a stateless map ignores `state`; a running aggregate / DBSP integrator carries it).
-   The certified operator PAIR (original + optimized, optimized sound only when the guard holds) comes
-   from `wandler.adaptive`; this ns is the mechanism + policy that DRIVES that pair over a stream.")
+   Operators are Mealy steps `(state, input) -> [state', output]`. The caller must establish
+   equivalence under the guards, compatible state representations, and a safe swap boundary.
+   These APIs accept executable functions and do not check certificates. Input-local hypotheses
+   use `:guard`; hypotheses involving carried state additionally require `:state-guard`.")
 
 ;; ── the mechanism: a swappable operator behind one indirection (mode-indexed) ─────────────────────
 (defprotocol PSwapNode
   (current    [node]   "The operator (Mealy step) currently installed.")
-  (swap-op!   [node f] "Atomically install operator `f`; return `f`. Sound mid-stream because every
-                        wandler-compiled operator is kernel-certified ≡ the one it replaces.")
+  (swap-op!   [node f] "Atomically install operator `f`; return `f`. The caller must establish
+                        equivalence, state compatibility, and a safe boundary; this API checks no proof.")
   (generation [node]   "Number of swaps performed (telemetry / hysteresis)."))
 
 ;; batch adapter — the existing swap-cell as a record. One atom, one indirection.
@@ -63,16 +43,22 @@
      :original  — the always-correct certified operator (Mealy step).
      :optimized — the certified-cheaper operator, sound ONLY when `:guard` holds (e.g. group-by
                   elimination under an abduced unique key). Installed initially.
-     :guard     — `(input) -> bool`: discharges the optimized operator's hypothesis on this input.
+     :guard     — optional `(input) -> bool` for input-local hypotheses.
+     :state-guard — optional `(state, input) -> bool` for hypotheses involving carried state.
+                    At least one guard is required; when both are given, both must hold.
      :state0    — initial Mealy state (default nil).
      :cutoff    — guard-violation count after which we PIN to original permanently (anti-thrash, dflt 3).
-   Per input: guard holds → run optimized; guard fails → run ORIGINAL on the SAME input (the guard is a
+   Per input: all supplied guards hold → run optimized; otherwise run ORIGINAL on the SAME input (the guard is a
    pre-check, so fallback is lossless — no element dropped/duplicated), count a violation; at `cutoff`
    violations swap the node to original and stop guarding. State threads across inputs AND across the
-   pin (identity migration — both operators are certified ≡ over the same state type).
+   pin. Sharing a state type alone does not establish compatibility: the caller must ensure the
+   original can interpret every reachable optimized state, and the state guard discharges every
+   carried-state hypothesis before re-entering optimized after a fallback.
 
    Returns {:outputs :final-state :pinned? :violations :opt-runs :orig-runs :generation}."
-  [node {:keys [original optimized guard state0 cutoff] :or {cutoff 3}} inputs]
+  [node {:keys [original optimized guard state-guard state0 cutoff] :or {cutoff 3}} inputs]
+  (when-not (or guard state-guard)
+    (throw (ex-info "adaptive execution requires an input or state guard" {})))
   (swap-op! node optimized)
   (loop [ins inputs, st state0, outs (transient [])
          viol 0, opt 0, orig 0, pinned? false]
@@ -83,7 +69,8 @@
         (if pinned?
           (let [[st' out] ((current node) st in)]          ; pinned: original only, no guard cost
             (recur (rest ins) st' (conj! outs out) viol opt (inc orig) true))
-          (if (guard in)
+          (if (and (if guard (guard in) true)
+                   (if state-guard (state-guard st in) true))
             (let [[st' out] (optimized st in)]             ; fast path: hypothesis holds
               (recur (rest ins) st' (conj! outs out) viol (inc opt) orig false))
             (let [[st' out] (original st in)               ; deopt: run original on the SAME input

@@ -1,16 +1,15 @@
 (ns wandler.optimize.certify-test
-  "Phase 5.1: the clean certifier (wandler.optimize.certify) — the soundness core. Differential
-   against the OLD optimizer's certifier (the harness oracle): on a map∘map pipeline the clean rewriter
-   must (a) FUSE it (map_map → one pass), (b) the proof must independently kernel-verify
-   (verified-rewrite?), and (c) produce the SAME fused term as old wandler."
+  "The certifier must fuse map∘map, carry an independently checkable proof,
+   and reject forged candidates. The retired old/clean aliases named the same namespace
+   and therefore did not provide an independent differential oracle."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [ansatz.core :as a]
             [ansatz.kernel.expr :as e]
             [ansatz.kernel.level :as lvl]
             [ansatz.kernel.name :as nm]
             [wandler.test-env :as test-env]
-            [wandler.optimize.certify :as cclean]
-            [wandler.optimize.certify :as cold]))
+            [wandler.optimize.cost :as cost]
+            [wandler.optimize.certify :as cert]))
 
 (defn- setup [f]
   (when @test-env/init-full-env (reset! a/ansatz-env @test-env/init-full-env))
@@ -34,14 +33,22 @@
   (when @test-env/init-full-env
     (let [env (a/env)
           [term lctx] (map-map-term)
-          clean (cclean/optimize env term :lctx lctx)
-          old   (cold/optimize  env term :lctx lctx)]
+          clean (cert/optimize env term :lctx lctx)]
       (testing "(a) the clean rewriter FUSES map∘map (changed)"
         (is (:changed? clean) "map_map should fire"))
       (testing "(b) the clean proof independently kernel-verifies (the soundness gate)"
         (is (:verified? clean) "verified-rewrite? must accept the fusion proof"))
-      (testing "(c) differential: clean fused term == old wandler's fused term"
-        ;; normalize the Level object-identity hashes (#object[… 0x… "0"]) that `str` prints
-        (let [norm #(clojure.string/replace (str %) #"0x[0-9a-fA-F]+" "")]
-          (is (= (norm (:term clean)) (norm (:term old)))))
-        (is (= (boolean (:verified? clean)) (boolean (:verified? old))))))))
+      (testing "the resulting term contains one map and its certificate checks separately"
+        (is (= 1 (cost/soac-cost (:term clean))))
+        (is (cert/verified-rewrite? env term clean :lctx lctx))))))
+
+(deftest certifier-rejects-forged-candidates
+  (when @test-env/init-full-env
+    (let [env (a/env)
+          [term lctx] (map-map-term)
+          forged (e/lit-nat 0)
+          unrelated-proof (e/const' (nm/from-string "True.intro") [])]
+      (is (cert/verified-rewrite? env term {:term term :proof nil} :lctx lctx))
+      (is (not (cert/verified-rewrite? env term {:term forged :proof nil} :lctx lctx)))
+      (is (not (cert/verified-rewrite? env term {:term forged :proof unrelated-proof}
+                                       :lctx lctx))))))

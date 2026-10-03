@@ -13,3 +13,6 @@ target
 
 # internal dev/design docs (local-only, not published)
 .internal/
+
+# Local current-format proof stores used by the quickstart
+.wandler/

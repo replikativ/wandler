@@ -3,7 +3,8 @@
    shapes over Float arrays to raster's unboxed SIMD kernels (raster.par). Loads ONLY when raster is on
    the classpath (the :raster alias); `register!` plugs it into wandler.exec.physical's :array seam. An
    unrecognized shape DECLINES (nil) → the eager Clojure realization runs (result-equal). The kernel
-   proof (the verified fold/map term) is the certificate; raster just executes it faster.
+   proof certifies the fold/map rewrite; Raster's numerical lowering is trusted and requires
+   explicit permission to reassociate Float sums.
 
    Two recognition tiers:
      v1 ready-made ops (cheap reductions, memory-bound — correct but no SIMD win over C2):
@@ -21,17 +22,36 @@
             [raster.par]
             [wandler.exec.physical :as phys]))
 
-(defn- mentions? [t s]
-  (cond (nil? t)      false
-        (e/const? t)  (= s (name/->string (e/const-name t)))
-        (e/app? t)    (or (mentions? (e/app-fn t) s) (mentions? (e/app-arg t) s))
-        (e/lam? t)    (mentions? (e/lam-body t) s)
-        :else false))
+(def ^:dynamic *allow-float-reassociation*
+  "Explicit numerical contract: allow parallel Float sums to change rounding/order.
+   False by default; a CIC rewrite certificate does not prove this lowering bit-exact."
+  false)
 
 (defn- add-step?
-  "Does the foldl step ADD over Float? — a bare Float.add const or a fused λ mentioning Float.add/HAdd."
-  [fn-term]
-  (or (mentions? fn-term "Float.add") (mentions? fn-term "HAdd.hAdd")))
+  "Recognize precisely Float addition, never a function that merely mentions it."
+  [t]
+  (or (and (e/const? t) (= "Float.add" (name/->string (e/const-name t))))
+      (and (e/lam? t) (e/lam? (e/lam-body t))
+           (let [[h args] (e/get-app-fn-args (e/lam-body (e/lam-body t)))]
+             (and (e/const? h) (= "Float.add" (name/->string (e/const-name h)))
+                  (= 2 (count args))
+                  (e/bvar? (first args)) (= 1 (e/bvar-idx (first args)))
+                  (e/bvar? (second args)) (= 0 (e/bvar-idx (second args))))))))
+
+(defn- zero-init? [t]
+  (when t
+    (let [[h args] (e/get-app-fn-args t)
+          zero-lit? (fn [x] (and (e/lit-nat? x) (zero? (e/lit-nat-val x))))
+          const-is? (fn [x s] (and (e/const? x) (= s (name/->string (e/const-name x)))))]
+      (and (e/const? h)
+           (case (name/->string (e/const-name h))
+             "Float.ofNat" (and (= 1 (count args)) (zero-lit? (first args)))
+             "OfScientific.ofScientific"
+             (and (= 5 (count args)) (const-is? (nth args 0) "Float")
+                  (const-is? (nth args 1) "instOfScientificFloat")
+                  (zero-lit? (nth args 2)) (const-is? (nth args 3) "Bool.false")
+                  (zero-lit? (nth args 4)))
+             false)))))
 
 (defn- square-map?
   "Is the map fn `(λx. Float.mul x x)` — squaring its argument?"
@@ -59,7 +79,7 @@
   (and (e/lam? fn-term)
        (letfn [(ok? [t]
                  (cond
-                   (e/bvar? t)  true
+                   (e/bvar? t)  (zero? (e/bvar-idx t))
                    (e/const? t) (contains? float-ops (name/->string (e/const-name t)))
                    (e/app? t)   (and (ok? (e/app-fn t)) (ok? (e/app-arg t)))
                    :else        false))]
@@ -82,9 +102,11 @@
 (defn raster-array-form
   "The :array backend fn (env plan names) → a Clojure form running the plan via raster, or nil to
    decline (→ eager fallback). Matches Float reductions: the canonical ready-made ops, then the GENERAL
-   compute-kernel path (any inlinable Float λ → deftm+compile-aot SIMD kernel)."
+   compute-kernel path (any inlinable Float λ → deftm+compile-aot SIMD kernel).
+   Declines unless *allow-float-reassociation* is true and the fold starts at zero."
   [env plan names]
-  (when (= :foldl (:op plan))
+  (when (and *allow-float-reassociation* (= :foldl (:op plan))
+             (zero-init? (:init plan)))
     (let [inp (:input plan)]
       (cond
         ;; Σ xs  (Float sum over the source list)
@@ -125,8 +147,14 @@
 (defn register!
   "Register the raster backend as a COST-BASED execution backend (#76 / COST_MODEL_REDESIGN B2): it
    recognizes Float reductions and ADVERTISES its cost, so the planner's choose-cost-form pushes down
-   iff raster is actually cheaper than the eager Clojure realization. Idempotent (clears first)."
-  []
-  (phys/clear-cost-backends!)
-  (phys/register-cost-backend! {:name :raster :lower raster-array-form :cost raster-cost})
-  :registered)
+   iff raster is actually cheaper than the eager Clojure realization. Replaces only the raster entry.
+   Float sums decline unless :allow-float-reassociation? is explicitly true."
+  ([] (register! {}))
+  ([{:keys [allow-float-reassociation?] :or {allow-float-reassociation? false}}]
+   (phys/register-cost-backend!
+    {:name :raster
+     :lower (fn [env plan names]
+              (binding [*allow-float-reassociation* allow-float-reassociation?]
+                (raster-array-form env plan names)))
+     :cost raster-cost})
+   :registered))

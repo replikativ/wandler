@@ -31,6 +31,7 @@ example validated end-to-end.
 | **[Programming model](PROGRAMMING_MODEL.md)** | The formalization: the malli → type functor, dependent types in practice, the semiring view of aggregation and inference, and the gradual-typing ladder — honest about proven vs aspirational. |
 | **[Reference](REFERENCE.md)** | The verb vocabulary (what each lowers to), type-annotation forms, idioms, the inspection API, and the honest limits (clean rejections, the linearity edge). |
 | **[Benchmarks](BENCHMARKS.md)** | What the verification actually buys, measured. |
+| **[Assessment](ASSESSMENT.md)** | Ansatz upgrade, consistency findings, execution contracts, and proposed next increments. |
 
 ## The trust ledger, in one table
 
@@ -42,5 +43,6 @@ example validated end-to-end.
 | Productivity (`Strm` vs `List` typing) | Floating-point probability weights |
 | Monoid laws → parallel-fold licence | |
 
-An L2 input can make wandler *slower* or feed it *wrong data*; it can never make a verified
-pipeline compute a different function than the code you wrote.
+Cost estimates steer certified plan selection. The rewrite proof assumes correct
+lowering, foreign-engine contracts, and runtime guards; it does not verify their
+implementations. See [the current assessment](ASSESSMENT.md) for remaining boundaries.

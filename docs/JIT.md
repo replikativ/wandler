@@ -2,10 +2,9 @@
 
 Wandler's plan is static by default, but a pipeline can also **adapt to the data it actually
 sees** — re-planning against measured statistics, and even hot-swapping operators mid-stream.
-The one idea that makes this safe: *profiling chooses which certified plan runs; it never
-decides whether the plan is correct.* A bad statistic can only make wandler pick a **slower
-correct** plan, never a wrong one — because every plan it might switch to was proved equal to
-the original before it ran.
+Profiling chooses among kernel-certified expressions. Correct execution additionally
+requires faithful lowering, guarded runtime hypotheses, compatible state, and safe
+installation boundaries. The raw swap APIs leave those obligations to their callers.
 
 There are two layers, and they compose: a **planning JIT** (measure → re-optimize, static) and
 a **runtime hot-swap JIT** (a swappable operator cell driven by a guarded-adaptive policy). They
@@ -54,8 +53,8 @@ mechanism is the same shape in every corner of the mode lattice.
 ```clojure
 (defprotocol PSwapNode
   (current    [node]   "the operator currently installed")
-  (swap-op!   [node f] "atomically install operator f — sound mid-stream because every
-                        wandler-compiled operator is kernel-certified ≡ the one it replaces")
+  (swap-op!   [node f] "atomically install operator f; caller establishes equivalence,
+                        state compatibility, and a safe boundary")
   (generation [node]   "number of swaps performed"))
 ```
 
@@ -68,45 +67,76 @@ integrator carries it.
 This is HotSpot's speculate-with-deopt, regrounded on proof. Install the *optimized* operator.
 Per element:
 
-- a **guard** discharges the optimized operator's hypothesis on this input (e.g. "this
-  `group-by` can be dropped because the key is unique here");
+- an input-local `:guard` checks the current input; a `:state-guard` checks
+  `(state, input)` when the hypothesis involves retained data. At least one is required;
+  if both are supplied, both must hold;
 - guard holds → run the fast operator;
 - guard fails → **deopt**: run the certified *original* on the **same** input (the guard is a
   *pre*-check, so fallback is lossless — nothing dropped or duplicated), and count a violation;
 - after `cutoff` violations → **pin** to the original and stop guarding (anti-thrash).
 
 ```clojure
-(if (guard in)
+(if (and (if guard (guard in) true)
+         (if state-guard (state-guard st in) true))
   (let [[st' out] (optimized st in)] ...)        ; fast path: hypothesis holds
   (let [[st' out] (original  st in)]             ; deopt: original on the SAME input
     (when (>= viol' cutoff) (swap-op! node original)) ...))   ; pin after repeated misses
 ```
 
-### Why the swap is sound
+A DBSP join guard must cover the **pre-step retained source support and incoming
+delta support**. A malformed row retained after fallback can invalidate the next
+optimized step despite a valid new delta. Checking only the prospective integrated
+sources is also insufficient during retraction: the delta computation still reads
+the old sources. Fallback handles that retraction; optimized execution can resume
+on a later input once the state hypothesis holds.
 
-What makes replacing an operator mid-stream safe is two facts the kernel gives you:
+### Conditions for a sound swap
 
-1. **The operators are certified equal.** The optimized and original are
-   `optimized ≡ original` (translation validation, the same gate the whole optimizer uses), so
-   switching between them never changes the function computed.
-2. **State migrates by identity, not reconstruction.** The Mealy state has a type the proof
-   preserves, so carrying it across a swap is the *identity* — no frame rebuild.
+For a pure per-window operator, the planner can certify equality with the original
+term before compilation. Installing its compiled function between completed windows
+preserves results provided the lowering implements that term faithfully.
 
-> **✓ proven, ⚠ one checked hypothesis.** Contrast HotSpot: it speculates on a *profile* and
-> rebuilds a stack frame on deopt. Wandler speculates on a *proved equivalence whose hypothesis
-> is checked by a runtime guard*, and "deopts" by calling the other *certified* operator over
-> the same state. The guard's predicate (the trusted-but-checked hypothesis) is the only runtime
-> trust; the equivalence behind both operators is proven. The one thing the proof does *not*
-> give is anti-thrash — hence the `cutoff` pin, borrowed straight from HotSpot's trap history.
+A stateful Mealy operator needs a stronger contract: equivalence must cover both
+output and next state, and the two implementations must share a compatible state
+representation. Preserving the state *type* alone does not establish that contract.
+A conditional rewrite also needs a guard that discharges its hypothesis on the
+actual input and state.
+
+`PSwapNode`, `swap-cell`, and `run-adaptive` are mechanisms that trust these
+obligations to their callers. They do not accept or check a certificate, derive
+a state migration, or establish a quiescent boundary themselves. The existing
+adapter tests exercise specific examples of correct replacement.
+
+## Strict PGO replay
+
+`wandler.jit.pgo/replay` with `:reverify? true` strictly typechecks both closed
+expressions, checks their equality certificate, and compiles the checked plan
+locally. It ignores the artifact's supplied `:run` closure. A changed plan needs
+a valid proof; an identical plan may omit it but must still typecheck. Runtime
+sources must satisfy the local-context types and refinements; replay does not
+validate arbitrary input data. The code generator remains trusted.
+
+Artifacts containing `:run` are in-process caches, not a serialization format.
+Replaying without re-verification trusts that executable cache. Environment and
+backend identities still need explicit representation before persisted artifacts
+or concurrent compiler sessions can safely share plans.
+
+`adaptive-groupby` checks every relation passed to its returned function. Plan
+selection now charges the full measured guard cost on each invocation. The
+`:amortize` option remains telemetry; guard caching needs a separately validated
+immutable relation.
+
+`carry-output!` only seeds a new DBSP node's output. The caller must separately
+rewire subscriptions and input routing and establish state compatibility.
 
 ## How the layers compose
 
 The stream JIT (`jit/stream`) is both at once: profile a window's finite `List` term with
 sampled cardinalities (layer 1), re-optimize it, and hot-swap the resulting operator (layer 2).
-Because the new plan is proved `≡` the old, the swap is just a `reset!` — there is no deopt path
-to take, only a faster certified operator installed at a quiescent boundary between windows. The
-differential pass commutes with the optimizer, so a re-optimized per-step operator re-embeds
-into the coinductive stream without re-deriving the increment laws.
+The planner certifies the new finite-window term against the original and compiles
+it before swapping the function between windows. This demonstrates stateless window
+replacement. General stateful incremental replacement needs the state and delta
+contracts described above; batch equality alone does not certify arbitrary effects.
 
 ## Where to go next
 
@@ -116,3 +146,24 @@ into the coinductive stream without re-deriving the increment laws.
 - **TUTORIAL.md** §6 — the JIT from the user's side, runnable.
 - **PROGRAMMING_MODEL.md** — translation validation as the discipline that makes a mid-stream
   swap as trustworthy as a compile-time rewrite.
+
+## Current implementation boundaries
+
+The kernel certifies term rewrites. `PSwapNode` and `swap-cell` accept ordinary
+functions and do not check certificates themselves. Their caller must establish
+operator equivalence, compatible state representation, purity, and a safe swap
+boundary. A proof of a batch function does not alone establish those properties
+for an arbitrary stateful or effectful operator. `run-adaptive` also trusts the
+caller-supplied guard and operator pair.
+
+`jit-stream` currently replans once after `:warmup` windows. It retains only the
+warmup sample, but collects all results before returning. It is a finite-window
+prototype, not yet a continuously adapting, bounded-memory stream processor.
+Its reported before/after costs use default parameters rather than the measured
+profile. Drift triggers, compilation budgets, and state migration certificates
+remain future work.
+
+Raster's parallel Float reductions can change rounding relative to a sequential
+fold. They now decline by default. `(wandler.backend.raster/register!
+{:allow-float-reassociation? true})` enables this numerical contract explicitly;
+it is a trusted approximate lowering, not a bit-exact CIC-certified result.

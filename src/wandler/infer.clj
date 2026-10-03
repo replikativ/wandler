@@ -40,10 +40,22 @@
     (cond-> {:ndv ndv
              :ndv-ratio   (double (/ ndv (max 1 n)))
              :unique-key? (= ndv n)}                       ; collision-free over the sample
-      (seq nums) (assoc :range-prior {:min (reduce min nums) :max (reduce max nums)})
+      ;; Nonfinite values have no useful ordered range contract. In particular,
+      ;; NaN bounds reject even the sample that produced them.
+      (and (seq nums)
+           (every? #(cond
+                      (instance? Double %) (Double/isFinite (double %))
+                      (instance? Float %) (Float/isFinite (float %))
+                      :else true)
+                   nums))
+      (assoc :range-prior {:min (reduce min nums) :max (reduce max nums)})
       (seq strs) (assoc :len-prior   {:min (reduce min (map count strs))
                                       :max (reduce max (map count strs))})
-      (<= ndv small-domain-max) (assoc :small-domain (vec (sort (distinct vs)))))))
+      (<= ndv small-domain-max)
+      (assoc :small-domain
+             (let [values (distinct vs)]
+               (try (vec (sort values))
+                    (catch ClassCastException _ (vec (sort-by pr-str values)))))))))
 
 (defn- map-fields
   "The field keys of a `mp/provide` `[:map [k schema]…]` structure, else nil."
@@ -95,12 +107,24 @@
   [profiled]
   (if-let [_ (map-fields (:structure profiled))]
     (into [:map]
-          (for [[k base] (rest (:structure profiled))
-                :let [f (get-in profiled [:fields k])]]
-            [k (cond
-                 (:range-prior f) [:int    (assoc (:range-prior f) ::source :sample-prior)]
-                 (:len-prior f)   [:string (assoc (:len-prior f)   ::source :sample-prior)]
-                 :else base)]))
+          (for [[k entry-schema & more] (rest (:structure profiled))
+                :let [entry-options (when (seq more) entry-schema)
+                      base (if (seq more) (first more) entry-schema)
+                      f (get-in profiled [:fields k])
+                      refined (cond
+                 ;; Preserve the provider's numerical carrier. A Float sample must
+                 ;; not become an :int schema that rejects the very data we profiled.
+                                (and (:range-prior f)
+                                     (contains? #{:int :double :float :number}
+                                                (if (vector? base) (first base) base)))
+                                [(if (vector? base) (first base) base)
+                                 (merge (when (and (vector? base) (map? (second base))) (second base))
+                                        (:range-prior f) {::source :sample-prior})]
+                                (and (:len-prior f) (= :string (if (vector? base) (first base) base)))
+                                [:string (merge (when (and (vector? base) (map? (second base))) (second base))
+                                                (:len-prior f) {::source :sample-prior})]
+                                :else base)]]
+            (if entry-options [k entry-options refined] [k refined])))
     (:structure profiled)))
 
 ;; ── one-call front door ──────────────────────────────────────────────────────────────────────────

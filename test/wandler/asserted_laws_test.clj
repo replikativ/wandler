@@ -21,7 +21,7 @@
       (binding [a/*verbose* false]
         ;; a foreign associative op over Nat, monoid laws asserted via metadata
         (eval '(wandler.algebra/foreign ^{:laws {:assoc true :identity 0}} mysum2
-                 [a :- Nat, b :- Nat] Nat (fn [a b] (+ a b))))
+                                        [a :- Nat, b :- Nat] Nat (fn [a b] (+ a b))))
         (eval '(ansatz.core/defn tot2 [xs :- (List Nat)] Nat (reduce mysum2 0 xs))))
       ;; the three monoid laws were admitted (as trusted axioms)
       (is (every? #(some? (kenv/lookup (a/env) (name/from-string %)))
@@ -29,7 +29,7 @@
           "asserted monoid laws present in env")
       ;; the fold over the FOREIGN op lowered to the PARALLEL apfoldl
       (let [cf (pr-str (a/ansatz->clj (a/env)
-                          (.value (kenv/lookup (a/env) (name/from-string "tot2"))) []))]
+                                      (.value (kenv/lookup (a/env) (name/from-string "tot2"))) []))]
         (is (re-find #"apfoldl" cf) "fold over foreign monoid auto-parallelized"))
       ;; and computes correctly
       (is (= 15 (long ((resolve 'tot2) '(1 2 3 4 5)))))
@@ -38,7 +38,7 @@
         (eval '(ansatz.core/foreign mysum3 [a :- Nat, b :- Nat] Nat (fn [a b] (+ a b))))
         (eval '(ansatz.core/defn tot3 [xs :- (List Nat)] Nat (reduce mysum3 0 xs))))
       (let [cf (pr-str (a/ansatz->clj (a/env)
-                          (.value (kenv/lookup (a/env) (name/from-string "tot3"))) []))]
+                                      (.value (kenv/lookup (a/env) (name/from-string "tot3"))) []))]
         (is (not (re-find #"apfoldl" cf))
             "foreign op with NO declared laws is NOT parallelized (no licence) — correct")))
     (println "asserted-laws: no env, skipping")))
@@ -58,7 +58,7 @@
         (is (not (.isAxiom ci)) "assoc is PROVEN (a real theorem), not a trusted axiom"))
       ;; and the fold auto-parallelizes off the proven laws
       (let [cf (pr-str (a/ansatz->clj (a/env)
-                          (.value (kenv/lookup (a/env) (name/from-string "ptot2"))) []))]
+                                      (.value (kenv/lookup (a/env) (name/from-string "ptot2"))) []))]
         (is (re-find #"apfoldl" cf) "fold over proven monoid auto-parallelizes"))
       (is (= 15 (long ((resolve 'ptot2) '(1 2 3 4 5)))))
       ;; a NON-monoid (Nat.sub): the proof must FAIL → not registered → sequential
@@ -66,7 +66,7 @@
         (eval '(wandler.algebra/defmonoid psub2 [a :- Nat, b :- Nat] Nat (Nat.sub a b) :identity 0))
         (eval '(ansatz.core/defn stot2 [xs :- (List Nat)] Nat (reduce psub2 0 xs))))
       (let [cf (pr-str (a/ansatz->clj (a/env)
-                          (.value (kenv/lookup (a/env) (name/from-string "stot2"))) []))]
+                                      (.value (kenv/lookup (a/env) (name/from-string "stot2"))) []))]
         (is (not (re-find #"apfoldl" cf))
             "non-monoid (Nat.sub) couldn't be PROVEN a monoid → not parallelized — correct & safe")))
     (println "verified-monoid: no env, skipping")))
@@ -81,7 +81,15 @@
       (w/install!)
       ;; (1) the seed Init monoids are licensed on a fresh env, AND install materialized their
       ;;     canonical Std.Associative / Std.Commutative instances (citeable by List.foldl_assoc)
-      (is (= '+ (alg/monoid-licence (a/env) "Nat.add" 0)) "Nat.add monoid licence fires")
+      (is (= '+' (alg/monoid-licence (a/env) "Nat.add" 0)) "Nat.add monoid licence fires")
+      (let [saved @alg/monoids]
+        (try
+          (doseq [missing [:left-id :right-id]]
+            (swap! alg/monoids update "Nat.add" dissoc missing)
+            (is (nil? (alg/monoid-licence (a/env) "Nat.add" 0))
+                "both identity proofs are required")
+            (reset! alg/monoids saved))
+          (finally (reset! alg/monoids saved))))
       (is (true? (alg/associative? (a/env) "Nat.add")) "Nat.add associative")
       (is (true? (alg/commutative? (a/env) "Nat.add")) "Nat.add commutative")
       (is (some? (kenv/lookup (a/env) (name/from-string "instStd.Associative_Nat.add")))
@@ -92,7 +100,7 @@
       ;;     and the predicates report them (the reorder / dedup licences)
       (binding [a/*verbose* false]
         (eval '(wandler.algebra/foreign ^{:laws {:comm true :idem true}} fmax2
-                 [a :- Nat, b :- Nat] Nat (fn [a b] (max a b)))))
+                                        [a :- Nat, b :- Nat] Nat (fn [a b] (max a b)))))
       (is (true? (alg/commutative? (a/env) "fmax2")) "asserted commutativity reported")
       (is (true? (alg/idempotent?  (a/env) "fmax2")) "asserted idempotence reported")
       (is (some? (kenv/lookup (a/env) (name/from-string "instStd.IdempotentOp_fmax2")))
