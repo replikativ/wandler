@@ -66,3 +66,23 @@
         (is (= [0 10] first2))
         (is (= [0 10 200 300 400] all) "elems 3-5 use v2, counter continued from n=2")
         (is (= 1 (swap/generation node)))))))
+
+(deftest state-and-input-guards-both-required
+  (let [calls (atom [])
+        original (fn [st in] [(inc st) [:original in]])
+        optimized (fn [st in] [(inc st) [:optimized in]])
+        node (swap/atom-node original)
+        r (swap/run-adaptive node
+                             {:original original :optimized optimized :state0 0 :cutoff 2
+                              :guard pos?
+                              :state-guard (fn [st in] (swap! calls conj [st in]) (even? st))}
+                             [1 1 -1 1])]
+    (is (= [[:optimized 1] [:original 1] [:original -1] [:original 1]] (:outputs r)))
+    (is (= [[0 1] [1 1]] @calls) "input failures short-circuit; pinned execution stops guarding")
+    (is (:pinned? r))
+    (is (= 4 (:final-state r)))))
+
+(deftest adaptive-requires-a-guard
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"requires an input or state guard"
+                        (swap/run-adaptive (swap/atom-node identity)
+                                           {:original identity :optimized identity} []))))

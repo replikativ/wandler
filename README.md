@@ -165,8 +165,9 @@ boolean / tropical carriers ship), `mode/execute` picks the lowering from the so
 Wandler pins Ansatz **0.2.115**. `:local-ansatz` exercises the sibling checkout.
 Ansatz now uses a versioned CBOR store: older stores need re-importing; there is no
 in-place migration. The full integration suite needs the full Init export (see Tests).
-Validation: **429 tests / 1945 assertions**, zero failures/errors against the
-published dependency; the sibling Ansatz checkout also passes the full suite.
+Validation: **435 tests / 1964 assertions**, zero failures/errors against the
+published dependency. The upgrade branch also passes 429 tests / 1945 assertions
+against the sibling Ansatz checkout.
 
 ## Tests
 

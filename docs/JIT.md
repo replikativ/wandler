@@ -2,10 +2,9 @@
 
 Wandler's plan is static by default, but a pipeline can also **adapt to the data it actually
 sees** — re-planning against measured statistics, and even hot-swapping operators mid-stream.
-The one idea that makes this safe: *profiling chooses which certified plan runs; it never
-decides whether the plan is correct.* A bad statistic can only make wandler pick a **slower
-correct** plan, never a wrong one — because every plan it might switch to was proved equal to
-the original before it ran.
+Profiling chooses among kernel-certified expressions. Correct execution additionally
+requires faithful lowering, guarded runtime hypotheses, compatible state, and safe
+installation boundaries. The raw swap APIs leave those obligations to their callers.
 
 There are two layers, and they compose: a **planning JIT** (measure → re-optimize, static) and
 a **runtime hot-swap JIT** (a swappable operator cell driven by a guarded-adaptive policy). They
@@ -68,19 +67,28 @@ integrator carries it.
 This is HotSpot's speculate-with-deopt, regrounded on proof. Install the *optimized* operator.
 Per element:
 
-- a **guard** discharges the optimized operator's hypothesis on this input (e.g. "this
-  `group-by` can be dropped because the key is unique here");
+- an input-local `:guard` checks the current input; a `:state-guard` checks
+  `(state, input)` when the hypothesis involves retained data. At least one is required;
+  if both are supplied, both must hold;
 - guard holds → run the fast operator;
 - guard fails → **deopt**: run the certified *original* on the **same** input (the guard is a
   *pre*-check, so fallback is lossless — nothing dropped or duplicated), and count a violation;
 - after `cutoff` violations → **pin** to the original and stop guarding (anti-thrash).
 
 ```clojure
-(if (guard in)
+(if (and (if guard (guard in) true)
+         (if state-guard (state-guard st in) true))
   (let [[st' out] (optimized st in)] ...)        ; fast path: hypothesis holds
   (let [[st' out] (original  st in)]             ; deopt: original on the SAME input
     (when (>= viol' cutoff) (swap-op! node original)) ...))   ; pin after repeated misses
 ```
+
+A DBSP join guard must cover the **pre-step retained source support and incoming
+delta support**. A malformed row retained after fallback can invalidate the next
+optimized step despite a valid new delta. Checking only the prospective integrated
+sources is also insufficient during retraction: the delta computation still reads
+the old sources. Fallback handles that retraction; optimized execution can resume
+on a later input once the state hypothesis holds.
 
 ### Conditions for a sound swap
 
@@ -98,6 +106,28 @@ actual input and state.
 obligations to their callers. They do not accept or check a certificate, derive
 a state migration, or establish a quiescent boundary themselves. The existing
 adapter tests exercise specific examples of correct replacement.
+
+## Strict PGO replay
+
+`wandler.jit.pgo/replay` with `:reverify? true` strictly typechecks both closed
+expressions, checks their equality certificate, and compiles the checked plan
+locally. It ignores the artifact's supplied `:run` closure. A changed plan needs
+a valid proof; an identical plan may omit it but must still typecheck. Runtime
+sources must satisfy the local-context types and refinements; replay does not
+validate arbitrary input data. The code generator remains trusted.
+
+Artifacts containing `:run` are in-process caches, not a serialization format.
+Replaying without re-verification trusts that executable cache. Environment and
+backend identities still need explicit representation before persisted artifacts
+or concurrent compiler sessions can safely share plans.
+
+`adaptive-groupby` checks every relation passed to its returned function. Plan
+selection now charges the full measured guard cost on each invocation. The
+`:amortize` option remains telemetry; guard caching needs a separately validated
+immutable relation.
+
+`carry-output!` only seeds a new DBSP node's output. The caller must separately
+rewire subscriptions and input routing and establish state compatibility.
 
 ## How the layers compose
 

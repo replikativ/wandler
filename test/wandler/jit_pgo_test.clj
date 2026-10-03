@@ -130,3 +130,39 @@
                      (mapv (fn [i] [(mod i 4) i]) (range 24))
                      (mapv (fn [i] [(mod i 4) i]) (range 16))]]]                       ; non-trivial 4-key
       (check "multiway" term lctx params truth datasets))))
+
+(deftest strict-replay-rejects-missing-and-unrelated-proofs
+  (when (ready?)
+    (let [original (e/lit-nat 0)
+          optimized (e/lit-nat 1)
+          called? (atom false)
+          artifact {:original original :optimized optimized :lctx {}
+                    :run (fn [_] (reset! called? true) :unchecked)}]
+      (doseq [proof [nil (c "True.intro")]]
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"failed re-verification"
+                              (pgo/replay (a/env) (assoc artifact :certificate proof) [0]
+                                          :reverify? true))))
+      (is (false? @called?) "rejection happens before executable code is invoked"))))
+
+(deftest strict-replay-recompiles-identity-instead-of-trusting-closure
+  (when (ready?)
+    (let [term (e/fvar 1)
+          called? (atom false)
+          artifact {:original term :optimized term :certificate nil
+                    :lctx {1 {:name "x" :type @N}}
+                    :run (fn [_] (reset! called? true) :unchecked)}]
+      (is (= 42 (pgo/replay (a/env) artifact [42] :reverify? true)))
+      (is (false? @called?) "a valid expression certificate does not authenticate a supplied closure"))))
+
+(deftest strict-replay-rejects-malformed-identity-before-codegen
+  (when (ready?)
+    (let [term (e/app* (c "Nat.add") (c "Bool.true") (e/lit-nat 0))
+          compiled? (atom false)
+          called? (atom false)
+          artifact {:original term :optimized term :certificate nil :lctx {}
+                    :run (fn [_] (reset! called? true) :unchecked)}]
+      (with-redefs [a/ansatz->clj (fn [& _] (reset! compiled? true) nil)]
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"failed expression typechecking"
+                              (pgo/replay (a/env) artifact [0] :reverify? true))))
+      (is (false? @compiled?) "identity equality does not establish expression well-typedness")
+      (is (false? @called?)))))
